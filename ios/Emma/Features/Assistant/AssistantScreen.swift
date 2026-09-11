@@ -151,7 +151,7 @@ struct AssistantScreen: View {
 
             Text(introParagraph)
                 .font(EmmaTypography.emmaBody(introParagraph))
-                .foregroundStyle(Color.emmaIntroText)
+                .foregroundStyle(EmmaTheme.emmaIntroText)
                 .multilineTextAlignment(.center)
                 .lineSpacing(6)
                 .fixedSize(horizontal: false, vertical: true)
@@ -224,7 +224,7 @@ struct AssistantScreen: View {
             HStack(spacing: 11) {
                 Image(systemName: systemImage)
                     .font(.system(size: 17, weight: .regular))
-                    .foregroundStyle(Color.emmaSuggestionIcon)
+                    .foregroundStyle(EmmaTheme.emmaSuggestionIcon)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title)
                         .font(EmmaTypography.ui(12))
@@ -232,14 +232,14 @@ struct AssistantScreen: View {
                         .multilineTextAlignment(.leading)
                     Text(subtitle)
                         .font(EmmaTypography.ui(10))
-                        .foregroundStyle(Color.emmaSuggestionSubtitle)
+                        .foregroundStyle(EmmaTheme.emmaSuggestionSubtitle)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.emmaSuggestionChevron)
+                    .foregroundStyle(EmmaTheme.emmaSuggestionChevron)
             }
             .padding(.vertical, 15)
             .frame(minHeight: EmmaSpacing.hitTarget, alignment: .leading)
@@ -271,7 +271,7 @@ struct AssistantScreen: View {
             HStack(spacing: 6) {
                 Text(isUser ? "Ty" : "Emma")
                     .font(EmmaTypography.ui(10, .semibold))
-                    .foregroundStyle(Color.emmaTurnLabel)
+                    .foregroundStyle(EmmaTheme.emmaTurnLabel)
                 if message.isSummary {
                     StatusPill("Streszczenie", kind: .neutral)
                 }
@@ -293,7 +293,7 @@ struct AssistantScreen: View {
                         Text(message.isSummary ? "Odsłuchaj streszczenie" : "Odsłuchaj")
                             .font(EmmaTypography.ui(11))
                     }
-                    .foregroundStyle(Color.emmaListenText)
+                    .foregroundStyle(EmmaTheme.emmaListenText)
                     .frame(minHeight: EmmaSpacing.hitTarget, alignment: .leading)
                     .contentShape(Rectangle())
                 }
@@ -322,7 +322,7 @@ struct AssistantScreen: View {
                 topTrailingRadius: EmmaRadii.emmaTurn,
                 style: .continuous
             )
-            .strokeBorder(isUser ? EmmaTheme.contextStripBorder : Color.emmaTurnBorder, lineWidth: 1)
+            .strokeBorder(isUser ? EmmaTheme.contextStripBorder : EmmaTheme.emmaTurnBorder, lineWidth: 1)
         }
         .padding(.leading, isUser ? 30 : 0)
     }
@@ -355,7 +355,7 @@ struct AssistantScreen: View {
         VStack(spacing: 4) {
             Text(store.statusText)
                 .font(EmmaTypography.ui(11))
-                .foregroundStyle(Color.emmaStatusText)
+                .foregroundStyle(EmmaTheme.emmaStatusText)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityLabel("Stan Emmy: \(store.statusText)")
@@ -430,14 +430,14 @@ struct AssistantScreen: View {
                 Text(title)
                     .font(EmmaTypography.ui(11))
             }
-            .foregroundStyle(Color.emmaSmallSuggestionText)
+            .foregroundStyle(EmmaTheme.emmaSmallSuggestionText)
             .padding(.horizontal, 10)
             .frame(minHeight: EmmaSpacing.hitTarget)
             .background(EmmaTheme.surface)
             .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.emmaSmallSuggestion, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: EmmaRadii.emmaSmallSuggestion, style: .continuous)
-                    .strokeBorder(Color.emmaSmallSuggestionBorder, lineWidth: 1)
+                    .strokeBorder(EmmaTheme.emmaSmallSuggestionBorder, lineWidth: 1)
             }
             .contentShape(Rectangle())
         }
@@ -454,7 +454,7 @@ struct AssistantScreen: View {
                 + "a wysyłka wiadomości jest symulowana."
         )
         .font(EmmaTypography.ui(10))
-        .foregroundStyle(Color.emmaDemoFootText)
+        .foregroundStyle(EmmaTheme.emmaDemoFootText)
         .multilineTextAlignment(.center)
         .lineSpacing(4)
         .fixedSize(horizontal: false, vertical: true)
@@ -471,7 +471,7 @@ struct AssistantScreen: View {
             } label: {
                 Image(systemName: store.isMicrophoneCapturing ? "checkmark" : "mic")
                     .font(.system(size: 19, weight: .regular))
-                    .foregroundStyle(store.isMicrophoneCapturing ? Color.white : Color.emmaMicText)
+                    .foregroundStyle(store.isMicrophoneCapturing ? Color.white : EmmaTheme.emmaMicText)
                     .frame(width: EmmaMetrics.emmaComposerButtonSize, height: EmmaMetrics.emmaComposerButtonSize)
                     .background(store.isMicrophoneCapturing ? EmmaTheme.primaryButton : EmmaTheme.contextStripBackground)
                     .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.composerInner, style: .continuous))
@@ -501,7 +501,7 @@ struct AssistantScreen: View {
             } label: {
                 Image(systemName: "waveform")
                     .font(.system(size: 17, weight: .regular))
-                    .foregroundStyle(store.isDictating ? Color.white : Color.emmaMicText)
+                    .foregroundStyle(store.isDictating ? Color.white : EmmaTheme.emmaMicText)
                     .frame(width: EmmaMetrics.emmaComposerButtonSize, height: EmmaMetrics.emmaComposerButtonSize)
                     .background(store.isDictating ? EmmaTheme.primaryButton : EmmaTheme.contextStripBackground)
                     .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.composerInner, style: .continuous))
@@ -527,7 +527,7 @@ struct AssistantScreen: View {
         .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.emmaComposer, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: EmmaRadii.emmaComposer, style: .continuous)
-                .strokeBorder(Color.emmaComposerBorder, lineWidth: 1)
+                .strokeBorder(EmmaTheme.emmaComposerBorder, lineWidth: 1)
         }
         .padding(.horizontal, 14)
         .padding(.top, 6)

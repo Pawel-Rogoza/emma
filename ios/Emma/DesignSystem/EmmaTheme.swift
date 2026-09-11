@@ -33,7 +33,6 @@ public enum EmmaTheme {
     // Karta Emmy
     public static let emmaCard = Color(hex: 0x14263C)
     public static let emmaCardText = Color(hex: 0xDBE3ED)
-    public static let emmaCardMuted = Color(hex: 0x9FB0C4)
 
     // Przyciski
     public static let primaryButton = Color(hex: 0x1B314D)
@@ -48,7 +47,6 @@ public enum EmmaTheme {
     public static let controlSelected = Color.white
     public static let fieldBorder = Color(hex: 0xDCE5EE)
     public static let infoRowBorder = Color(hex: 0xE5EAF0)
-    public static let sheetHandle = Color(hex: 0xC9D0D9)
     public static let sheetBackground = Color(hex: 0xF5F6F8)
     public static let closeButton = Color(hex: 0xE8ECF1)
 
@@ -67,7 +65,12 @@ public enum EmmaTheme {
     public static let chatDayChip = Color(hex: 0xE5EAF0)
     public static let chatDayChipText = Color(hex: 0x788697)
     public static let dictationAccent = Color(hex: 0x9A622C)
-    public static let translationText = Color(hex: 0x5E6E80)
+    /// `.bubble-translation` — linia nad tłumaczeniem
+    public static let bubbleTranslationRule = Color(hex: 0xE1E7EE)
+    /// `.bubble-translation summary` — etykieta „Tłumaczenie”
+    public static let bubbleTranslationLabel = Color(hex: 0x627790)
+    /// `.bubble-translation p` — treść tłumaczenia
+    public static let bubbleTranslationText = Color(hex: 0x4E6178)
 
     // Status i komunikaty
     public static let danger = Color(hex: 0xA1533E)
@@ -93,7 +96,7 @@ public enum EmmaTheme {
     public static let daySelectedLabel = Color(hex: 0xBFCCDF)
     public static let dayTodayDot = Color(hex: 0x8BA0B7)
     public static let weekControlBackground = Color(hex: 0xEDF1F5)
-    public static let weekControlText = Color(hex: 0x4C6480)
+    public static let weekControlText = Color(hex: 0x69819B)
 
     // Pasek zakładek
     public static let tabBarBackground = Color(hex: 0xFBFCFD)
@@ -108,14 +111,21 @@ public enum EmmaTheme {
     public static let contextStripText = Color(hex: 0x6B84A0)
     public static let contextStripBorder = Color(hex: 0xDFE7EF)
     public static let activityMarker = Color(hex: 0xA6B5C7)
+    /// `.case-emma` — początek gradientu tła (110°)
     public static let emmaGradientStart = Color(hex: 0xEAF0F6)
+    /// `.case-emma` — koniec gradientu tła
     public static let emmaGradientEnd = Color(hex: 0xF6F8FA)
+    /// `.case-emma` — obramowanie karty
+    public static let caseEmmaBorder = Color(hex: 0xDFE7EF)
+    /// `.case-emma small` — podtytuł karty
+    public static let caseEmmaSubtitle = Color(hex: 0x8494A7)
+    /// `.case-emma>svg` — ikona odsłuchu
+    public static let caseEmmaIcon = Color(hex: 0x557799)
     public static let linkedCaseBackground = Color(hex: 0xEDF2F8)
     public static let linkedCaseBorder = Color(hex: 0xDCE5F0)
     public static let draftBackground = Color(hex: 0xFAFCFE)
     public static let draftBorder = Color(hex: 0xDBE5EE)
     public static let actionCardBorder = Color(hex: 0xCCDBE9)
-    public static let focusRing = Color(hex: 0x91AFD0)
 
     /// Kolor awatara z prezentacji listy rozmów. Zależy od **stabilnej pozycji**,
     /// nie od identyfikatora (§4.3).

@@ -164,7 +164,9 @@ Decyzja jest jawna w `EmmaTypography.body(for:)`, nie pozostawiona cichej kaskad
 | Formularz: wartość | DM Sans 16 (iOS, unika zoomu klawiatury) | §2.2 |
 | `secondary`/`primary` przycisk | DM Sans 13, min. wysokość 44 (preview 46) | linia 4 + 11 |
 
-Skalowanie: style tekstu + `@ScaledMetric` dla odstępów; bez agresywnego `minimumScaleFactor`.
+Skalowanie: **tylko style tekstu** — wszystkie przechodzą przez trzy konstruktory
+`EmmaTypography` i skalują się względem `.body` (decyzja i dług w `DESIGN_DEVIATIONS.md`, D-13).
+Odstępy pozostają stałe: siatka kart z referencji. Bez agresywnego `minimumScaleFactor`.
 Długie nazwiska: `overflow-wrap:anywhere` w referencji → w SwiftUI zawijanie i `minimumScaleFactor(0.85)`
 maksymalnie, z zachowaniem pełnej treści.
 

@@ -50,6 +50,14 @@ let package = Package(
                 "PreviewSupport"
             ]
         ),
+        // Narzędzie deweloperskie: wypisuje dane demo jako JSON na potrzeby podglądu
+        // na Linuksie (`scripts/build-preview.py`). Nie wchodzi do aplikacji iOS —
+        // `project.yml` buduje target z katalogu `Emma`, więc ten katalog jest poza nim.
+        .executableTarget(
+            name: "EmmaPreviewExport",
+            dependencies: ["Emma"],
+            path: "EmmaPreview"
+        ),
         .testTarget(
             name: "EmmaLogicTests",
             dependencies: ["Emma"],

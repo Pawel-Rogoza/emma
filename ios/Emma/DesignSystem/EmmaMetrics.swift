@@ -38,6 +38,8 @@ public enum EmmaRadii {
     public static let emmaSmallSuggestion: CGFloat = 10
     /// `.emma-action` — karta propozycji
     public static let actionCard: CGFloat = 15
+    /// `.case-emma` — promień karty Emmy w sprawie
+    public static let caseEmmaCard: CGFloat = 14
 }
 
 public enum EmmaSpacing {
@@ -53,6 +55,8 @@ public enum EmmaSpacing {
     public static let sectionBottom: CGFloat = 9
     public static let sectionHeaderMinHeight: CGFloat = 38
     public static let cardGap: CGFloat = 11
+    /// `.case-emma` — odstęp między orbem a tekstem
+    public static let caseEmmaGap: CGFloat = 11
     public static let rowGap: CGFloat = 10
     /// Minimalny obszar dotykowy. Referencja miała mniejsze ikony; powiększamy
     /// obszar dotyku bez zmiany wyglądu (§2.2).

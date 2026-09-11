@@ -45,6 +45,23 @@ DECLARATION_SOURCES = {
     "EmmaPlural": ["Core/Domain/ClockAndFormatting.swift"],
 }
 
+# Rozszerzenia typów systemowych: `Color`, `Font` itd. Człon wolno użyć tylko wtedy,
+# gdy jest zadeklarowany w rozszerzeniu albo należy do typów systemowych z listy niżej.
+# Bez tego filtra `Color.emmaDockStatusText` (nigdy nie zadeklarowane) przeszło jako poprawne.
+SYSTEM_TYPE_HOLDERS = {"Color", "Font", "Image", "ShapeStyle"}
+
+SYSTEM_MEMBERS = {
+    "Color": {"white", "black", "clear", "primary", "secondary", "accentColor", "gray", "red",
+              "green", "blue", "orange", "yellow", "purple", "pink", "brown", "cyan", "indigo",
+              "mint", "teal", "redacted"},
+    "Font": {"Weight", "system", "custom", "body", "title", "title2", "title3", "headline",
+             "subheadline", "caption", "caption2", "footnote", "callout", "largeTitle"},
+    "Image": set(),
+    "ShapeStyle": set(),
+}
+
+SYSTEM_USAGE_PATTERN = re.compile(r"\b(Color|Font|Image|ShapeStyle)\.([A-Za-z_][A-Za-z0-9_]*)")
+
 # Typy, których deklaracje trzeba czytać w zawężeniu do jednego typu (patrz `declared_members`).
 ENUM_SCOPED_HOLDERS = {"EmmaRadii", "EmmaSpacing", "EmmaMetrics", "EmmaTheme", "EmmaTypography", "EmmaPlural"}
 
@@ -65,6 +82,27 @@ IGNORED_USAGES = {
     ("repository", "self"),
     ("voice", "self"),
 }
+
+
+def extension_members(path: Path, type_name: str) -> set[str]:
+    """Składowe zadeklarowane w `extension <Typ> { ... }` danego pliku."""
+    text = path.read_text(encoding="utf-8")
+    collected: set[str] = set()
+    start = 0
+    while (found := text.find(f"extension {type_name} {{", start)) != -1:
+        depth, index = 0, text.index("{", found)
+        for position in range(index, len(text)):
+            if text[position] == "{":
+                depth += 1
+            elif text[position] == "}":
+                depth -= 1
+                if depth == 0:
+                    collected |= set(MEMBER_PATTERN.findall(text[found:position]))
+                    start = position
+                    break
+        else:
+            break
+    return collected
 
 
 def declared_members(path: Path, scope: str | None = None) -> set[str]:
@@ -107,6 +145,11 @@ def main() -> int:
             collected |= declared_members(path, scope=name if name in ENUM_SCOPED_HOLDERS else None)
         members[name] = collected
 
+    system_members: dict[str, set[str]] = {name: set() for name in SYSTEM_TYPE_HOLDERS}
+    for path in sorted(ROOT.rglob("*.swift")):
+        for name in SYSTEM_TYPE_HOLDERS:
+            system_members[name] |= extension_members(path, name)
+
     problems: list[str] = []
     checked = 0
 
@@ -127,14 +170,22 @@ def main() -> int:
                     # Deklaracje protokołów i implementacji w rdzeniu: tam `repository`
                     # i `voice` bywają nazwami parametrów, nie zależnościami widoku.
                     continue
+                checked += 1
                 if member not in members[holder] and member.lower() not in {
                     m.lower() for m in members[holder]
                 }:
-                    checked += 1
                     problems.append(
                         f"{path.relative_to(ROOT)}:{line_number}: {holder}.{member} nie istnieje "
                         f"w zadeklarowanych składowych"
                     )
+            for holder, member in SYSTEM_USAGE_PATTERN.findall(line):
+                if member in SYSTEM_MEMBERS[holder] or member in system_members[holder]:
+                    continue
+                checked += 1
+                problems.append(
+                    f"{path.relative_to(ROOT)}:{line_number}: {holder}.{member} nie jest ani "
+                    f"składową systemową, ani zadeklarowaną w rozszerzeniu {holder}"
+                )
 
     # Odwołania wewnątrz łańcuchów widoków: sprawdzenie tylko dla nazw jednoznacznych,
     # żeby nie zgłaszać fałszywych alarmów na zmiennych lokalnych.
@@ -145,7 +196,11 @@ def main() -> int:
         print(f"\nRazem: {len(problems)}")
         return 1
 
-    print(f"Odwołania do zależności: sprawdzono, brak odwołań bez deklaracji ({checked} kandydatów).")
+    print(
+        f"Odwołania do zależności i typów systemowych: sprawdzono {checked} odwołań, "
+        f"brak odwołań bez deklaracji "
+        f"(rozszerzenia: {', '.join(f'{k}: {len(v)}' for k, v in sorted(system_members.items()) if v)})."
+    )
     return 0
 
 

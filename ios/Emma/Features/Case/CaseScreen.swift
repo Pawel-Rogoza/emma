@@ -186,27 +186,36 @@ struct CaseScreen: View {
         Button {
             dependencies.openEmma(clientID: model.client.id, action: .prepareCase)
         } label: {
-            HStack(spacing: 12) {
-                EmmaOrb(size: .card)
-                VStack(alignment: .leading, spacing: 3) {
+            // Wartości z reguły `.case-emma` referencji: gradient 110°, orb 32 pt,
+            // tytuł 13 pt, podtytuł 10 pt, ikona 18 pt, promień 14 pt.
+            HStack(spacing: EmmaSpacing.caseEmmaGap) {
+                EmmaOrb(size: .medium)
+                VStack(alignment: .leading, spacing: 5) {
                     Text("Przygotuj mnie do tej sprawy")
-                        .font(EmmaTypography.ui(14, .semibold))
+                        .font(EmmaTypography.ui(13, .medium))
                         .foregroundStyle(EmmaTheme.ink)
                     Text("Emma · notatki, terminy, kolejne kroki")
-                        .font(EmmaTypography.ui(11))
-                        .foregroundStyle(EmmaTheme.muted)
+                        .font(EmmaTypography.ui(10))
+                        .foregroundStyle(EmmaTheme.caseEmmaSubtitle)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "speaker.wave.2")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(EmmaTheme.mutedSoft)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(EmmaTheme.caseEmmaIcon)
             }
-            .padding(EdgeInsets(top: 15, leading: 16, bottom: 15, trailing: 16))
-            .background(EmmaTheme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
+            .padding(14)
+            .background(
+                // `110deg` z CSS: kierunek w prawo i lekko w dół.
+                LinearGradient(
+                    colors: [EmmaTheme.emmaGradientStart, EmmaTheme.emmaGradientEnd],
+                    startPoint: UnitPoint(x: 0.03, y: 0.33),
+                    endPoint: UnitPoint(x: 0.97, y: 0.67)
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.caseEmmaCard, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
-                    .strokeBorder(EmmaTheme.actionCardBorder, lineWidth: 1)
+                RoundedRectangle(cornerRadius: EmmaRadii.caseEmmaCard, style: .continuous)
+                    .strokeBorder(EmmaTheme.caseEmmaBorder, lineWidth: 1)
             }
             .contentShape(Rectangle())
         }

@@ -20,8 +20,11 @@ Backend           : repozytorium prywatne, brak dostępu
 | Bramka | Stan | Dowód |
 | --- | --- | --- |
 | Testy logiki domenowej i głosu | **wykonane** | `Executed 161 tests, with 0 failures (0 unexpected)` |
-| Kontrola składni wszystkich plików Swift (w tym SwiftUI) | **wykonana** | `Sprawdzono plików: 64, błędów składni: 0`
-| Kontrola odwołań do zależności i tokenów | **wykonana** | `brak odwołań bez deklaracji` | |
+| Kontrola składni wszystkich plików Swift (w tym SwiftUI) | **wykonana** | `Sprawdzono plików: 65, błędów składni: 0` |
+| Kontrola odwołań do zależności i typów systemowych | **wykonana** | `sprawdzono 1078 odwołań, brak odwołań bez deklaracji` |
+| Kontrola tokenów koloru wobec referencji | **wykonana** | `100 tokenów, 0 spoza referencji` |
+| Pomiar renderu podglądu dla Linuksa | **wykonany** | `5/5 czcionek, 0 przekroczeń szerokości, 0 ucięć, 0 nachodzenia` |
+| Eksport danych demo tym samym kodem co aplikacja | **wykonany** | `swift run EmmaPreviewExport` → 4 klientów, 2 sprawy, 4 rozmowy, 8 wiadomości |
 | Kontrola typów SwiftUI | **niewykonana** | wymaga kompilatora Apple |
 | Kompilacja projektu Xcode | **niewykonana** | wymaga macOS |
 | Testy jednostkowe w Xcode (`Cmd+U`) | **niewykonana** | wymaga macOS |
@@ -99,6 +102,43 @@ właściwych testów, co potwierdza, że nowe testy faktycznie coś sprawdzają.
 
 **Nadal niezweryfikowane:** kompilacja SwiftUI. Zmiany w warstwie iOS są tylko
 prze-parsowane — kontrola typów nastąpi na Macu.
+
+## Podgląd aplikacji bez MacBooka — co dokładnie pokazuje
+
+Na Linuksie nie ma SwiftUI, więc **nie da się** zbudować aplikacji ani zrobić zrzutu
+ekranu. Da się natomiast uruchomić prawdziwy kod danych i pokazać go w układzie referencji:
+
+```bash
+cd ios && ./scripts/start-preview.sh      # → http://127.0.0.1:8098/
+```
+
+Co w tym podglądzie jest prawdziwe (i skąd):
+
+| Element | Źródło | Bramka |
+| --- | --- | --- |
+| Dane demo (klienci, sprawy, zadania, wydarzenia, notatki, historia, rozmowy, wiadomości) | `MockRepository` + `DemoFixtures`, czytane przez publiczne API repozytorium | `swift run EmmaPreviewExport` |
+| Napisy („PIĄTEK, 11 WRZEŚNIA”, godziny, odmiana „3 zadania / 5 zadań”, briefing) | `DateTextFormatter`, `EmmaPlural`, `EmmaBriefing` — ten sam kod co ekrany | testy logiki |
+| Stany (107 stanów w 20 en-umach) | `displayName` z rdzenia: połączenie, tura, trasa audio, powód zakończenia, wykonanie akcji, błędy | odczyt z kodu |
+| Kolory, typografia, promienie, odstępy, orb | `EmmaTheme`, `EmmaTypography`, `EmmaMetrics`, `EmmaOrb` | krok 6 bramki |
+| Czcionki | prawdziwe pliki `DMSans-*.ttf` i `Manrope-*.ttf` z `Emma/Resources/Fonts` | pomiar renderu |
+| Układ ekranów | **rekonstrukcja referencji w HTML** — nie SwiftUI | pomiar renderu |
+
+Czego ten podgląd **nie** pokazuje: dokładnego układu SwiftUI, zawijania tekstu w komórkach,
+animacji, gestów, VoiceOver, Dynamic Type w kategorii XXXL (D-13) i wyglądu na urządzeniu.
+Nie ma w nim ramki telefonu ani sztucznego paska systemowego — zgodnie z planem.
+Podgląd jest generowany (`ios/.preview/index.html`) i nie trafia do repozytorium.
+
+Render podglądu jest **mierzony**, a nie oceniany „na oko”:
+
+```bash
+cd ios && python3 scripts/verify-preview-render.py
+```
+
+Skrypt uruchamia headless Firefoksa, wstrzykuje pomiar układu i sprawdza: wczytanie
+pięciu plików czcionek, brak wystawania poza szerokość okna, brak ucinania tekstu
+w kontenerach o stałej szerokości, brak nachodzenia rodzeństwa w kolumnach ekranów,
+brak pustych kart, obecność teł, zwinięcie tłumaczenia jak `<details>` w referencji.
+Bez przeglądarki mówi wprost „nie zmierzono” — nie udaje, że sprawdził.
 
 ## Droga do pierwszej kompilacji bez MacBooka
 

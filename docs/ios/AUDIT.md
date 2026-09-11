@@ -193,7 +193,7 @@ Audyt bez tej sekcji byłby listą zmian dla samych zmian.
 | `swift build` | 0 ostrzeżeń (przed: 5 kategorii ostrzeżeń) |
 | `swiftc -parse` | 64 pliki, 0 błędów składni |
 | Filtr odwołań | 0 odwołań do nieistniejących składowych |
-| `verify-linux-logic.sh` | 5/5 kroków bez zastrzeżeń |
+| `verify-linux-logic.sh` | 5/5 kroków bez zastrzeżeń (runda 1; runda 2 rozszerzyła bramkę do 7) |
 
 **Czego to nie dowodzi:** że kod się kompiluje w Xcode. Zmiany w `App/`, `Features/`,
 `DesignSystem/` i `VoiceAdapters/` są nadal tylko prze-parsowane — kontrola typów
@@ -201,7 +201,109 @@ i zależności od SwiftUI/UIKit nastąpi dopiero na Macu. Nowe elementy w tych w
 to: wywołania fabryk, wpięcie zdarzeń audio, skalowanie typografii i usunięcia typów.
 Logika (limity, korelacja, wyszukiwanie, trasa) jest w warstwie testowanej wykonaniem.
 
-## 7. Pierwsze kroki na Macu — kolejność z tego audytu
+
+## 7. Audyt runda 2 — czego nie widział filtr nazw (i widzi teraz)
+
+Runda 2 powstała z pytania „czy da się jeszcze coś poprawić”. Zamiast czytać kod
+trzeci raz, dołożyłem **cztery kontrole automatyczne**, które mają szukać tam, gdzie
+człowiek przestaje zauważać: martwe tokeny, kolory bez odpowiednika w referencji,
+odwołania do niezadeklarowanych składowych typów systemowych oraz pomiar renderu.
+
+### A-12 · Dziewiętnaście odwołań do `Color.<token>`, których nigdzie nie było — **zrobione**
+
+Najpoważniejsze znalezisko tej rundy i **błąd, który zatrzymałby pierwszy build**.
+
+W pięciu plikach widoków kod wołał `Color.emmaDockStatusText`,
+`Color.emmaActionHeadingText`, `Color.emmaListenText`, `Color.emmaSuggestionIcon`
+i trzynaście podobnych. Takiej składowej nie ma ani w `EmmaTheme`, ani w żadnym
+rozszerzeniu `Color` — tokeny nazywają się `EmmaTheme.dockStatusText`,
+`EmmaTheme.actionHeadingText` itd. Na Linuksie nikt tego nie zauważył, bo:
+
+* filtr odwołań (krok 3) sprawdzał wyłącznie uchwyty `EmmaTheme.`, `EmmaTypography.`,
+  `EmmaRadii.`, `EmmaSpacing.`, `EmmaMetrics.`, `dependencies.`, `repository.`, `voice.`,
+  `clock.`, `dataset.`, `dateText.` — **nie sprawdzał `Color.`**,
+* `swiftc -parse` sprawdza składnię, a `Color.emmaDockStatusText` jest składniowo poprawne.
+
+Naprawa: 24 odwołania zamienione na właściwe tokeny (`Color.emmaX` → `EmmaTheme.x`,
+a dla doku i akcji na nazwy bez przedrostka `emma`). Filtr odwołań rozszerzony tak,
+by każdy uchwyt typu systemowego (`Color`, `Font`, `Image`, `ShapeStyle`) musiał być
+albo składową systemową z jawnej listy, albo **zadeklarowany w rozszerzeniu tego typu**.
+Test mutacyjny: wstrzyknięcie `Color.emmaBogusToken` do `VoiceDock.swift` wywala filtr
+z komunikatem, po cofnięciu — zielono.
+
+### A-13 · Tokeny bez zastosowania i token wymyślony — **zrobione**
+
+Skan „zadeklarowane, nigdzie nieużyte” wskazał dziesięć tokenów. Po naprawie A-12
+zostało pięć, z czego trzy usunięte:
+
+| Token | Co było | Decyzja |
+| --- | --- | --- |
+| `emmaCardMuted` | koloru `#9FB0C4` **nie ma w referencji** w ogóle | usunięty jako wymyślony |
+| `focusRing` | `#91AFD0` to `:focus-visible` z CSS — pojęcie przeglądarki | usunięty; na iOS fokus rysuje system |
+| `sheetHandle` | `#C9D0D9` to `.handle` z arkusza HTML | usunięty; arkusz używa systemowego uchwytu (`presentationDragIndicator`) |
+| `emmaGradientStart` / `emmaGradientEnd` | gradient `.case-emma` `110deg` | **zostawione i użyte** — patrz A-14 |
+
+### A-14 · Karta „Przygotuj mnie do tej sprawy” nie wyglądała jak w referencji — **zrobione**
+
+Porównanie z regułą `.case-emma` pokazało pięć różnic naraz: brak gradientu
+(`linear-gradient(110deg,#eaf0f6,#f6f8fa)`) zastąpiony białym tłem, promień 17 pt
+zamiast 14, orb 37 pt zamiast 32, tytuł 14 pt zamiast 13, podtytuł 11 pt w `muted`
+zamiast 10 pt w `#8494A7`, ikona 15 pt w `mutedSoft` zamiast 18 pt w `#557799`
+i padding 15/16 zamiast 14. Dodane tokeny `caseEmmaBorder`, `caseEmmaSubtitle`,
+`caseEmmaIcon`, `EmmaRadii.caseEmmaCard`, `EmmaSpacing.caseEmmaGap` mają komentarze
+z selektorem referencji, więc następna osoba nie zgadnie, skąd te liczby.
+
+### A-15 · Tłumaczenie w dymku było zawsze rozwinięte i miało wymyślony kolor — **zrobione**
+
+Referencja trzyma tłumaczenie w `<details>` — czyli **zwinięte**, z nagłówkiem
+„Tłumaczenie”, linią `#E1E7EE` nad treścią i osobnymi kolorami etykiety (`#627790`)
+i treści (`#4E6178`). Aplikacja pokazywała całość od razu, etykietę 10 pt semibold
+z rozstrzeleniem i kolor `#5E6E80`, którego w referencji nie ma. Teraz: zwijane,
+z `@State` w dymku, linią, odstępami 9/8 pt i trzema właściwymi kolorami
+(`bubbleTranslationRule`, `bubbleTranslationLabel`, `bubbleTranslationText`).
+
+### A-16 · Dwa kolory bez odpowiednika w referencji — **zrobione**
+
+`translationText` (patrz A-15) oraz `weekControlText` = `#4C6480`, gdy
+`.week-controls .icon-button` ma `#69819b`. Oba poprawione; kontrole kolorów
+(nowy krok 6 bramki) nie znajdują już żadnego wymyślonego koloru w 100 tokenach.
+
+### A-17 · Briefing „Dzisiaj” był uwięziony w pliku SwiftUI — **zrobione**
+
+`TodayStore.briefing` i `TodayStore.vocative` leżały w `TodayScreen.swift`. Skutek
+praktyczny: tego samego napisu nie mogły użyć ani testy logiki, ani podgląd na
+Linuksie — a więc prędzej czy później powstałaby druga kopia. Przeniesione do
+`Emma/Core/Domain/EmmaBriefing.swift` (warstwa kompilowana i testowana na Linuksie),
+ekran woła `EmmaBriefing.briefing(...)`. To ta sama zasada, co przy A-05/A-07:
+jedna funkcja, jedno miejsce.
+
+### A-18 · Filtr odwołań zaniżał własny zasięg — **zrobione**
+
+Komunikat końcowy mówił „sprawdzono, brak odwołań bez deklaracji (**0 kandydatów**)",
+bo licznik zwiększał się tylko przy znalezieniu problemu. Wyglądało to jak brak
+kontroli. Teraz licznik liczy wszystkie sprawdzone odwołania: **1078**, w tym
+rozszerzenia typów systemowych.
+
+### Narzędzia dodane w tej rundzie
+
+| Narzędzie | Co sprawdza | Kiedy się myli |
+| --- | --- | --- |
+| `scripts/check-cross-references.py` (rozszerzony) | uchwyty zależności **oraz** składowe typów systemowych | nie zna typów spoza listy uchwytów |
+| `scripts/design-token-diff.py` | wartości użyte w komponencie wobec reguł CSS referencji; rozdziela „kolor wymyślony” (błąd) od „token współdzielony” (do oka) | selektory potomne poza listą komponentu |
+| `scripts/verify-preview-render.py` | **prawdziwy render** podglądu: czcionki, wystawanie poza okno, ucinanie tekstu, nachodzenie elementów, tła, zwinięcie tłumaczenia | wymaga przeglądarki; bez niej mówi „nie zmierzono” |
+
+### Runda 2 w liczbach
+
+| Metoda | Wynik |
+| --- | --- |
+| `verify-linux-logic.sh` | **7/7** kroków bez zastrzeżeń (było 5) |
+| `swift test` | 161 testów, 0 błędów |
+| `swiftc -parse` | 65 plików, 0 błędów składni |
+| Filtr odwołań | 1078 odwołań sprawdzonych, 0 bez deklaracji |
+| Kontrola kolorów | 100 tokenów koloru, **0** spoza referencji |
+| Pomiar renderu podglądu | 5/5 czcionek, 0 przekroczeń szerokości, 0 ucięć, 0 nachodzenia |
+
+## 8. Pierwsze kroki na Macu — kolejność z tego audytu
 
 1. `./scripts/generate-project.sh`, build, naprawa błędów typów (lista w `BUILD_AND_DEVICE_STATUS.md`).
 2. Sprawdzić **D-13**: duży Dynamic Type w kategorii XXXL — czy nic się nie obcina.

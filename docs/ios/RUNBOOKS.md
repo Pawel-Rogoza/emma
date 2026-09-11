@@ -113,3 +113,39 @@ i inna decyzja właściciela.
 
 **Czego nie wolno:** deklarować kompilacji, uruchomienia na symulatorze ani testu na
 iPhonie bez wykonania tych kroków.
+
+---
+
+## R-9 · Podgląd na Linuksie pokazuje coś innego niż prototyp
+
+**Objaw:** w `http://127.0.0.1:8098/` element wygląda inaczej niż w prototypie
+(`reference/prototype/index.html`).
+
+**Co robić:**
+1. Sprawdzić, czy to podgląd, czy kod. Podgląd jest rekonstrukcją w HTML — błąd
+   w podglądzie **nie** jest jeszcze błędem aplikacji.
+2. Uruchomić `python3 scripts/design-token-diff.py <komponent>` i porównać wartości
+   użyte w Swift z regułami referencji. Kategoria `✗ kolory spoza referencji` to błąd
+   zawsze; `· token współdzielony` wymaga oka.
+3. Jeśli różnica jest w kodzie — naprawić kod i token, nie podgląd.
+4. Jeśli różnica jest w podglądzie — naprawić podgląd (to tylko narzędzie).
+
+**Czego nie wolno:** uznawać przejścia pomiaru renderu za dowód zgodności z referencją.
+Pomiar sprawdza, czy strona się nie rozjeżdża, a nie czy wygląda jak prototyp.
+
+---
+
+## R-10 · Podgląd nie chce się zbudować albo pokazuje stare dane
+
+**Objaw:** `start-preview.sh` kończy się błędem, strona jest pusta albo pokazuje dane
+z poprzedniej wersji.
+
+**Co robić:**
+1. Sprawdzić, czy Swift jest widoczny: `swift --version`. Skrypt sam dodaje
+   `~/.local/swift/usr/bin` i `~/.local/libshim`, jeśli nie ma go w `PATH`.
+2. Uruchomić sam eksporter: `swift run EmmaPreviewExport` (w `ios/`). Błąd kompilacji
+   oznacza, że zmienił się model domenowy — poprawić `EmmaPreview/Export.swift`.
+3. Przebudować podgląd: `python3 scripts/build-preview.py`. Strona nie odświeża się sama.
+4. Sprawdzić, czy port nie jest zajęty: `PORT=8099 ./scripts/start-preview.sh`.
+5. Gdy brak przeglądarki: `python3 scripts/verify-preview-render.py` powie wprost,
+   że nie zmierzył renderu — wtedy podgląd jest wyłącznie wygenerowany, a nie sprawdzony.

@@ -17,3 +17,9 @@ build/
 
 # Systemowe
 .DS_Store
+
+# Podgląd dla Linuksa: generowany z kodu, nie commitujemy artefaktu
+ios/.preview/
+
+# Cache Pythona ze skryptów kontrolnych
+__pycache__/

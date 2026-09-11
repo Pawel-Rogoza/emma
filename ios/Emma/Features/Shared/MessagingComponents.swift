@@ -152,6 +152,11 @@ struct ReceiptMark: View {
 
 struct MessageBubble: View {
 
+    /// Tłumaczenie jest zwinięte, dopóki użytkownik go nie rozwinie — jak `<details>`
+    /// w referencji. Stan żyje w dymku, więc nie rozjeżdża się między wiadomościami.
+    @State private var isTranslationExpanded = false
+
+
     let message: Message
     let senderLabel: String
     let showsAuthor: Bool
@@ -260,21 +265,44 @@ struct MessageBubble: View {
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 
+    /// Tłumaczenie w dymku. Referencja trzyma je w `<details>` — czyli **zwinięte**,
+    /// z rozwijanym nagłówkiem „Tłumaczenie” i linią oddzielającą od treści.
+    /// Wartości z reguł `.bubble-translation`: linia `#E1E7EE`, odstęp 9 pt nad linią
+    /// i 8 pt pod nią, etykieta 13 pt `#627790`, treść 14 pt `#4E6178`.
     @ViewBuilder
     private func translationView(_ translation: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text("Tłumaczenie")
-                .font(EmmaTypography.ui(10, .semibold))
-                .tracking(0.6)
-                .foregroundStyle(EmmaTheme.mutedSoft)
-            Text(translation)
-                .font(EmmaTypography.body(for: translation, size: 13))
-                .foregroundStyle(EmmaTheme.translationText)
-                .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                isTranslationExpanded.toggle()
+            } label: {
+                Text("Tłumaczenie")
+                    .font(EmmaTypography.body(for: translation, size: 13))
+                    .foregroundStyle(EmmaTheme.bubbleTranslationLabel)
+                    .frame(minHeight: 28, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Tłumaczenie")
+            .accessibilityHint(isTranslationExpanded ? "Zwiń tłumaczenie" : "Rozwiń tłumaczenie")
+
+            if isTranslationExpanded {
+                Text(translation)
+                    .font(EmmaTypography.body(for: translation, size: 14))
+                    .foregroundStyle(EmmaTheme.bubbleTranslationText)
+                    .lineSpacing(4)
+                    .padding(.vertical, 5)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Tłumaczenie: \(translation)")
+            }
         }
-        .padding(.top, 2)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Tłumaczenie: \(translation)")
+        .padding(.top, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(EmmaTheme.bubbleTranslationRule)
+                .frame(height: 1)
+        }
+        .padding(.top, 9)
     }
 
     private var clockText: String {

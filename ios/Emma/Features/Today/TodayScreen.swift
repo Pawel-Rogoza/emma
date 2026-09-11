@@ -67,9 +67,9 @@ final class TodayStore: ObservableObject {
             phase = .loaded(
                 Model(
                     today: today,
-                    greetingName: Self.vocative(dependencies.currentUser.displayName),
+                    greetingName: EmmaBriefing.vocative(dependencies.currentUser.displayName),
                     userInitials: dependencies.currentUser.initials,
-                    briefing: Self.briefing(
+                    briefing: EmmaBriefing.briefing(
                         events: todayEvents,
                         tasks: tasks,
                         waitingForReply: clients.filter(\.needsReply),
@@ -92,46 +92,9 @@ final class TodayStore: ObservableObject {
     }
 
     /// „Tomasz” → „Tomaszu”. Referencja odmieniała imiona na sztywno.
-    static func vocative(_ name: String) -> String {
-        guard let first = name.split(separator: " ").first.map(String.init) else { return name }
-        switch first {
-        case "Tomasz": return "Tomaszu"
-        case "Paweł": return "Pawle"
-        default: return first
-        }
-    }
-
+    
     /// Treść briefingu — port `briefing()` z referencji, z tymi samymi zdaniami.
-    static func briefing(
-        events: [ScheduledEvent],
-        tasks: [TaskItem],
-        waitingForReply: [Client],
-        clientNames: [ClientID: String]
-    ) -> String {
-        let relevant = events.filter { $0.status != .finished }.sorted { $0.time < $1.time }
-        var lines: [String] = []
-        lines.append("Dzisiaj w zespole: \(EmmaPlural.label(relevant.count, "wydarzenie", "wydarzenia", "wydarzeń")).")
-        for event in relevant {
-            let who = clientNames[event.clientID] ?? "Klient"
-            var line = "\(event.time.hhmm): \(who), \(event.title). Prowadzący: \(event.ownerLabel)."
-            if event.status == .toConfirm { line += " Termin czeka na potwierdzenie." }
-            lines.append(line)
-        }
-        lines.append("")
-        if tasks.isEmpty {
-            lines.append("Do załatwienia: brak otwartych zadań na dziś.")
-        } else {
-            let list = tasks.map { "\($0.title) (\(OwnerName.of($0.ownerID)))" }.joined(separator: "; ")
-            lines.append("Do załatwienia: \(list).")
-        }
-        if waitingForReply.isEmpty {
-            lines.append("Wszystkie rozmowy zaopiekowane.")
-        } else {
-            lines.append("Na odpowiedź czekają: \(waitingForReply.map(\.displayName).joined(separator: ", ")).")
-        }
-        return lines.joined(separator: "\n")
     }
-}
 
 struct TodayScreen: View {
 

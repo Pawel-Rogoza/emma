@@ -36,7 +36,7 @@ struct VoiceDock: View {
             HStack(spacing: 8) {
                 Text(stateLabel)
                     .font(EmmaTypography.ui(10))
-                    .foregroundStyle(Color.emmaDockStatusText)
+                    .foregroundStyle(EmmaTheme.dockStatusText)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel("Stan rozmowy: \(stateLabel)")
                     // Zamrożona sygnatura przewiduje przełącznik odpowiedzi głosowych;
@@ -59,7 +59,7 @@ struct VoiceDock: View {
             // Połączenie i mikrofon mówimy wprost — nigdy wyłącznie kolorem (§5.5).
             Text("Połączenie: \(state.connection.displayName) · Mikrofon: \(state.microphone.displayName) · Tryb: \(state.mode.displayName)")
                 .font(EmmaTypography.ui(10))
-                .foregroundStyle(Color.emmaDockStatusText)
+                .foregroundStyle(EmmaTheme.dockStatusText)
                 .fixedSize(horizontal: false, vertical: true)
 
             if let toolLabel = state.toolLabel {
@@ -74,10 +74,10 @@ struct VoiceDock: View {
         .padding(.top, 8)
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.emmaDockBackground)
+        .background(EmmaTheme.dockBackground)
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(Color.emmaDockBorder)
+                .fill(EmmaTheme.dockBorder)
                 .frame(height: 1)
         }
     }
@@ -102,7 +102,7 @@ struct VoiceDock: View {
                 Text(title)
                     .font(EmmaTypography.ui(10))
             }
-            .foregroundStyle(Color.emmaDockActionText)
+            .foregroundStyle(EmmaTheme.dockActionText)
             .frame(minHeight: EmmaSpacing.hitTarget)
             .contentShape(Rectangle())
         }

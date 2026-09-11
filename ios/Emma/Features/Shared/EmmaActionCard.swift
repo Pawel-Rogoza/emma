@@ -119,10 +119,10 @@ struct EmmaActionCard: View {
             HStack(spacing: 6) {
                 Image(systemName: proposal.kind.emmaIconName)
                     .font(.system(size: 15, weight: .regular))
-                    .foregroundStyle(Color.emmaActionHeadingText)
+                    .foregroundStyle(EmmaTheme.actionHeadingText)
                 Text(proposal.kind.displayName)
                     .font(EmmaTypography.ui(11))
-                    .foregroundStyle(Color.emmaActionHeadingText)
+                    .foregroundStyle(EmmaTheme.actionHeadingText)
             }
             Spacer(minLength: 7)
             StatusPill(stateText, kind: pillKind)
@@ -136,7 +136,7 @@ struct EmmaActionCard: View {
         if let meta = taskMeta {
             Text(meta)
                 .font(EmmaTypography.ui(11))
-                .foregroundStyle(Color.emmaActionMetaText)
+                .foregroundStyle(EmmaTheme.actionMetaText)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 12)
         }
@@ -240,7 +240,7 @@ struct EmmaActionCard: View {
                 : "Potwierdzenie głosem nie jest uzbrojone: wykonanie wymaga przycisku „\(proposal.kind.confirmLabel)” na ekranie."
         )
         .font(EmmaTypography.ui(11))
-        .foregroundStyle(Color.emmaListenText)
+        .foregroundStyle(EmmaTheme.emmaListenText)
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityLabel(isArmedForVoice
             ? "Potwierdzenie głosem uzbrojone. Możesz też użyć przycisku."
@@ -270,7 +270,7 @@ struct EmmaActionCard: View {
             if let note = settledNote {
                 Text(note)
                     .font(EmmaTypography.ui(11))
-                    .foregroundStyle(Color.emmaActionMetaText)
+                    .foregroundStyle(EmmaTheme.actionMetaText)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

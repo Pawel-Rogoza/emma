@@ -112,3 +112,31 @@ Uczciwie, bez upiększania:
 - Kompilacja SwiftUI, testy na symulatorze i test na iPhonie **nie zostały wykonane**
   w środowisku, w którym powstawał kod (brak macOS i Xcode). Szczegóły i tabela bramek:
   `docs/ios/BUILD_AND_DEVICE_STATUS.md`.
+
+---
+
+## 9. Podgląd bez MacBooka (na Linuksie)
+
+Jeśli nie masz przy sobie Maca, a chcesz zobaczyć, co aplikacja pokaże, jest podgląd
+generowany z kodu — bez udawania, że jest to build:
+
+```bash
+cd ios
+./scripts/start-preview.sh          # → http://127.0.0.1:8098/
+```
+
+Podgląd pokazuje **prawdziwe** dane demo (czytane przez `MockRepository`), prawdziwe
+napisy (`DateTextFormatter`, `EmmaPlural`, `EmmaBriefing`), prawdziwe czcionki z repo,
+wszystkie stany z en-ów rdzenia i tokeny projektowe odczytane z `EmmaTheme`,
+`EmmaTypography`, `EmmaMetrics` i `EmmaOrb`. **Układ ekranów jest rekonstrukcją
+referencji w HTML**, więc nie jest to render SwiftUI ani zrzut ekranu iPhone'a —
+nagłówek strony mówi to wprost, żeby nikt nie pomylił podglądu z dowodem działania.
+
+Render podglądu jest mierzony w prawdziwej przeglądarce:
+
+```bash
+python3 scripts/verify-preview-render.py
+```
+
+Szczegóły i granice tego narzędzia: `docs/ios/BUILD_AND_DEVICE_STATUS.md`
+(sekcja „Podgląd aplikacji bez MacBooka”) oraz `docs/ios/RUNBOOKS.md` (R-9, R-10).
