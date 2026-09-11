@@ -137,6 +137,117 @@ wskaźnik strony głównej i podpis podglądu — nie są częścią aplikacji.
 
 ---
 
+## Etapy 07–16 · Stan każdego wymagania
+
+Zasada z bramki M3: **każde brakujące wymaganie ma jawny status i przyczynę.**
+Poniżej pełna lista, bez pomijania pozycji niewygodnych.
+
+### Etap 07 · API mobilne, autoryzacja i cache
+
+| Wymaganie | Stan | Uwaga |
+| --- | --- | --- |
+| Kontrakt OpenAPI | **dostarczone** (propozycja) | `docs/ios/api/emma-mobile-api.yaml` — 24 ścieżki, 29 operacji, 33 schematy; struktura sprawdzana skryptem |
+| Przykładowe payloady | **dostarczone** | przykłady w polach `example` i w schematach żądań |
+| Lista testów logowania/refresh/revoke, paginacji, 401/403, konfliktów, offline | **dostarczone** | `docs/ios/api/CONTRACT_TEST_CHECKLIST.md` (A–G, 40 sprawdzeń) |
+| Wdrożenie kontraktów w backendzie | **blocked_external** | repozytorium backendu niedostępne z tego środowiska |
+| Testy logowania/refresh/revoke wykonane | **niezweryfikowane** | brak serwera |
+| Repozytoria live i cache lokalny | **blocked_external** | aplikacja ma jedno miejsce podmiany (`MockRepository` → repozytorium zdalne) |
+| Zapisy nie blokują wątku UI | **zaprojektowane** | repozytorium to `actor`; potwierdzenie wymaga urządzenia |
+
+### Etap 08 · realtime i push
+
+| Wymaganie | Stan | Uwaga |
+| --- | --- | --- |
+| Kontrakt zmian (`/sync/changes`) i rejestracji push | **dostarczone** (propozycja) | w tym samym pliku kontraktu |
+| Znacznik kursora i brak luki | **zaprojektowane** | aplikacja odrzuca zdarzenia starsze niż kursor |
+| APNs, routing po tap | **niezaimplementowane** | brak podpisania i provisioningu; nie deklarowano inaczej |
+| Testy DEV/PROD APNs | **blocked_external** | wymaga konta deweloperskiego Apple |
+
+### Etap 09 · prawdziwy voice na danych syntetycznych
+
+| Wymaganie | Stan | Uwaga |
+| --- | --- | --- |
+| Adapter oficjalnego SDK | **zaimplementowany**, nieuruchomiony | `#if canImport(ElevenLabs)`, wersje przypięte w `project.yml` |
+| Token rozmowy z backendu | **zaimplementowany** (klient) | brak serwera → `blocked_external` |
+| Cykl życia audio natywnego | **zaimplementowany**, nieuruchomiony | jeden kontroler sesji dla rozmowy, dyktowania i odsłuchu |
+| Tabela capabilities | **zapisana z dokumentacji** | `docs/ios/research/elevenlabs-swift-sdk.md`; pomiar na koncie: `blocked_external` |
+| Test na fizycznym iPhonie, Bluetooth | **niezweryfikowane** | brak macOS i urządzenia |
+| Spike na koncie dostawcy | **blocked_external** | brak konta |
+
+### Etap 10 · wspólne narzędzia, akcje i voice z CRM
+
+| Wymaganie | Stan | Uwaga |
+| --- | --- | --- |
+| Jeden silnik akcji dla UI i głosu | **zaimplementowany** | `ActionEngine` + `VoiceSessionCoordinator` |
+| Zgoda tylko z przycisku albo uwierzytelnionej tury | **zaimplementowane i przetestowane** | `languageModelArgument` odrzucany; testy w `VoiceAndActionTests` |
+| Idempotencja potwierdzenia | **zaimplementowana i przetestowana** | powtórzenie zwraca to samo wykonanie |
+| Korekta unieważnia zgodę | **zaimplementowana i przetestowana** | zmiana hashu i identyfikatora prezentacji |
+| Niepewny wynik bez ponowienia | **zaimplementowane i przetestowane** | `ExecutionState.unknown` |
+| Trwały outbox i claim przez dwa procesy | **blocked_external** | należy do backendu; po stronie klienta jest tylko model stanu |
+| Wykonanie narzędzi u dostawcy po stronie backendu | **blocked_external** | brak backendu i konta |
+
+### Etap 11 · WhatsApp Business, inbound i koegzystencja
+
+| Wymaganie | Stan | Uwaga |
+| --- | --- | --- |
+| Analiza koegzystencji i wymogów | **dostarczona** | `docs/ios/research/whatsapp-coexistence.md` |
+| Instrukcja podłączenia numeru | **dostarczona** | `docs/ios/WHATSAPP_ONBOARDING.md`, z warunkami zatrzymania |
+| Webhook, dedup, statusy w backendzie | **blocked_external** | wymaga Tech Providera i backendu |
+| Aplikacja nie udaje połączenia | **zaimplementowane** | stopka listy rozmów mówi wprost o braku połączenia |
+| Prawdziwa wiadomość widoczna w iOS | **blocked_external** | brak konta |
+| Niezmienność numeru właściciela | **zapisane jako warunek** | kroki wymagające zmiany numeru są zabronione i zatrzymują proces |
+
+### Etap 12 · WhatsApp outbound z composera i voice
+
+| Wymaganie | Stan | Uwaga |
+| --- | --- | --- |
+| ścieżka prepare → revise → present → confirm → outbox | **zaimplementowana w logice** | UI i mock głosu; wykonanie kończy się na outboxie |
+| Rzeczywiste receipts | **blocked_external** | brak dostawcy |
+| Stan unknown i recovery | **zaimplementowane** | brak automatycznego ponowienia |
+| Testy timeoutu, restartu workera, okna 24 h | **blocked_external** | należą do backendu |
+
+### Etap 13 · niezawodność i odbiór M2b
+
+| Wymaganie | Stan | Uwaga |
+| --- | --- | --- |
+| Macierz audio/sieci na urządzeniu | **niezweryfikowane** | brak urządzenia |
+| Pomiar latencji i kosztów | **niezweryfikowane** | brak konta i urządzenia |
+| Brak nagrywania po końcu sesji | **zaprojektowane** | zwolnienie zasobu audio po zakończeniu; potwierdzenie wymaga urządzenia |
+| Voice po zablokowaniu ekranu | **jawnie nieobsługiwane** | nie deklarowano wsparcia tła; flaga Background Modes nie jest dowodem |
+
+### Etap 14 · dokumenty, media i długie joby
+
+| Wymaganie | Stan | Uwaga |
+| --- | --- | --- |
+| Całość zakresu | **niezaimplementowane** | świadomie poza M1; wymaga backendu, workera i storage |
+
+### Etap 15 · analiza prawna i projekty pism
+
+| Wymaganie | Stan | Uwaga |
+| --- | --- | --- |
+| Całość zakresu | **niezaimplementowane** | zależne od etapu 14 i konta modelu; brak potwierdzonego kontraktu Qwen |
+
+### Etap 16 · przekazanie i pilot
+
+| Wymaganie | Stan | Uwaga |
+| --- | --- | --- |
+| Audyt designu bez regresji | **częściowo** | brak porównania zrzutów (brak symulatora) |
+| Instrukcja Xcode i konfiguracja bez sekretów | **dostarczone** | `ios/README-XCODE.md` |
+| Runbooki | **częściowo** | `WHATSAPP_ONBOARDING.md`, `PROVIDER_CONTRACT_TESTS.md`, `api/CONTRACT_TEST_CHECKLIST.md`; brak runbooka rollbacku backendu (należy do backendu) |
+| Wyniki kompilacji i testów | **dostarczone dla tego, co wykonalne** | 142 testy logiki, 63 pliki sprawdzone składniowo; kompilacja Xcode: nieuruchomiona |
+| Test migracji, backup/restore, rollback bez ponownych wysyłek | **blocked_external** | należy do backendu |
+| Tag/SHA wydania | **dostarczone** | commity w repozytorium; tag wydania po pierwszej kompilacji na Macu |
+
+### Podsumowanie luk
+
+- **Dostarczone i sprawdzone w tym środowisku:** logika domeny, głos (mocki), silnik akcji,
+  design system, wszystkie ekrany M1, kontrakt API jako propozycja, instrukcje i raporty.
+- **Zaimplementowane, nieuruchomione:** adaptery dostawcy i mowy systemu.
+- **blocked_external:** backend, konta dostawców, WhatsApp, Qwen, urządzenie i symulator.
+- **Jawnie niezaimplementowane:** etapy 14 i 15 oraz push (etap 08) — bez deklarowania inaczej.
+
+---
+
 ## Bramki jakości — stan faktyczny
 
 | Bramka | Stan |

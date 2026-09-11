@@ -1,0 +1,1304 @@
+openapi: 3.1.0
+info:
+  title: Emma — API mobilne (kontrakt wymagany przez aplikację iOS)
+  version: 0.1.0-draft
+  description: |
+    **Status: propozycja kontraktu, niezweryfikowana z działającym backendem.**
+
+    Ten plik opisuje wyłącznie to, czego aplikacja iOS potrzebuje od backendu.
+    Powstał, ponieważ repozytorium backendu było niedostępne w środowisku, w którym
+    pisano aplikację (`blocked_external`). Nie jest opisem istniejącej implementacji
+    i nie został uruchomiony przeciw żadnemu serwerowi.
+
+    Zasady, których ten kontrakt pilnuje:
+
+    * **Aplikacja nigdy nie widzi kluczy dostawców.** Token rozmowy głosowej wydaje
+      backend; klucz dostawcy zostaje po stronie serwera.
+    * **Jedno miejsce wykonania akcji.** UI i głos używają jednego silnika akcji;
+      potwierdzenie z argumentu modelu językowego nie jest zgodą.
+    * **Zapis jest idempotentny.** Powtórzone żądanie zwraca to samo wykonanie,
+      nie tworzy drugiego.
+    * **Blokada optymistyczna.** Każdy zapis niesie wersję; konflikt jest błędem,
+      a nie cichym nadpisaniem.
+    * **Niepewny wynik nie jest sukcesem.** Stan `unknown` musi dać się rozstrzygnąć
+      osobnym odczytem, bez automatycznego ponowienia.
+
+    Nazwy typów odpowiadają typom domenowym aplikacji, żeby mapowanie było jednoznaczne.
+
+servers:
+  - url: https://api.example.invalid/v1
+    description: Adres przykładowy — właściwy pochodzi z `EMMA_API_BASE_URL` w `.xcconfig`.
+
+tags:
+  - name: Sesja
+  - name: Odczyt
+  - name: Zapis
+  - name: Wiadomości
+  - name: Akcje
+  - name: Głos
+  - name: Synchronizacja
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ---------------------------------------------------------------- Sesja
+
+  /auth/login:
+    post:
+      tags: [Sesja]
+      summary: Logowanie i wydanie pary tokenów
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, installation_id]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+                installation_id:
+                  type: string
+                  description: Identyfikator instalacji aplikacji; wiąże sesję z urządzeniem.
+                device_name: { type: string }
+      responses:
+        "200":
+          description: Sesja utworzona
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthSession" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /auth/refresh:
+    post:
+      tags: [Sesja]
+      summary: Odnowienie tokenu dostępu
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token, installation_id]
+              properties:
+                refresh_token: { type: string }
+                installation_id: { type: string }
+      responses:
+        "200":
+          description: Nowa para tokenów
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthSession" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/revoke:
+    post:
+      tags: [Sesja]
+      summary: Odwołanie sesji urządzenia
+      description: |
+        Wymagane przy wylogowaniu oraz przy zmianie konta na tym samym urządzeniu.
+        Aplikacja kończy wtedy sesję głosową i czyści stan lokalny — nie może
+        pozostawić aktywnego mikrofonu ani cudzych odczytów.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [installation_id]
+              properties:
+                installation_id: { type: string }
+                reason:
+                  type: string
+                  enum: [logout, account_switch, device_lost, security]
+      responses:
+        "204": { description: Sesja odwołana }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  # ---------------------------------------------------------------- Odczyt
+
+  /briefing:
+    get:
+      tags: [Odczyt]
+      summary: Zbiorczy odczyt dnia (bez N+1)
+      description: |
+        Jedno żądanie zwraca wszystko, co potrzebuje ekran „Dzisiaj”: zadania,
+        terminy, nieprzeczytane rozmowy i skrót spraw. Backend nie może wymagać
+        osobnego żądania na klienta.
+      parameters:
+        - name: day
+          in: query
+          required: true
+          schema: { $ref: "#/components/schemas/LocalDate" }
+        - name: user_id
+          in: query
+          schema: { type: string }
+          description: Wymagane tylko dla konta z dostępem do wielu prawników.
+      responses:
+        "200":
+          description: Skrót dnia
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Briefing" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /clients:
+    get:
+      tags: [Odczyt]
+      summary: Lista klientów
+      parameters:
+        - name: query
+          in: query
+          schema: { type: string }
+        - name: stage
+          in: query
+          schema:
+            type: string
+            enum: [new, in_contact, client]
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+      responses:
+        "200":
+          description: Strona klientów
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Page"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/Client" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+    post:
+      tags: [Zapis]
+      summary: Utworzenie kontaktu
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NewClient" }
+      responses:
+        "201":
+          description: Klient utworzony
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Client" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /clients/{client_id}:
+    get:
+      tags: [Odczyt]
+      summary: Karta klienta wraz z kontekstem
+      parameters:
+        - $ref: "#/components/parameters/ClientID"
+      responses:
+        "200":
+          description: Klient, sprawa, terminy, notatki i wątek
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClientCard" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+    patch:
+      tags: [Zapis]
+      summary: Zmiana danych klienta
+      parameters:
+        - $ref: "#/components/parameters/ClientID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version]
+              properties:
+                expected_version: { $ref: "#/components/schemas/Version" }
+                display_name: { type: string }
+                stage: { type: string, enum: [new, in_contact, client] }
+                owner_id: { type: [string, "null"] }
+                needs_reply: { type: boolean }
+      responses:
+        "200":
+          description: Klient po zmianie
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Client" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /cases/{case_id}:
+    get:
+      tags: [Odczyt]
+      summary: Sprawa z zadaniami, terminami i historią
+      parameters:
+        - $ref: "#/components/parameters/CaseID"
+      responses:
+        "200":
+          description: Sprawa
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CaseDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /tasks:
+    get:
+      tags: [Odczyt]
+      summary: Lista zadań z filtrami
+      parameters:
+        - name: scope
+          in: query
+          schema:
+            type: string
+            enum: [open, done, all]
+            default: open
+        - name: owner_id
+          in: query
+          schema: { type: string }
+        - name: due_on_or_before
+          in: query
+          schema: { $ref: "#/components/schemas/LocalDate" }
+        - name: client_id
+          in: query
+          schema: { type: string }
+        - name: case_id
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Zadania
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Task" }
+
+    post:
+      tags: [Zapis]
+      summary: Utworzenie zadania
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NewTask" }
+      responses:
+        "201":
+          description: Zadanie utworzone
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+
+  /events:
+    get:
+      tags: [Odczyt]
+      summary: Terminy w zakresie dat
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { $ref: "#/components/schemas/LocalDate" }
+        - name: through
+          in: query
+          required: true
+          schema: { $ref: "#/components/schemas/LocalDate" }
+        - name: owner_id
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Terminy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/ScheduledEvent" }
+
+  /threads:
+    get:
+      tags: [Wiadomości]
+      summary: Lista rozmów z licznikami nieprzeczytanych
+      description: |
+        Liczniki są liczone **per użytkownik**. Ta sama rozmowa może być
+        nieprzeczytana dla jednego prawnika i przeczytana dla drugiego.
+      parameters:
+        - name: user_id
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Rozmowy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/ThreadSummary" }
+                  unread_total: { type: integer, minimum: 0 }
+
+  /threads/{thread_id}/messages:
+    get:
+      tags: [Wiadomości]
+      summary: Historia rozmowy (stronicowana)
+      parameters:
+        - name: thread_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: before_sequence
+          in: query
+          schema: { type: integer }
+          description: Pobiera wiadomości starsze niż podany numer.
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 30 }
+      responses:
+        "200":
+          description: Wiadomości w kolejności rosnącej
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Message" }
+                  high_watermark: { type: integer }
+
+    post:
+      tags: [Wiadomości]
+      summary: Wysyłka wiadomości do klienta
+      description: |
+        Wysyłka przechodzi przez kolejkę z kluczem idempotencji. Wiadomość
+        wraca w stanie `pending`; status dostarczenia **wyłącznie** z zdarzeń
+        dostawcy — aplikacja nie może pokazać „dostarczono” na podstawie własnego
+        przypuszczenia.
+      parameters:
+        - name: thread_id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OutgoingMessage" }
+      responses:
+        "202":
+          description: Wiadomość przyjęta do wysyłki
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429":
+          description: Przekroczony limit tempa — żądanie do ponowienia po wskazanym czasie
+          headers:
+            Retry-After:
+              schema: { type: integer }
+
+  /threads/{thread_id}/read-state:
+    put:
+      tags: [Wiadomości]
+      summary: Ustawienie kursora odczytu
+      description: |
+        Kursor może się wyłącznie przesuwać do przodu. Próba cofnięcia jest
+        odrzucana, a nie „naprawiana” po cichu — inaczej użytkownik zobaczyłby
+        ponownie wiadomości, które już przeczytał.
+      parameters:
+        - name: thread_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [read_cursor_sequence, expected_version]
+              properties:
+                read_cursor_sequence: { type: integer, minimum: 0 }
+                manual_unread: { type: boolean }
+                is_pinned: { type: boolean }
+                expected_version: { $ref: "#/components/schemas/Version" }
+      responses:
+        "200":
+          description: Stan odczytu
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThreadUserState" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  # ---------------------------------------------------------------- Zapis
+
+  /cases:
+    post:
+      tags: [Zapis]
+      summary: Rozpoczęcie prowadzenia sprawy
+      description: |
+        Klient może mieć tylko jedną prowadzoną sprawę. Ponowna próba zwraca
+        istniejącą sprawę zamiast tworzyć drugą — inaczej powstałyby dwa źródła
+        prawdy o tym samym zleceniu.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NewCase" }
+      responses:
+        "201":
+          description: Sprawa utworzona
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LegalCase" }
+        "200":
+          description: Sprawa już istniała
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LegalCase" }
+
+  /tasks/{task_id}:
+    patch:
+      tags: [Zapis]
+      summary: Zmiana zadania (w tym odhaczenie)
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version]
+              properties:
+                expected_version: { $ref: "#/components/schemas/Version" }
+                title: { type: string }
+                is_done: { type: boolean }
+                priority: { type: string, enum: [normal, urgent] }
+                due_date: { $ref: "#/components/schemas/LocalDate" }
+      responses:
+        "200":
+          description: Zadanie po zmianie
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /events/{event_id}:
+    patch:
+      tags: [Zapis]
+      summary: Zmiana terminu
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version]
+              properties:
+                expected_version: { $ref: "#/components/schemas/Version" }
+                day: { $ref: "#/components/schemas/LocalDate" }
+                time: { $ref: "#/components/schemas/TimeOfDay" }
+                duration_minutes: { type: integer }
+                status: { type: string, enum: [to_confirm, confirmed, finished] }
+                owner_id: { type: [string, "null"] }
+      responses:
+        "200":
+          description: Termin po zmianie
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScheduledEvent" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  # ---------------------------------------------------------------- Akcje
+
+  /actions:
+    post:
+      tags: [Akcje]
+      summary: Przygotowanie propozycji akcji
+      description: |
+        Tworzy propozycję, a **nie** wykonuje zapisu. Propozycja ma identyfikator
+        prezentacji, termin ważności i wersję kontekstu. UI i głos używają tego
+        samego punktu wejścia.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ActionProposalRequest" }
+      responses:
+        "201":
+          description: Propozycja przygotowana
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActionProposal" }
+
+  /actions/{action_id}:
+    patch:
+      tags: [Akcje]
+      summary: Korekta propozycji
+      description: |
+        Korekta unieważnia wcześniejszą zgodę: zmienia się identyfikator prezentacji
+        i suma treści. Zgoda udzielona przed korektą nie może zostać użyta.
+      parameters:
+        - name: action_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text, expected_version]
+              properties:
+                text: { type: string }
+                expected_version: { $ref: "#/components/schemas/Version" }
+      responses:
+        "200":
+          description: Propozycja po korekcie
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActionProposal" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /actions/{action_id}/confirm:
+    post:
+      tags: [Akcje]
+      summary: Potwierdzenie i przekazanie do wykonania
+      description: |
+        **Jedyny punkt, w którym powstaje zgoda.** Nagłówek `X-Emma-Consent`
+        opisuje jej pochodzenie; backend odrzuca `language_model_argument`.
+        Powtórzone potwierdzenie zwraca to samo wykonanie (idempotencja).
+      parameters:
+        - name: action_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: X-Emma-Consent
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [direct_ui_button, authenticated_voice_turn]
+          description: |
+            Pochodzenie zgody. `authenticated_voice_turn` wymaga dowodu, że tura
+            pochodzi z uwierzytelnionej sesji głosowej tego użytkownika.
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [presentation_id]
+              properties:
+                presentation_id:
+                  type: string
+                  description: Identyfikator prezentacji, którą użytkownik widział.
+                expected_context_version: { $ref: "#/components/schemas/Version" }
+      responses:
+        "202":
+          description: Wykonanie przyjęte
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActionExecution" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "410":
+          description: Propozycja wygasła — wymagane przygotowanie od nowa
+
+  /actions/{action_id}/execution:
+    get:
+      tags: [Akcje]
+      summary: Odczyt stanu wykonania
+      description: |
+        Używane do rozstrzygania stanu `unknown`. Aplikacja **nie ponawia**
+        automatycznie; pokazuje niepewność i czeka na ten odczyt.
+      parameters:
+        - name: action_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Stan wykonania
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActionExecution" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /actions/{action_id}/cancel:
+    post:
+      tags: [Akcje]
+      summary: Anulowanie propozycji przed wykonaniem
+      parameters:
+        - name: action_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Propozycja anulowana
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActionProposal" }
+        "409":
+          description: Wykonanie już się rozpoczęło — anulowanie niemożliwe
+
+  # ---------------------------------------------------------------- Głos
+
+  /voice/conversation-token:
+    post:
+      tags: [Głos]
+      summary: Wydanie krótkotrwałego tokenu rozmowy
+      description: |
+        Backend tworzy sesję u dostawcy i zwraca **tylko token** — klucz API
+        dostawcy nigdy nie opuszcza serwera. Token jest związany z sesją,
+        użytkownikiem i wersją kontekstu; wygasa szybko.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, context_version, installation_id]
+              properties:
+                session_id: { type: string }
+                context_version: { $ref: "#/components/schemas/Version" }
+                installation_id: { type: string }
+                context: { $ref: "#/components/schemas/AssistantContext" }
+                language:
+                  type: string
+                  enum: [pl, uk, ru]
+      responses:
+        "200":
+          description: Token rozmowy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConversationToken" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503":
+          description: Dostawca głosu niedostępny — aplikacja pokazuje to wprost,
+          # Bez udawania, że rozmowa trwa.
+
+  /voice/sessions/{session_id}:
+    delete:
+      tags: [Głos]
+      summary: Zakończenie sesji głosowej
+      description: |
+        Wywoływane przy zakończeniu rozmowy, przejściu w tło dłuższym niż dozwolone
+        oraz przy wylogowaniu. Backend zwalnia sesję u dostawcy i kończy naliczanie.
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Sesja zamknięta }
+
+  # ---------------------------------------------------------------- Synchronizacja
+
+  /sync/changes:
+    get:
+      tags: [Synchronizacja]
+      summary: Zmiany od podanego znacznika
+      parameters:
+        - name: since
+          in: query
+          required: true
+          schema: { type: string }
+          description: Znacznik zwrócony przez poprzednie wywołanie.
+        - name: user_id
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: |
+            Zmiany oraz nowy znacznik. Zakres musi być ciągły: brak luki jest
+            warunkiem poprawności, a powtórzone zdarzenie nie może stworzyć
+            drugiej wiadomości ani drugiego zadania.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChangeBatch" }
+        "410":
+          description: Znacznik starszy niż retencja — wymagany pełny odczyt
+
+  /push/devices:
+    post:
+      tags: [Synchronizacja]
+      summary: Rejestracja tokenu powiadomień
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [installation_id, token, environment]
+              properties:
+                installation_id: { type: string }
+                token: { type: string }
+                environment: { type: string, enum: [sandbox, production] }
+      responses:
+        "204": { description: Token zarejestrowany }
+
+    delete:
+      tags: [Synchronizacja]
+      summary: Wyrejestrowanie tokenu powiadomień
+      parameters:
+        - name: installation_id
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "204": { description: Token usunięty }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    ClientID:
+      name: client_id
+      in: path
+      required: true
+      schema: { type: string }
+    CaseID:
+      name: case_id
+      in: path
+      required: true
+      schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 8 }
+      description: |
+        Klucz idempotencji tworzenia i wysyłki. Powtórzenie z tym samym kluczem
+        zwraca ten sam wynik i nie tworzy drugiego obiektu.
+
+  responses:
+    Unauthorized:
+      description: Brak ważnego tokenu dostępu
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Brak uprawnienia do zasobu
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Zasób nie istnieje lub nie jest widoczny dla tego konta
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: Konflikt wersji — obiekt zmienił się od czasu odczytu
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationFailed:
+      description: Dane nie przeszły walidacji
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+
+    # ------------------------------------------------------------ Typy podstawowe
+
+    Version:
+      type: integer
+      minimum: 1
+      description: Wersja obiektu do blokady optymistycznej.
+
+    LocalDate:
+      type: string
+      pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+      description: Data kalendarzowa. Bez strefy — dzień kancelarii, nie moment.
+
+    TimeOfDay:
+      type: string
+      pattern: "^[0-9]{2}:[0-9]{2}$"
+      description: Godzina zegarowa w strefie kancelarii.
+
+    LanguageCode:
+      type: string
+      enum: [pl, uk, ru]
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - unauthorized
+            - forbidden
+            - not_found
+            - version_conflict
+            - validation_failed
+            - rate_limited
+            - provider_unavailable
+            - internal_error
+        message:
+          type: string
+          description: Komunikat zrozumiały dla użytkownika, bez szczegółów technicznych.
+        details:
+          type: object
+          additionalProperties: true
+        current_version:
+          $ref: "#/components/schemas/Version"
+
+    Page:
+      type: object
+      properties:
+        next_cursor: { type: [string, "null"] }
+        has_more: { type: boolean }
+
+    NewClient:
+      type: object
+      required: [display_name, topic, language, owner_id]
+      properties:
+        display_name: { type: string, minLength: 2 }
+        topic: { type: string, minLength: 3 }
+        language: { $ref: "#/components/schemas/LanguageCode" }
+        owner_id: { type: [string, "null"] }
+        stage:
+          type: string
+          enum: [new, in_contact, client]
+          default: new
+        source:
+          type: string
+          enum: [manual, web_form, whatsapp, import]
+          default: manual
+
+    NewCase:
+      type: object
+      required: [client_id, title, summary, owner_id]
+      properties:
+        client_id: { type: string }
+        title: { type: string, minLength: 3 }
+        summary: { type: string, minLength: 3 }
+        owner_id: { type: string }
+
+    NewTask:
+      type: object
+      required: [title, due_date, priority]
+      properties:
+        title: { type: string, minLength: 1 }
+        client_id: { type: [string, "null"] }
+        case_id: { type: [string, "null"] }
+        owner_id: { type: [string, "null"] }
+        due_date: { $ref: "#/components/schemas/LocalDate" }
+        priority:
+          type: string
+          enum: [normal, urgent]
+          default: normal
+
+    NewNote:
+      type: object
+      required: [client_id, text, author_id]
+      properties:
+        client_id: { type: string }
+        case_id: { type: [string, "null"] }
+        text: { type: string, minLength: 1 }
+        author_id: { type: string }
+
+    NewEvent:
+      type: object
+      required: [client_id, title, day, time, duration_minutes, kind]
+      properties:
+        client_id: { type: string }
+        case_id: { type: [string, "null"] }
+        title: { type: string, minLength: 3 }
+        day: { $ref: "#/components/schemas/LocalDate" }
+        time: { $ref: "#/components/schemas/TimeOfDay" }
+        duration_minutes: { type: integer, minimum: 5, maximum: 480 }
+        owner_id: { type: [string, "null"] }
+        kind: { type: string, enum: [consultation, case_deadline] }
+        place: { type: [string, "null"] }
+
+    # ------------------------------------------------------------ Sesja
+
+    AuthSession:
+      type: object
+      required: [access_token, refresh_token, expires_at, user]
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        expires_at: { type: string, format: date-time }
+        user: { $ref: "#/components/schemas/User" }
+
+    User:
+      type: object
+      required: [id, display_name, initials, interface_language, assistant_language]
+      properties:
+        id: { type: string, example: user-tomasz }
+        display_name: { type: string, example: Tomasz Rogoża }
+        initials: { type: string, example: TR }
+        interface_language: { $ref: "#/components/schemas/LanguageCode" }
+        assistant_language: { $ref: "#/components/schemas/LanguageCode" }
+
+    # ------------------------------------------------------------ Dane kancelarii
+
+    Client:
+      type: object
+      required: [id, display_name, initials, language, topic, stage, source, created_at, version]
+      properties:
+        id: { type: string, example: client-olena }
+        display_name: { type: string, example: Olena Kovalenko }
+        initials: { type: string, example: OK }
+        language: { $ref: "#/components/schemas/LanguageCode" }
+        topic: { type: string }
+        stage: { type: string, enum: [new, in_contact, client] }
+        owner_id: { type: [string, "null"] }
+        source: { type: string, enum: [manual, web_form, whatsapp, import] }
+        created_at: { $ref: "#/components/schemas/LocalDate" }
+        briefing: { type: [string, "null"] }
+        incoming_message: { type: [string, "null"] }
+        incoming_translation: { type: [string, "null"] }
+        incoming_time: { $ref: "#/components/schemas/TimeOfDay" }
+        needs_reply: { type: boolean }
+        version: { $ref: "#/components/schemas/Version" }
+
+    LegalCase:
+      type: object
+      required: [id, number, title, client_id, owner_id, status, created_at, version]
+      properties:
+        id: { type: string, example: case-041 }
+        number: { type: string }
+        title: { type: string }
+        client_id: { type: string }
+        owner_id: { type: string }
+        status: { type: string, enum: [in_progress, awaiting_client, closed] }
+        summary: { type: string }
+        created_at: { $ref: "#/components/schemas/LocalDate" }
+        version: { $ref: "#/components/schemas/Version" }
+
+    ScheduledEvent:
+      type: object
+      required: [id, client_id, title, day, time, duration_minutes, kind, status, version]
+      properties:
+        id: { type: string }
+        client_id: { type: string }
+        case_id: { type: [string, "null"] }
+        title: { type: string }
+        day: { $ref: "#/components/schemas/LocalDate" }
+        time: { $ref: "#/components/schemas/TimeOfDay" }
+        duration_minutes: { type: integer, minimum: 5, maximum: 480 }
+        owner_id: { type: [string, "null"] }
+        kind: { type: string, enum: [consultation, case_deadline] }
+        status: { type: string, enum: [to_confirm, confirmed, finished] }
+        place: { type: [string, "null"] }
+        version: { $ref: "#/components/schemas/Version" }
+
+    Task:
+      type: object
+      required: [id, title, due_date, is_done, priority, version]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        client_id: { type: [string, "null"] }
+        case_id: { type: [string, "null"] }
+        owner_id: { type: [string, "null"] }
+        due_date: { $ref: "#/components/schemas/LocalDate" }
+        is_done: { type: boolean }
+        priority: { type: string, enum: [normal, urgent] }
+        version: { $ref: "#/components/schemas/Version" }
+
+    Note:
+      type: object
+      required: [id, client_id, text, author_id, created_at, version]
+      properties:
+        id: { type: string }
+        client_id: { type: string }
+        case_id: { type: [string, "null"] }
+        text: { type: string }
+        author_id: { type: string }
+        created_at: { type: string, format: date-time }
+        version: { $ref: "#/components/schemas/Version" }
+
+    ClientCard:
+      type: object
+      required: [client, events, tasks, notes, activity]
+      properties:
+        client: { $ref: "#/components/schemas/Client" }
+        case: { $ref: "#/components/schemas/LegalCase" }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/ScheduledEvent" }
+        tasks:
+          type: array
+          items: { $ref: "#/components/schemas/Task" }
+        notes:
+          type: array
+          items: { $ref: "#/components/schemas/Note" }
+        activity:
+          type: array
+          items: { $ref: "#/components/schemas/ActivityEntry" }
+
+    CaseDetail:
+      type: object
+      required: [case, tasks, events, notes, activity]
+      properties:
+        case: { $ref: "#/components/schemas/LegalCase" }
+        tasks:
+          type: array
+          items: { $ref: "#/components/schemas/Task" }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/ScheduledEvent" }
+        notes:
+          type: array
+          items: { $ref: "#/components/schemas/Note" }
+        activity:
+          type: array
+          items: { $ref: "#/components/schemas/ActivityEntry" }
+
+    ActivityEntry:
+      type: object
+      required: [id, text, created_at]
+      properties:
+        id: { type: string }
+        text: { type: string }
+        client_id: { type: [string, "null"] }
+        case_id: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+        author_id: { type: [string, "null"] }
+
+    Briefing:
+      type: object
+      required: [day, tasks, events, unread_total]
+      properties:
+        day: { $ref: "#/components/schemas/LocalDate" }
+        text: { type: string, description: Skrót dnia przygotowany dla asystenta głosowego. }
+        tasks:
+          type: array
+          items: { $ref: "#/components/schemas/Task" }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/ScheduledEvent" }
+        unread_threads:
+          type: array
+          items: { $ref: "#/components/schemas/ThreadSummary" }
+        unread_total: { type: integer, minimum: 0 }
+
+    # ------------------------------------------------------------ Wiadomości
+
+    Message:
+      type: object
+      required: [id, thread_id, direction, kind, text, sent_at, sequence, transport, source, version]
+      properties:
+        id: { type: string }
+        thread_id: { type: string }
+        direction: { type: string, enum: [incoming, outgoing] }
+        author_id: { type: [string, "null"] }
+        author_label: { type: [string, "null"] }
+        provider_message_id: { type: [string, "null"] }
+        kind: { type: string, enum: [text, system, attachment] }
+        text: { type: string }
+        translation: { type: [string, "null"] }
+        quote: { $ref: "#/components/schemas/QuotedReference" }
+        sent_at: { type: string, format: date-time }
+        sequence: { type: integer, description: Numer w wątku; po nim liczy się odczyt. }
+        transport:
+          type: string
+          enum: [local_draft, pending, sending, accepted, sent, delivered, read, failed, unknown]
+          description: |
+            Status może się wyłącznie poprawiać. `unknown` oznacza brak wiedzy,
+            a nie sukces — aplikacja pokazuje to wprost.
+        source: { type: string, enum: [app, provider, demo_fixture, voice_action] }
+        version: { $ref: "#/components/schemas/Version" }
+
+    QuotedReference:
+      type: object
+      required: [author_label, text, is_available]
+      properties:
+        message_id: { type: [string, "null"] }
+        author_label: { type: string }
+        text: { type: string }
+        is_available: { type: boolean, description: "false, gdy cytowana wiadomość nie jest już dostępna." }
+
+    ThreadSummary:
+      type: object
+      required: [id, client_id, unread_count]
+      properties:
+        id: { type: string }
+        client_id: { type: string }
+        client_name: { type: string }
+        preview: { $ref: "#/components/schemas/Message" }
+        unread_count: { type: integer, minimum: 0 }
+        is_pinned: { type: boolean }
+        has_draft: { type: boolean }
+        high_watermark: { type: integer }
+
+    ThreadUserState:
+      type: object
+      required: [thread_id, user_id, read_cursor_sequence, version]
+      properties:
+        thread_id: { type: string }
+        user_id: { type: string }
+        read_cursor_sequence: { type: integer, minimum: 0 }
+        manual_unread: { type: boolean }
+        is_pinned: { type: boolean }
+        version: { $ref: "#/components/schemas/Version" }
+
+    OutgoingMessage:
+      type: object
+      required: [text, author_id, language]
+      properties:
+        text: { type: string, minLength: 1 }
+        author_id: { type: string }
+        language: { $ref: "#/components/schemas/LanguageCode" }
+        quote: { $ref: "#/components/schemas/QuotedReference" }
+        action_id:
+          type: [string, "null"]
+          description: Akcja, z której powstała wiadomość, jeśli wysłano ją przez silnik akcji.
+
+    # ------------------------------------------------------------ Akcje
+
+    AssistantContext:
+      type: object
+      required: [scope, version]
+      properties:
+        scope: { type: string, enum: [firm, client, legal_case, thread] }
+        client_id: { type: [string, "null"] }
+        case_id: { type: [string, "null"] }
+        thread_id: { type: [string, "null"] }
+        version: { $ref: "#/components/schemas/Version" }
+
+    ActionProposalRequest:
+      type: object
+      required: [kind, actor_user_id, text, context]
+      properties:
+        kind: { type: string, enum: [reply, note, task] }
+        actor_user_id: { type: string }
+        text: { type: string, minLength: 1 }
+        context: { $ref: "#/components/schemas/AssistantContext" }
+        task_owner_id: { type: [string, "null"] }
+        task_due_date: { $ref: "#/components/schemas/LocalDate" }
+        origin: { type: string, enum: [ui, voice, assistant_text] }
+
+    ActionProposal:
+      type: object
+      required: [id, kind, actor_user_id, text, payload_hash, context_version, presented_at, expires_at, presentation_id, state]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [reply, note, task] }
+        actor_user_id: { type: string }
+        client_id: { type: [string, "null"] }
+        case_id: { type: [string, "null"] }
+        thread_id: { type: [string, "null"] }
+        text: { type: string }
+        payload_hash:
+          type: string
+          description: |
+            Suma treści i kontekstu. Zmiana treści zmienia hash i identyfikator
+            prezentacji, więc wcześniejsza zgoda przestaje pasować.
+        context_version: { $ref: "#/components/schemas/Version" }
+        thread_version: { $ref: "#/components/schemas/Version" }
+        presented_at: { type: string, format: date-time }
+        expires_at:
+          type: string
+          format: date-time
+          description: Po tym czasie propozycja nie może zostać potwierdzona.
+        presentation_id: { type: string }
+        state: { type: string, enum: [proposed, revised, confirmed, cancelled, expired] }
+
+    ActionExecution:
+      type: object
+      required: [action_id, state, outbox_id, updated_at]
+      properties:
+        action_id: { type: string }
+        state:
+          type: string
+          enum: [queued, claimed, dispatching, accepted, failed, unknown]
+          description: |
+            `unknown` oznacza, że nie wiadomo, czy zapis się dokonał. Aplikacja
+            nie ponawia automatycznie i nie pokazuje sukcesu.
+        outbox_id: { type: string }
+        provider_message_id: { type: [string, "null"] }
+        updated_at: { type: string, format: date-time }
+        failure_code: { type: [string, "null"] }
+        retryable: { type: boolean }
+
+    # ------------------------------------------------------------ Głos
+
+    ConversationToken:
+      type: object
+      required: [token, expires_at, session_id]
+      properties:
+        token:
+          type: string
+          description: |
+            Krótkotrwały token rozmowy wydany przez backend. To **nie** jest klucz
+            API dostawcy — klucz pozostaje na serwerze i nigdy nie trafia do aplikacji.
+        expires_at: { type: string, format: date-time }
+        session_id: { type: string }
+        provider_conversation_id: { type: [string, "null"] }
+        capabilities:
+          type: object
+          additionalProperties: { type: boolean }
+          description: Co dostawca faktycznie potrafi; aplikacja nie zakłada z góry.
+
+    # ------------------------------------------------------------ Synchronizacja
+
+    ChangeBatch:
+      type: object
+      required: [cursor, changes]
+      properties:
+        cursor: { type: string }
+        changes:
+          type: array
+          items:
+            type: object
+            required: [entity, change, id, version]
+            properties:
+              entity:
+                type: string
+                enum: [client, case, task, event, note, message, thread_state]
+              change: { type: string, enum: [created, updated, deleted] }
+              id: { type: string }
+              version: { $ref: "#/components/schemas/Version" }
+              payload: { type: object, additionalProperties: true }
+        has_more: { type: boolean }
