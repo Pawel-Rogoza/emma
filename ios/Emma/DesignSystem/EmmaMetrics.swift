@@ -24,6 +24,20 @@ public enum EmmaRadii {
     public static let dayCell: CGFloat = 15
     public static let avatar: CGFloat = 41
     public static let badge: CGFloat = 20
+    /// `.emma-turn` — wypowiedź w rozmowie z Emmą
+    public static let emmaTurn: CGFloat = 15
+    /// `.emma-turn` — narożnik po stronie nadawcy
+    public static let emmaTurnTail: CGFloat = 5
+    /// `.emma-suggestions`
+    public static let emmaSuggestions: CGFloat = 15
+    /// `.assistant-compose` — pole polecenia
+    public static let emmaComposer: CGFloat = 14
+    /// `.emma-context` — selektor kontekstu
+    public static let emmaContext: CGFloat = 11
+    /// `.small-suggestions button`
+    public static let emmaSmallSuggestion: CGFloat = 10
+    /// `.emma-action` — karta propozycji
+    public static let actionCard: CGFloat = 15
 }
 
 public enum EmmaSpacing {
@@ -78,6 +92,14 @@ public enum EmmaMetrics {
     public static let micButtonSize: CGFloat = 43
     public static let sheetMaxWidth: CGFloat = 398
     public static let sheetCloseSize: CGFloat = 44
+    // MARK: Asystent
+    /// `.emma-context` — minimalna wysokość selektora kontekstu
+    public static let emmaContextMinHeight: CGFloat = 41
+    /// `.mic-button` i `.send-button`
+    public static let emmaComposerButtonSize: CGFloat = 43
+    /// `.emma-action .draft` — minimalna wysokość szkicu
+    public static let actionDraftMinHeight: CGFloat = 130
+
 }
 
 // MARK: - Adaptacja do rozmiaru ekranu

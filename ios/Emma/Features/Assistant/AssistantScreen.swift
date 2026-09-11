@@ -9,54 +9,6 @@ import SwiftUI
 // Demo działa na deterministycznych mockach i mówi o tym wprost: nie ma kont
 // dostawców, nie ma integracji z ElevenLabs ani z WhatsApp, wysyłka jest symulowana.
 
-// Kolory referencji, których nie ma w `EmmaTheme` (plik `EmmaTheme.swift` edytują
-// równolegle inne zadania, więc tokeny dopisujemy tutaj).
-private extension Color {
-    /// TODO(token): #7F8D9E — `.emma-intro p`
-    static let emmaIntroText = Color(hex: 0x7F8D9E)
-    /// TODO(token): #E4EAF1 — `.emma-turn` (obramowanie wypowiedzi Emmy)
-    static let emmaTurnBorder = Color(hex: 0xE4EAF1)
-    /// TODO(token): #728AA4 — `.emma-turn>span`
-    static let emmaTurnLabel = Color(hex: 0x728AA4)
-    /// TODO(token): #5F80A2 — `.listen-text`
-    static let emmaListenText = Color(hex: 0x5F80A2)
-    /// TODO(token): #6383A4 — `.emma-suggestions>button>svg`
-    static let emmaSuggestionIcon = Color(hex: 0x6383A4)
-    /// TODO(token): #9EAFBF — `.emma-suggestions>button>svg:last-child`
-    static let emmaSuggestionChevron = Color(hex: 0x9EAFBF)
-    /// TODO(token): #8D9AAB — `.emma-suggestions small`
-    static let emmaSuggestionSubtitle = Color(hex: 0x8D9AAB)
-    /// TODO(token): #8395A9 — `.voice-status-line`
-    static let emmaStatusText = Color(hex: 0x8395A9)
-    /// TODO(token): #8E9AAA — `.demo-foot`
-    static let emmaDemoFootText = Color(hex: 0x8E9AAA)
-    /// TODO(token): #D8E3EE — `.assistant-compose` (obramowanie)
-    static let emmaComposerBorder = Color(hex: 0xD8E3EE)
-    /// TODO(token): #4C7399 — `.mic-button`
-    static let emmaMicText = Color(hex: 0x4C7399)
-    /// TODO(token): #DEE7F0 — `.small-suggestions button`
-    static let emmaSmallSuggestionBorder = Color(hex: 0xDEE7F0)
-    /// TODO(token): #6382A1 — `.small-suggestions button`
-    static let emmaSmallSuggestionText = Color(hex: 0x6382A1)
-}
-
-// Wymiary z referencji bez tokenu w `EmmaMetrics`.
-/// TODO(token): 15 — `.emma-turn`
-private let emmaTurnRadius: CGFloat = 15
-/// TODO(token): 5 — `.emma-turn` (narożnik po stronie nadawcy)
-private let emmaTurnTail: CGFloat = 5
-/// TODO(token): 15 — `.emma-suggestions`
-private let emmaSuggestionsRadius: CGFloat = 15
-/// TODO(token): 14 — `.assistant-compose`
-private let emmaComposerRadius: CGFloat = 14
-/// TODO(token): 11 — `.emma-context`
-private let emmaContextRadius: CGFloat = 11
-/// TODO(token): 10 — `.small-suggestions button`
-private let emmaSmallSuggestionRadius: CGFloat = 10
-/// TODO(token): 41 — `.emma-context` (min-height)
-private let emmaContextMinHeight: CGFloat = 41
-/// TODO(token): 43 — `.mic-button`, `.send-button`
-private let emmaComposerButtonSize: CGFloat = 43
 
 @MainActor
 struct AssistantScreen: View {
@@ -167,11 +119,11 @@ struct AssistantScreen: View {
             .foregroundStyle(EmmaTheme.contextStripText)
             .padding(.horizontal, 11)
             .padding(.vertical, 9)
-            .frame(maxWidth: .infinity, minHeight: emmaContextMinHeight, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: EmmaMetrics.emmaContextMinHeight, alignment: .leading)
             .background(EmmaTheme.contextStripBackground)
-            .clipShape(RoundedRectangle(cornerRadius: emmaContextRadius, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.emmaContext, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: emmaContextRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: EmmaRadii.emmaContext, style: .continuous)
                     .strokeBorder(EmmaTheme.contextStripBorder, lineWidth: 1)
             }
             .contentShape(Rectangle())
@@ -234,9 +186,9 @@ struct AssistantScreen: View {
             }
             .padding(.horizontal, 13)
             .background(EmmaTheme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: emmaSuggestionsRadius, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.emmaSuggestions, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: emmaSuggestionsRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: EmmaRadii.emmaSuggestions, style: .continuous)
                     .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
             }
         }
@@ -355,19 +307,19 @@ struct AssistantScreen: View {
         .background(isUser ? EmmaTheme.contextStripBackground : EmmaTheme.surface)
         .clipShape(
             UnevenRoundedRectangle(
-                topLeadingRadius: emmaTurnRadius,
-                bottomLeadingRadius: isUser ? emmaTurnRadius : emmaTurnTail,
-                bottomTrailingRadius: isUser ? emmaTurnTail : emmaTurnRadius,
-                topTrailingRadius: emmaTurnRadius,
+                topLeadingRadius: EmmaRadii.emmaTurn,
+                bottomLeadingRadius: isUser ? EmmaRadii.emmaTurn : EmmaRadii.emmaTurnTail,
+                bottomTrailingRadius: isUser ? EmmaRadii.emmaTurnTail : EmmaRadii.emmaTurn,
+                topTrailingRadius: EmmaRadii.emmaTurn,
                 style: .continuous
             )
         )
         .overlay {
             UnevenRoundedRectangle(
-                topLeadingRadius: emmaTurnRadius,
-                bottomLeadingRadius: isUser ? emmaTurnRadius : emmaTurnTail,
-                bottomTrailingRadius: isUser ? emmaTurnTail : emmaTurnRadius,
-                topTrailingRadius: emmaTurnRadius,
+                topLeadingRadius: EmmaRadii.emmaTurn,
+                bottomLeadingRadius: isUser ? EmmaRadii.emmaTurn : EmmaRadii.emmaTurnTail,
+                bottomTrailingRadius: isUser ? EmmaRadii.emmaTurnTail : EmmaRadii.emmaTurn,
+                topTrailingRadius: EmmaRadii.emmaTurn,
                 style: .continuous
             )
             .strokeBorder(isUser ? EmmaTheme.contextStripBorder : Color.emmaTurnBorder, lineWidth: 1)
@@ -482,9 +434,9 @@ struct AssistantScreen: View {
             .padding(.horizontal, 10)
             .frame(minHeight: EmmaSpacing.hitTarget)
             .background(EmmaTheme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: emmaSmallSuggestionRadius, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.emmaSmallSuggestion, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: emmaSmallSuggestionRadius, style: .continuous)
+                RoundedRectangle(cornerRadius: EmmaRadii.emmaSmallSuggestion, style: .continuous)
                     .strokeBorder(Color.emmaSmallSuggestionBorder, lineWidth: 1)
             }
             .contentShape(Rectangle())
@@ -520,7 +472,7 @@ struct AssistantScreen: View {
                 Image(systemName: store.isMicrophoneCapturing ? "checkmark" : "mic")
                     .font(.system(size: 19, weight: .regular))
                     .foregroundStyle(store.isMicrophoneCapturing ? Color.white : Color.emmaMicText)
-                    .frame(width: emmaComposerButtonSize, height: emmaComposerButtonSize)
+                    .frame(width: EmmaMetrics.emmaComposerButtonSize, height: EmmaMetrics.emmaComposerButtonSize)
                     .background(store.isMicrophoneCapturing ? EmmaTheme.primaryButton : EmmaTheme.contextStripBackground)
                     .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.composerInner, style: .continuous))
             }
@@ -550,7 +502,7 @@ struct AssistantScreen: View {
                 Image(systemName: "waveform")
                     .font(.system(size: 17, weight: .regular))
                     .foregroundStyle(store.isDictating ? Color.white : Color.emmaMicText)
-                    .frame(width: emmaComposerButtonSize, height: emmaComposerButtonSize)
+                    .frame(width: EmmaMetrics.emmaComposerButtonSize, height: EmmaMetrics.emmaComposerButtonSize)
                     .background(store.isDictating ? EmmaTheme.primaryButton : EmmaTheme.contextStripBackground)
                     .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.composerInner, style: .continuous))
             }
@@ -563,7 +515,7 @@ struct AssistantScreen: View {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(EmmaTheme.primaryButtonText)
-                    .frame(width: emmaComposerButtonSize, height: emmaComposerButtonSize)
+                    .frame(width: EmmaMetrics.emmaComposerButtonSize, height: EmmaMetrics.emmaComposerButtonSize)
                     .background(EmmaTheme.primaryButton)
                     .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.composerInner, style: .continuous))
             }
@@ -572,9 +524,9 @@ struct AssistantScreen: View {
         }
         .padding(6)
         .background(EmmaTheme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: emmaComposerRadius, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.emmaComposer, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: emmaComposerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: EmmaRadii.emmaComposer, style: .continuous)
                 .strokeBorder(Color.emmaComposerBorder, lineWidth: 1)
         }
         .padding(.horizontal, 14)

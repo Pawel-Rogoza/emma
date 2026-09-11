@@ -547,6 +547,22 @@ public enum DemoFixtures {
         public var threadStates: [ThreadUserState]
         public var currentUserID: UserID
 
+        /// Użytkownik, na którego patrzy demo.
+        ///
+        /// Kancelaria ma dwóch prawników, a `currentUserID` wskazuje, kto jest zalogowany.
+        /// Brak pasującego użytkownika oznacza błąd w danych przykładowych, a nie stan,
+        /// który interfejs miałby obsłużyć — dlatego kończymy głośno, zamiast po cichu
+        /// pokazywać losową osobę (np. pokazanie cudzych rozmów jako własnych).
+        public var user: User {
+            if let match = users.first(where: { $0.id == currentUserID }) {
+                return match
+            }
+            preconditionFailure(
+                "DemoFixtures: brak użytkownika o identyfikatorze \(currentUserID.rawValue) "
+                + "przy \(users.count) użytkownikach w zestawie danych"
+            )
+        }
+
         public init(
             users: [User] = DemoFixtures.users,
             clients: [Client] = DemoFixtures.clients,

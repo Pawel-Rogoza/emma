@@ -68,6 +68,9 @@ public struct EmmaTabBar: View {
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel(for: tab))
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        // Identyfikator dla testów interfejsu: etykieta zmienia się wraz z licznikiem
+        // nieprzeczytanych, więc nie nadaje się na stały uchwyt.
+        .accessibilityIdentifier("tab.\(tab.rawValue)")
     }
 
     private func accessibilityLabel(for tab: AppTab) -> String {

@@ -10,9 +10,9 @@ z **użyciami** w widokach.
 Czego NIE robi — i co trzeba wiedzieć, czytając jego wynik:
 
   * nie sprawdza typów, liczby argumentów, etykiet wywołań ani przeciążeń,
-  * typy deklarowane w jednym pliku (`EmmaRadii`, `EmmaSpacing`, `EmmaMetrics`)
-    mają wspólny zbiór nazw, więc **nie wykryje** użycia `EmmaSpacing.avatar`
-    zamiast `EmmaRadii.avatar` — taką pomyłkę wychwyci dopiero kompilator,
+  * dla typów z jednego pliku (`EmmaRadii`, `EmmaSpacing`, `EmmaMetrics`) czyta
+    zawężony zakres danego typu, więc rozpoznaje `EmmaSpacing.avatar` jako błąd —
+    ale nie sprawdza, czy użyta wartość ma właściwy typ,
   * nie zna zmiennych lokalnych o nazwach `repository`, `voice`, `clock`.
 
 To filtr literówek i braków, nie zamiennik kompilacji. Wynik „brak odwołań bez
@@ -33,6 +33,7 @@ DECLARATION_SOURCES = {
     "repository": ["Core/Voice/VoiceServices.swift", "PreviewSupport/MockRepository.swift"],
     "voice": ["Core/Voice/VoiceSessionCoordinator.swift"],
     "clock": ["Core/Domain/ClockAndFormatting.swift"],
+    "dataset": ["PreviewSupport/DemoFixtures.swift"],
     "dateText": ["Core/Domain/ClockAndFormatting.swift"],
     # Statyczne tokeny design systemu i reguły odmiany — najczęstsze miejsce literówek
     # w widokach pisanych równolegle.
@@ -44,6 +45,9 @@ DECLARATION_SOURCES = {
     "EmmaPlural": ["Core/Domain/ClockAndFormatting.swift"],
 }
 
+# Typy, których deklaracje trzeba czytać w zawężeniu do jednego typu (patrz `declared_members`).
+ENUM_SCOPED_HOLDERS = {"EmmaRadii", "EmmaSpacing", "EmmaMetrics", "EmmaTheme", "EmmaTypography", "EmmaPlural"}
+
 MEMBER_PATTERN = re.compile(
     r"^\s*(?:@\w+(?:\([^)]*\))?\s+)*"
     r"(?:public\s+|private(?:\(set\))?\s+|internal\s+|fileprivate\s+|static\s+|final\s+|override\s+|nonisolated\s+)*"
@@ -52,7 +56,7 @@ MEMBER_PATTERN = re.compile(
 )
 
 USAGE_PATTERN = re.compile(
-    r"\b(dependencies|repository|voice|clock|dateText|EmmaTheme|EmmaTypography|EmmaRadii|EmmaSpacing|EmmaMetrics|EmmaPlural)"
+    r"\b(dependencies|repository|voice|clock|dataset|dateText|EmmaTheme|EmmaTypography|EmmaRadii|EmmaSpacing|EmmaMetrics|EmmaPlural)"
     r"\.([A-Za-z_][A-Za-z0-9_]*)"
 )
 
@@ -63,12 +67,32 @@ IGNORED_USAGES = {
 }
 
 
-def declared_members(path: Path) -> set[str]:
+def declared_members(path: Path, scope: str | None = None) -> set[str]:
+    """Składowe zadeklarowane w pliku.
+
+    `scope` zawęża odczyt do jednego typu — konieczne dla `EmmaMetrics.swift`,
+    gdzie `EmmaRadii`, `EmmaSpacing` i `EmmaMetrics` leżą w jednym pliku.
+    Bez zawężenia `EmmaSpacing.avatar` przeszłoby jako poprawne, bo `avatar`
+    istnieje w `EmmaRadii`.
+    """
     text = path.read_text(encoding="utf-8")
-    members = set(MEMBER_PATTERN.findall(text))
-    # Składowe syntetyzowane przez Swift (np. inicjalizator struktur) i właściwości
-    # generowane przez makra Observera nie mają jawnej deklaracji `var`.
-    return members
+    if scope is not None:
+        start = text.find(f"enum {scope} {{")
+        if start == -1:
+            start = text.find(f"struct {scope} {{")
+        if start == -1:
+            return set()
+        depth = 0
+        index = text.index("{", start)
+        for position in range(index, len(text)):
+            if text[position] == "{":
+                depth += 1
+            elif text[position] == "}":
+                depth -= 1
+                if depth == 0:
+                    text = text[start:position]
+                    break
+    return set(MEMBER_PATTERN.findall(text))
 
 
 def main() -> int:
@@ -80,7 +104,7 @@ def main() -> int:
             if not path.exists():
                 print(f"BLAD: brak pliku deklaracji {relative} dla '{name}'")
                 return 2
-            collected |= declared_members(path)
+            collected |= declared_members(path, scope=name if name in ENUM_SCOPED_HOLDERS else None)
         members[name] = collected
 
     problems: list[str] = []

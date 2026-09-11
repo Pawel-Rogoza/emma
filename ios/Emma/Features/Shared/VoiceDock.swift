@@ -8,19 +8,6 @@ import SwiftUI
 // Dock nie tworzy własnego silnika audio ani drugiej sesji — wyłącznie woła
 // metody jednego koordynatora (§5.3). Odsłuch nigdy nie otwiera mikrofonu (§5.1).
 
-// Kolory referencji, których nie ma w `EmmaTheme` (plik `EmmaTheme.swift` edytują
-// równolegle inne zadania, więc tokeny dopisujemy tutaj).
-private extension Color {
-    /// TODO(token): #F5F7F9 — `#assistant-dock` (tło)
-    static let emmaDockBackground = Color(hex: 0xF5F7F9)
-    /// TODO(token): #E3E9F0 — `#assistant-dock` (górne obramowanie)
-    static let emmaDockBorder = Color(hex: 0xE3E9F0)
-    /// TODO(token): #8A9AAC — `.voice-controls-row`
-    static let emmaDockStatusText = Color(hex: 0x8A9AAC)
-    /// TODO(token): #8196AD — `.voice-controls-row .text-button`
-    static let emmaDockActionText = Color(hex: 0x8196AD)
-}
-
 @MainActor
 struct VoiceDock: View {
 

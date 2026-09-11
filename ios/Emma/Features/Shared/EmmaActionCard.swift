@@ -13,17 +13,6 @@ import SwiftUI
 // (`.authenticatedVoiceTurn`). Tekst wygenerowany przez model językowy
 // (`.languageModelArgument`) nie jest zgodą i nie występuje w tym pliku.
 
-// Kolory referencji, których nie ma w `EmmaTheme`. Tokeny dopisujemy **w tym pliku**,
-// bo `EmmaTheme.swift` edytują równolegle inne zadania.
-private extension Color {
-    /// TODO(token): #617F9F — `.emma-action-heading>span:first-child`
-    static let emmaActionHeadingText = Color(hex: 0x617F9F)
-    /// TODO(token): #8796A6 — `.action-meta`
-    static let emmaActionMetaText = Color(hex: 0x8796A6)
-    /// TODO(token): #5F80A2 — `.listen-text`
-    static let emmaListenText = Color(hex: 0x5F80A2)
-}
-
 private extension ActionKind {
     /// Ikona rodzaju działania. Referencja używa `chat` / `edit` / `tasks`.
     var emmaIconName: String {
@@ -40,14 +29,6 @@ private extension String {
         trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
-
-/// Promień karty z referencji (`.emma-action`).
-/// TODO(token): 15 — `.emma-action`
-private let emmaActionRadius: CGFloat = 15
-
-/// Minimalna wysokość szkicu z referencji (`.emma-action .draft`).
-/// TODO(token): 130 — `.emma-action .draft`
-private let emmaDraftMinHeight: CGFloat = 130
 
 @MainActor
 struct EmmaActionCard: View {
@@ -114,9 +95,9 @@ struct EmmaActionCard: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(EmmaTheme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: emmaActionRadius, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.actionCard, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: emmaActionRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: EmmaRadii.actionCard, style: .continuous)
                 .strokeBorder(EmmaTheme.actionCardBorder, lineWidth: 1)
         }
         .onChange(of: proposal.text) { _, newValue in
@@ -211,7 +192,7 @@ struct EmmaActionCard: View {
                 .font(EmmaTypography.actionBody(draft))
                 .foregroundStyle(EmmaTheme.ink)
                 .scrollContentBackground(.hidden)
-                .frame(minHeight: emmaDraftMinHeight)
+                .frame(minHeight: EmmaMetrics.actionDraftMinHeight)
                 .padding(9)
                 .background(EmmaTheme.draftBackground)
                 .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous))

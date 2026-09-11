@@ -137,6 +137,50 @@ public enum EmmaTheme {
         default: return .none
         }
     }
+
+    // MARK: Asystent i dok głosowy
+    //
+    // Wartości odczytane z kaskady CSS referencji. Zebrane tutaj, bo rozsiane po
+    // widokach prywatne kolory rozjeżdżają się przy pierwszej zmianie wzorca.
+
+    /// `.emma-intro p`
+    public static let emmaIntroText = Color(hex: 0x7F8D9E)
+    /// `.emma-turn` — obramowanie wypowiedzi
+    public static let emmaTurnBorder = Color(hex: 0xE4EAF1)
+    /// `.emma-turn > span` — kto mówi
+    public static let emmaTurnLabel = Color(hex: 0x728AA4)
+    /// `.listen-text` — „Odsłuchaj”
+    public static let emmaListenText = Color(hex: 0x5F80A2)
+    /// `.emma-suggestions button svg`
+    public static let emmaSuggestionIcon = Color(hex: 0x6383A4)
+    /// `.emma-suggestions button svg:last-child`
+    public static let emmaSuggestionChevron = Color(hex: 0x9EAFBF)
+    /// `.emma-suggestions small`
+    public static let emmaSuggestionSubtitle = Color(hex: 0x8D9AAB)
+    /// `.voice-status-line`
+    public static let emmaStatusText = Color(hex: 0x8395A9)
+    /// `.demo-foot` — nota o danych przykładowych
+    public static let emmaDemoFootText = Color(hex: 0x8E9AAA)
+    /// `.assistant-compose` — obramowanie pola polecenia
+    public static let emmaComposerBorder = Color(hex: 0xD8E3EE)
+    /// `.mic-button` — tekst na przycisku mikrofonu
+    public static let emmaMicText = Color(hex: 0x4C7399)
+    /// `.small-suggestions button` — obramowanie
+    public static let emmaSmallSuggestionBorder = Color(hex: 0xDEE7F0)
+    /// `.small-suggestions button` — tekst
+    public static let emmaSmallSuggestionText = Color(hex: 0x6382A1)
+    /// `#assistant-dock` — tło doku
+    public static let dockBackground = Color(hex: 0xF5F7F9)
+    /// `#assistant-dock` — górne obramowanie
+    public static let dockBorder = Color(hex: 0xE3E9F0)
+    /// `.voice-controls-row` — etykieta stanu
+    public static let dockStatusText = Color(hex: 0x8A9AAC)
+    /// `.voice-controls-row .text-button`
+    public static let dockActionText = Color(hex: 0x8196AD)
+    /// `.emma-action-heading span:first-child`
+    public static let actionHeadingText = Color(hex: 0x617F9F)
+    /// `.action-meta`
+    public static let actionMetaText = Color(hex: 0x8796A6)
 }
 
 extension Color {
