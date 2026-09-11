@@ -87,12 +87,9 @@ struct ClientsScreen: View {
         switch store.phase {
         case .idle, .loading:
             LoadingState("Wczytuję bazę kancelarii…")
-        case .failed(let message):
-            VStack(alignment: .leading, spacing: 10) {
-                InlineError(message)
-                SecondaryButton("Spróbuj ponownie", systemImage: "arrow.clockwise") {
-                    Task { await store.load(dependencies) }
-                }
+        case .failed(let failure):
+            LoadFailureView(failure) {
+                Task { await store.load(dependencies) }
             }
         case .loaded(let model):
             switch dependencies.clientMode {

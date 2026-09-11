@@ -560,3 +560,59 @@ final class SearchTextTests: XCTestCase {
         XCTAssertEqual(SearchText.normalize("Żelazna Łukasz"), "zelazna lukasz")
     }
 }
+
+// MARK: - Błąd wczytania: komunikat i reguła ponowienia (§4.4, §7, §13)
+
+final class LoadFailureTests: XCTestCase {
+
+    func testOfflineAndTransportFailureAreRetryable() {
+        XCTAssertTrue(DomainError.offline.isRetryable)
+        XCTAssertTrue(DomainError.transportFailure("timeout").isRetryable)
+    }
+
+    /// Konflikt wersji i brak uprawnień nie zmienią się od ponowienia — przycisk
+    /// „Spróbuj ponownie” obiecywałby wtedy coś, czego ponowienie nie naprawi.
+    func testVersionConflictAndPermissionsAreNotRetryable() {
+        XCTAssertFalse(DomainError.versionConflict(expected: Version(3), current: Version(4)).isRetryable)
+        XCTAssertFalse(DomainError.unauthorized.isRetryable)
+        XCTAssertFalse(DomainError.forbidden.isRetryable)
+        XCTAssertFalse(DomainError.notFound(resource: "sprawa", id: "case-1").isRetryable)
+        XCTAssertFalse(DomainError.validationFailed("Brak odbiorcy").isRetryable)
+        XCTAssertFalse(DomainError.unknownOutcome("timeout").isRetryable)
+    }
+
+    func testScreenLoadCarriesMessageAndRetryRuleTogether() {
+        let offline = ScreenLoad.failure(for: DomainError.offline, fallback: "Nie udało się wczytać.")
+        XCTAssertEqual(offline.message, DomainError.offline.safeMessage)
+        XCTAssertTrue(offline.isRetryable)
+
+        let conflict = ScreenLoad.failure(
+            for: DomainError.versionConflict(expected: Version(1), current: Version(2)),
+            fallback: "Nie udało się wczytać."
+        )
+        XCTAssertEqual(conflict.message, DomainError.versionConflict(expected: Version(1), current: Version(2)).safeMessage)
+        XCTAssertFalse(conflict.isRetryable)
+    }
+
+    /// Nieznany błąd nie jest `DomainError` — dostaje tekst ekranu, ale zachowuje
+    /// prawo do ponowienia, bo to zwykle błąd przejściowy.
+    func testUnknownErrorKeepsFallbackTextAndAllowsRetry() {
+        struct Unexpected: Error {}
+        let failure = ScreenLoad.failure(for: Unexpected(), fallback: "Nie udało się wczytać dnia.")
+        XCTAssertEqual(failure.message, "Nie udało się wczytać dnia.")
+        XCTAssertTrue(failure.isRetryable)
+    }
+
+    func testLoadPhaseExposesFailure() {
+        var phase: LoadPhase<String> = .loading
+        XCTAssertNil(phase.failure)
+        XCTAssertNil(phase.errorMessage)
+
+        phase = .failed(LoadFailure(message: "Brak połączenia.", isRetryable: true))
+        XCTAssertEqual(phase.failure?.message, "Brak połączenia.")
+        XCTAssertEqual(phase.errorMessage, "Brak połączenia.")
+        XCTAssertEqual(phase.failure?.isRetryable, true)
+        XCTAssertNil(phase.value)
+        XCTAssertFalse(phase.isLoading)
+    }
+}

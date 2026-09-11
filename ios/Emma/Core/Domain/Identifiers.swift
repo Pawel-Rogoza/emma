@@ -276,8 +276,6 @@ public struct LocalDate: Hashable, Codable, Sendable, Comparable, CustomStringCo
         adding(days: -weekdayIndexMondayFirst)
     }
 
-    public var startOfMonth: LocalDate { LocalDate(year: year, month: month, day: 1) }
-
     public var daysInMonth: Int {
         switch month {
         case 1, 3, 5, 7, 8, 10, 12: return 31

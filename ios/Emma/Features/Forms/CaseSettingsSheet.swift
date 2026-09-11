@@ -32,8 +32,10 @@ struct CaseSettingsSheet: View {
         switch phase {
         case .idle, .loading:
             LoadingState("Wczytuję sprawę…")
-        case .failed(let message):
-            InlineError(message)
+        case .failed(let failure):
+            LoadFailureView(failure) {
+                Task { await load() }
+            }
         case .loaded(let legalCase):
             form(legalCase)
         }
@@ -89,7 +91,7 @@ struct CaseSettingsSheet: View {
         if !phase.hasLoaded { phase = .loading }
         do {
             guard let legalCase = try await dependencies.repository.legalCase(id: caseID) else {
-                phase = .failed("Nie znaleziono sprawy.")
+                phase = .failed(LoadFailure(message: "Nie znaleziono sprawy.", isRetryable: false))
                 return
             }
             if !didPrefill {
@@ -101,7 +103,7 @@ struct CaseSettingsSheet: View {
             }
             phase = .loaded(legalCase)
         } catch {
-            phase = .failed(ScreenLoad.message(for: error, fallback: "Nie udało się wczytać sprawy."))
+            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać sprawy."))
         }
     }
 

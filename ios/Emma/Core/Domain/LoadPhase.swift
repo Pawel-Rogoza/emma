@@ -1,0 +1,88 @@
+import Foundation
+
+// MARK: - Stan wczytywania ekranu
+//
+// Plik leżał w `App/`, choć nie ma w nim ani jednego odwołania do SwiftUI. Skutek był
+// praktyczny: warstwa `App` jest wykluczona z pakietu kompilowanego na Linuksie, więc
+// reguły „co pokazać i czy ponowienie ma sens” nie dało się przetestować — a to jest
+// logika, nie wygląd. Teraz mieszka w rdzeniu, razem z zasadą `DomainError.isRetryable`.
+//
+// Każdy ekran ładuje dane przez jedno z trzech stanów. Dzięki temu „brak danych”
+// nigdy nie wygląda jak „błąd”, a błąd nigdy jak „pusto” (§13).
+
+public enum LoadPhase<Value> {
+    case idle
+    case loading
+    case loaded(Value)
+    case failed(LoadFailure)
+
+    public var value: Value? {
+        if case .loaded(let value) = self { return value }
+        return nil
+    }
+
+    public var isLoading: Bool {
+        if case .loading = self { return true }
+        return false
+    }
+
+    /// Błąd wczytania razem z regułą ponowienia — nie sam tekst.
+    public var failure: LoadFailure? {
+        if case .failed(let failure) = self { return failure }
+        return nil
+    }
+
+    public var errorMessage: String? { failure?.message }
+
+    public var hasLoaded: Bool {
+        if case .loaded = self { return true }
+        return false
+    }
+}
+
+extension LoadPhase: Equatable where Value: Equatable {}
+
+// MARK: - Błąd wczytania
+
+/// Co pokazać po nieudanym wczytaniu i **czy ponowienie ma sens**.
+///
+/// Powód istnienia osobnego typu: decyzja o ponowieniu należała wcześniej do ekranu.
+/// Trzy ekrany pokazywały „Spróbuj ponownie” przy każdym błędzie — także przy konflikcie
+/// wersji i braku uprawnień, gdzie domena mówi wprost, że ponowienie nic nie da
+/// (`DomainError.isRetryable`, §4.4 i §7) — a dziewięć ekranów nie pokazywało go wcale,
+/// więc przy zerwanej sieci użytkownik nie miał czym spróbować ponownie.
+public struct LoadFailure: Equatable, Sendable {
+    public let message: String
+    public let isRetryable: Bool
+
+    public init(message: String, isRetryable: Bool) {
+        self.message = message
+        self.isRetryable = isRetryable
+    }
+}
+
+// MARK: - Tłumaczenie błędu na komunikat
+
+/// Jedno miejsce, w którym decydujemy, co użytkownik zobaczy po nieudanym wczytaniu.
+///
+/// Powód istnienia: ten sam trójkąt `catch let error as DomainError { … } catch { … }`
+/// powtarzał się w kilkunastu miejscach. Każda kopia to osobna okazja, żeby jeden
+/// ekran zaczął mówić coś innego albo — gorzej — pokazał surowy błąd techniczny.
+/// `DomainError` ma własny komunikat bezpieczny; wszystko inne dostaje tekst ekranu.
+public enum ScreenLoad {
+    public static func message(for error: Error, fallback: String) -> String {
+        failure(for: error, fallback: fallback).message
+    }
+
+    /// Komunikat i reguła ponowienia z jednego miejsca.
+    ///
+    /// Błąd rozpoznany jako `DomainError` oddaje swoją regułę. Błąd nierozpoznany
+    /// dostaje `isRetryable: true` świadomie: nieznany błąd jest zwykle przejściowy,
+    /// a ukrycie przycisku odebrałoby jedyną drogę wyjścia z niego.
+    public static func failure(for error: Error, fallback: String) -> LoadFailure {
+        guard let domainError = error as? DomainError else {
+            return LoadFailure(message: fallback, isRetryable: true)
+        }
+        return LoadFailure(message: domainError.safeMessage, isRetryable: domainError.isRetryable)
+    }
+}

@@ -708,6 +708,30 @@ public struct LoadingState: View {
 }
 
 /// Komunikat błędu w formularzu (`.form-error`).
+/// Błąd wczytania ekranu: komunikat plus ponowienie **tylko wtedy, gdy ma sens**.
+///
+/// Wcześniej każdy ekran decydował o tym sam: trzy pokazywały przycisk zawsze,
+/// dziewięć nigdy. Reguła ponowienia jest w domenie (`DomainError.isRetryable`),
+/// więc tutaj jest tylko jej wykonanie — jedno dla wszystkich ekranów.
+public struct LoadFailureView: View {
+    private let failure: LoadFailure
+    private let retry: () -> Void
+
+    public init(_ failure: LoadFailure, retry: @escaping () -> Void) {
+        self.failure = failure
+        self.retry = retry
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            InlineError(failure.message)
+            if failure.isRetryable {
+                SecondaryButton("Spróbuj ponownie", systemImage: "arrow.clockwise", action: retry)
+            }
+        }
+    }
+}
+
 public struct InlineError: View {
     private let message: String
 

@@ -177,9 +177,6 @@ public struct DateTextFormatter: Sendable {
     public func timeAndDuration(_ time: TimeOfDay, minutes: Int) -> String {
         "\(time.hhmm) · \(minutes) min"
     }
-
-    /// Format daty ISO używany w polach formularzy (`yyyy-MM-dd`).
-    public static func isoField(_ date: LocalDate) -> String { date.isoString }
 }
 
 // MARK: - Wykrywanie intencji zatwierdzenia i negacji

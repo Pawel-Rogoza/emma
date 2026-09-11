@@ -28,7 +28,7 @@ final class ClientCardStore: ObservableObject {
         do {
             let repository = dependencies.repository
             guard let client = try await repository.client(id: clientID) else {
-                phase = .failed("Nie znaleziono karty klienta.")
+                phase = .failed(LoadFailure(message: "Nie znaleziono karty klienta.", isRetryable: false))
                 return
             }
 
@@ -59,7 +59,7 @@ final class ClientCardStore: ObservableObject {
                 )
             )
         } catch {
-            phase = .failed(ScreenLoad.message(for: error, fallback: "Nie udało się wczytać karty klienta."))
+            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać karty klienta."))
         }
     }
 }

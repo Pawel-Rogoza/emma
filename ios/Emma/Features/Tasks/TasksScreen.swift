@@ -60,7 +60,7 @@ final class TasksStore: ObservableObject {
                 )
             )
         } catch {
-            phase = .failed(ScreenLoad.message(for: error, fallback: "Nie udało się wczytać zadań."))
+            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać zadań."))
         }
     }
 }
@@ -105,8 +105,10 @@ struct TasksScreen: View {
                 switch store.phase {
                 case .idle, .loading:
                     LoadingState("Wczytuję zadania…")
-                case .failed(let message):
-                    InlineError(message)
+                case .failed(let failure):
+                    LoadFailureView(failure) {
+                        Task { await load() }
+                    }
                 case .loaded(let model):
                     list(model)
                 }

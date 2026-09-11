@@ -39,11 +39,11 @@ final class ThreadStore: ObservableObject {
             let repository = dependencies.repository
             let userID = dependencies.currentUser.id
             guard let thread = try await repository.thread(id: threadID) else {
-                phase = .failed(DomainError.notFound(resource: "rozmowa", id: threadID.rawValue).safeMessage)
+                phase = .failed(ScreenLoad.failure(for: DomainError.notFound(resource: "rozmowa", id: threadID.rawValue), fallback: "Nie znaleziono rozmowy."))
                 return
             }
             guard let client = try await repository.client(id: thread.clientID) else {
-                phase = .failed(DomainError.notFound(resource: "klient", id: thread.clientID.rawValue).safeMessage)
+                phase = .failed(ScreenLoad.failure(for: DomainError.notFound(resource: "klient", id: thread.clientID.rawValue), fallback: "Nie znaleziono klienta."))
                 return
             }
             let states = try await repository.readStates(userID: userID)
@@ -259,9 +259,11 @@ struct ThreadScreen: View {
             case .idle, .loading:
                 LoadingState("Wczytuję rozmowę…")
                     .frame(maxHeight: .infinity)
-            case .failed(let message):
-                InlineError(message)
-                    .frame(maxHeight: .infinity, alignment: .top)
+            case .failed(let failure):
+                LoadFailureView(failure) {
+                    Task { await store.load(dependencies, threadID: threadID) }
+                }
+                .frame(maxHeight: .infinity, alignment: .top)
             case .loaded(let model):
                 header(model)
                 contextStrip(model)

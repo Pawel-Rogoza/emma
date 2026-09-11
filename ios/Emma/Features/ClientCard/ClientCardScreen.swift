@@ -36,12 +36,9 @@ struct ClientCardScreen: View {
         switch store.phase {
         case .idle, .loading:
             LoadingState("Wczytuję kartę klienta…")
-        case .failed(let message):
-            VStack(alignment: .leading, spacing: 10) {
-                InlineError(message)
-                SecondaryButton("Spróbuj ponownie", systemImage: "arrow.clockwise") {
-                    Task { await store.load(dependencies, clientID: clientID) }
-                }
+        case .failed(let failure):
+            LoadFailureView(failure) {
+                Task { await store.load(dependencies, clientID: clientID) }
             }
         case .loaded(let model):
             loaded(model)

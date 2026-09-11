@@ -792,7 +792,9 @@ final class AssistantStore: ObservableObject {
     var isDictating: Bool { voiceState.mode == .dictation }
 
     var contextTitle: String {
-        guard let client = contextClient else { return "Cała kancelaria" }
+        // Nazwa kontekstu firmowego pochodzi z reguły domenowej, a nie z literału
+        // powtórzonego w tym pliku i w arkuszu wyboru kontekstu.
+        guard let client = contextClient else { return AssistantContext.firm.displayLabel }
         if let caseID = linkedCases[client.id], let number = caseNumbers[caseID] {
             return "\(client.displayName) · \(number)"
         }

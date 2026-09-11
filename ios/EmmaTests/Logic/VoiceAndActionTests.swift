@@ -861,6 +861,139 @@ final class VoiceSessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(watched.lastEndReason, .idleTimeout)
     }
 
+    // MARK: Uzgodnienie sesji z backendem (§5.6, plan linia 342)
+
+    /// Sesja przejęta przez inne urządzenie: backend wie pierwszy, raportuje ją jako
+    /// nieaktywną. My wciąż trzymamy połączenie — i do tej pory nic z tym nie robiliśmy,
+    /// więc głos mógł nadal wykonywać zapisy. Teraz kończymy i odbieramy prawo zapisu.
+    func testBackendReportingInactiveSessionEndsItAndRevokesVoiceWrites() async throws {
+        let statusClock = DemoClock()
+        let repository = MockRepository(clock: statusClock, artificialLatency: 0)
+        let watched = VoiceSessionCoordinator(
+            sessionRepository: repository,
+            actionRepository: repository,
+            clock: statusClock,
+            sessionStatus: { _ in
+                VoiceSessionStatus(
+                    sessionID: VoiceSessionID("session-takeover"),
+                    isActive: false,
+                    context: AssistantContext(scope: .firm),
+                    expiresAt: statusClock.now().addingTimeInterval(600),
+                    providerConversationID: nil
+                )
+            }
+        )
+        let transport = MockVoiceTransport(scenario: scenarioWithoutScript(), delayProvider: { _ in })
+        await watched.attach(
+            transport: transport,
+            configuration: VoiceSessionConfiguration(
+                sessionID: VoiceSessionID("session-takeover"),
+                context: AssistantContext(scope: .firm),
+                assistantLanguage: .ru,
+                conversationToken: "test-token",
+                expiresAt: statusClock.now().addingTimeInterval(600),
+                capabilities: .mock
+            )
+        )
+        await transport.emitManually(.connectionChanged(.connected))
+
+        let reason = await watched.reconcileSessionWithBackend()
+        XCTAssertEqual(reason, .takenOverByAnotherDevice)
+        XCTAssertEqual(watched.state.connection, .ended)
+        XCTAssertEqual(watched.lastEndReason, .takenOverByAnotherDevice)
+        XCTAssertTrue(watched.voiceWritesRevoked, "Przejęcie odbiera prawo zapisu głosem")
+    }
+
+    /// Aktywna sesja na backendzie to stan oczekiwany — nie wolno jej zamykać.
+    func testBackendReportingActiveSessionKeepsItRunning() async throws {
+        let statusClock = DemoClock()
+        let repository = MockRepository(clock: statusClock, artificialLatency: 0)
+        let watched = VoiceSessionCoordinator(
+            sessionRepository: repository,
+            actionRepository: repository,
+            clock: statusClock,
+            sessionStatus: { _ in
+                VoiceSessionStatus(
+                    sessionID: VoiceSessionID("session-active"),
+                    isActive: true,
+                    context: AssistantContext(scope: .firm),
+                    expiresAt: statusClock.now().addingTimeInterval(600),
+                    providerConversationID: nil
+                )
+            }
+        )
+        let transport = MockVoiceTransport(scenario: scenarioWithoutScript(), delayProvider: { _ in })
+        await watched.attach(
+            transport: transport,
+            configuration: VoiceSessionConfiguration(
+                sessionID: VoiceSessionID("session-active"),
+                context: AssistantContext(scope: .firm),
+                assistantLanguage: .ru,
+                conversationToken: "test-token",
+                expiresAt: statusClock.now().addingTimeInterval(600),
+                capabilities: .mock
+            )
+        )
+        await transport.emitManually(.connectionChanged(.connected))
+        await settle()
+
+        let reason = await watched.reconcileSessionWithBackend()
+        XCTAssertNil(reason)
+        XCTAssertEqual(watched.state.connection, .connected)
+        XCTAssertFalse(watched.voiceWritesRevoked)
+    }
+
+    /// Bez źródła stanu (Demo, testy bez backendu) uzgadnianie nie robi nic —
+    /// i nie może wywalać sesji.
+    func testReconciliationWithoutStatusSourceDoesNothing() async throws {
+        let transport = await attachMock(scenarioWithoutScript())
+        await transport.emitManually(.connectionChanged(.connected))
+        await settle()
+
+        let reason = await coordinator.reconcileSessionWithBackend()
+        XCTAssertNil(reason)
+        XCTAssertEqual(coordinator.state.connection, .connected)
+    }
+
+    /// Uzgadnianie musi być wołane przez stróża, a nie tylko istnieć jako metoda.
+    func testWatchdogReconcilesSessionWithBackend() async throws {
+        let statusClock = DemoClock()
+        let repository = MockRepository(clock: statusClock, artificialLatency: 0)
+        let watched = VoiceSessionCoordinator(
+            sessionRepository: repository,
+            actionRepository: repository,
+            clock: statusClock,
+            limitCheckInterval: 0.01,
+            sessionStatus: { _ in
+                VoiceSessionStatus(
+                    sessionID: VoiceSessionID("session-watchdog-takeover"),
+                    isActive: false,
+                    context: AssistantContext(scope: .firm),
+                    expiresAt: statusClock.now().addingTimeInterval(600),
+                    providerConversationID: nil
+                )
+            }
+        )
+        let transport = MockVoiceTransport(scenario: scenarioWithoutScript(), delayProvider: { _ in })
+        await watched.attach(
+            transport: transport,
+            configuration: VoiceSessionConfiguration(
+                sessionID: VoiceSessionID("session-watchdog-takeover"),
+                context: AssistantContext(scope: .firm),
+                assistantLanguage: .ru,
+                conversationToken: "test-token",
+                expiresAt: statusClock.now().addingTimeInterval(600),
+                capabilities: .mock
+            )
+        )
+        await transport.emitManually(.connectionChanged(.connected))
+
+        await waitUntil("Stróż zauważa przejęcie sesji", timeout: 3) {
+            watched.state.connection == .ended
+        }
+        XCTAssertEqual(watched.lastEndReason, .takenOverByAnotherDevice)
+    }
+
     // MARK: Trasa audio (§5.7, §13)
 
     func testRouteChangeFromHeadphonesToSpeakerPausesSensitivePlayback() async throws {

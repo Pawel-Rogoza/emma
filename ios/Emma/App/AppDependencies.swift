@@ -104,7 +104,13 @@ public final class AppDependencies: ObservableObject {
         self.voice = VoiceSessionCoordinator(
             sessionRepository: self.repository,
             actionRepository: self.repository,
-            clock: resolvedClock
+            clock: resolvedClock,
+            // Uzgodnienie z backendem: przejęcie sesji przez inne urządzenie kończy
+            // u nas prawo zapisu głosem (plan §5.6, linia 342). Zapytanie jest tanie
+            // i idzie tym samym repozytorium, co reszta aplikacji.
+            sessionStatus: { [repository = self.repository] sessionID in
+                try? await repository.fetchStatus(sessionID: sessionID)
+            }
         )
 
         self.navigation = Dictionary(uniqueKeysWithValues: AppTab.allCases.map { ($0, TabNavigation()) })

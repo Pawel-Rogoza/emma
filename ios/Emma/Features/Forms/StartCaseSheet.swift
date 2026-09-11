@@ -34,8 +34,10 @@ struct StartCaseSheet: View {
         switch phase {
         case .idle, .loading:
             LoadingState("Wczytuję dane klienta…")
-        case .failed(let message):
-            InlineError(message)
+        case .failed(let failure):
+            LoadFailureView(failure) {
+                Task { await load() }
+            }
         case .loaded(let client):
             form(client)
         }
@@ -99,7 +101,7 @@ struct StartCaseSheet: View {
                 return
             }
             guard let client = try await repository.client(id: clientID) else {
-                phase = .failed("Nie znaleziono klienta.")
+                phase = .failed(LoadFailure(message: "Nie znaleziono klienta.", isRetryable: false))
                 return
             }
             if !didPrefill {
@@ -112,7 +114,7 @@ struct StartCaseSheet: View {
             }
             phase = .loaded(client)
         } catch {
-            phase = .failed(ScreenLoad.message(for: error, fallback: "Nie udało się wczytać danych klienta."))
+            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać danych klienta."))
         }
     }
 

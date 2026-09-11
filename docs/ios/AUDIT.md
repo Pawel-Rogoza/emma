@@ -296,14 +296,108 @@ rozszerzenia typów systemowych.
 
 | Metoda | Wynik |
 | --- | --- |
-| `verify-linux-logic.sh` | **7/7** kroków bez zastrzeżeń (było 5) |
+| `verify-linux-logic.sh` | **7/7** kroków bez zastrzeżeń (było 5; runda 3 rozszerzyła do 8) |
 | `swift test` | 161 testów, 0 błędów |
 | `swiftc -parse` | 65 plików, 0 błędów składni |
 | Filtr odwołań | 1078 odwołań sprawdzonych, 0 bez deklaracji |
 | Kontrola kolorów | 100 tokenów koloru, **0** spoza referencji |
 | Pomiar renderu podglądu | 5/5 czcionek, 0 przekroczeń szerokości, 0 ucięć, 0 nachodzenia |
 
-## 8. Pierwsze kroki na Macu — kolejność z tego audytu
+## 8. Audyt runda 3 — obietnice bez pokrycia
+
+Runda 3 wyszła z jednego pytania: „które publiczne elementy rdzenia nikt nie woła?”.
+Takie elementy są groźniejsze niż brak kodu: wyglądają na gotowe, a przy okazji
+zapraszają do drugiej implementacji tej samej reguły. Skan nazw wykazał 10 takich
+składowych — i **trzy z nich okazały się niedokończonymi wymaganiami z planu**.
+
+### A-19 · Przejęcie sesji przez inne urządzenie nie robiło nic — **zrobione**
+
+Plan (linia 342): „Odebranie uprawnienia, wylogowanie, zmiana konta i **przejęcie sesji
+przez inne urządzenie** kończą możliwość wykonania narzędzi.” Koordynator miał metodę
+`handleSessionTakenOverByAnotherDevice()`, ale **nikt jej nie wołał** — więc w praktyce
+przejęcie sesji nie kończyło u nas prawa zapisu głosem.
+
+Co zrobione: koordynator przyjmuje teraz wstrzykiwane źródło stanu sesji
+(`sessionStatus`), a jego stróż — ten sam, który pilnuje limitów czasu — pyta backend
+raz na cykl. Gdy backend raportuje sesję jako **nieaktywną**, choć my wciąż trzymamy
+połączenie, sesja kończy się z powodem „przejęta przez inne urządzenie” i traci prawo
+zapisu, zachowując szkic. Aplikacja wpięła źródło w `AppDependencies` (zapytanie idzie
+tym samym repozytorium co reszta).
+
+Testy: 4 nowe (`testBackendReportingInactiveSessionEndsItAndRevokesVoiceWrites`,
+`testBackendReportingActiveSessionKeepsItRunning`,
+`testReconciliationWithoutStatusSourceDoesNothing`, `testWatchdogReconcilesSessionWithBackend`).
+Testy mutacyjne: usunięcie wywołania w stróżu oraz zamiana kończenia na zwykłe `end`
+(bez odebrania prawa zapisu) — każda mutacja wywala właściwy test.
+
+### A-20 · „Spróbuj ponownie” tam, gdzie ponowienie nie ma sensu — i jego brak tam, gdzie ma — **zrobione**
+
+`DomainError.isRetryable` mówi wprost: ponowienie ma sens tylko przy `offline`
+i `transportFailure`; konflikt wersji i brak uprawnień nie naprawią się od kliknięcia
+(§4.4, §7). A ekrany robiły odwrotnie:
+
+| Ekrany | Co pokazywały | Problem |
+| --- | --- | --- |
+| Dzisiaj, Klienci, Karta klienta | „Spróbuj ponownie” przy **każdym** błędzie | obietnica bez pokrycia przy konflikcie wersji i braku uprawnień |
+| Zadania, Kalendarz, Rozmowy, Sprawa, Wątek, trzy arkusze | tylko komunikat | przy zerwanej sieci nie było czym ponowić |
+
+Co zrobione: `LoadPhase.failed` niesie teraz `LoadFailure` (komunikat **i** regułę
+ponowienia), `ScreenLoad.failure(for:fallback:)` wyznacza oba z jednego miejsca, a jeden
+wspólny widok `LoadFailureView` pokazuje przycisk dokładnie wtedy, gdy reguła na to
+pozwala. Dwanastoletnia różnica między ekranami zniknęła razem z 12 kopiami bloczka.
+
+Przy okazji `LoadPhase.swift` przeniesiony z `App/` do `Core/Domain/`: nie ma w nim ani
+jednego odwołania do SwiftUI, ale ponieważ leżał w warstwie wykluczonej z pakietu
+linuksowego, reguły ponowienia **nie dało się przetestować**. Teraz ma 5 testów.
+
+### A-21 · Znacznik wysyłki liczony w dwóch miejscach — **zrobione**
+
+`MessageTransport.receiptGlyph` w rdzeniu opisywał, który znacznik odpowiada któremu
+stanowi (`clock` / `single` / `double`), a widok `ReceiptMark` liczył to samo drugi raz
+(`== .pending`, `== .delivered || == .read`) i **nigdy nie używał reguły z rdzenia**.
+Teraz widok przełącza się po `transport.receiptGlyph`, więc zmiana reguły zmienia
+zarówno rdzeń, jak i ekran.
+
+### A-22 · Etykieta kontekstu jako literał w trzech miejscach — **zrobione**
+
+„Cała kancelaria” było wpisane w `AssistantStore`, w arkuszu wyboru kontekstu i jako
+`AssistantContext.displayLabel` w rdzeniu (którego nikt nie wołał). Teraz obie warstwy
+używają `AssistantContext.firm.displayLabel`.
+
+### A-23 · Sześć składowych rdzenia bez użycia — **usunięte**
+
+| Składowa | Dlaczego usunięta |
+| --- | --- |
+| `VoiceSessionCoordinator.stateStream()` | drugi sposób obserwacji stanu obok `addObserver`, którego używa aplikacja; dwa sposoby na to samo rozjeżdżają się |
+| `VoiceSessionCoordinator.disarmVoiceConfirmation()` | akcje anuluje `cancelAction`, a rozbrojenie robi silnik przy nowej propozycji i reconnectcie |
+| `DateTextFormatter.isoField(_:)` | jednowierszowa nakładka na `date.isoString` |
+| `LocalDate.startOfMonth` | pasek tygodnia go nie potrzebuje |
+| `ScheduledEvent.startInstant` | aplikacja używa `day` + `time` |
+| `MockVoiceTransport.reportsExactPlayback` | flaga mocka, której nie ustawiał ani nie czytał żaden test |
+
+### A-24 · Kontrola martwego API jako stała bramka — **dodane**
+
+Skoro ta klasa problemu była niewidoczna, jest teraz krokiem bramki:
+`scripts/check-dead-code.py` liczy wystąpienia każdej publicznej składowej `Emma/Core/**`
+we wszystkich źródłach Swift (aplikacja, testy, testy UI, eksporter podglądu) i kończy
+się błędem, jeśli któraś nie ma ani jednego użycia. Lista wyjątków (składowe wymagane
+przez protokoły: `description`, `id`, `body`…) jest **jawna** — ukryta lista wyjątków
+to sposób na to, żeby kontrola nic nie znaczyła. Test mutacyjny: dopisanie metody
+`speculativeHelper()` kończy kontrolę błędem, po cofnięciu mija.
+
+Stan po rundzie 3: **0** martwych publicznych składowych rdzenia na 514 sprawdzanych.
+
+### Runda 3 w liczbach
+
+| Metoda | Wynik |
+| --- | --- |
+| `verify-linux-logic.sh` | **8/8** kroków bez zastrzeżeń (było 7) |
+| `swift test` | **170** testów, 0 błędów (było 165 po rundzie 2, 161 po rundzie 1) |
+| Testy mutacyjne rundy 3 | 3 mutacje (brak uzgadniania w stróżu, brak odebrania prawa zapisu, martwa metoda) — każda wywołała padnięcie właściwego testu |
+| Martwe publiczne API rdzenia | 0 z 514 |
+| Pomiar renderu podglądu | bez zastrzeżeń |
+
+## 9. Pierwsze kroki na Macu — kolejność z tego audytu
 
 1. `./scripts/generate-project.sh`, build, naprawa błędów typów (lista w `BUILD_AND_DEVICE_STATUS.md`).
 2. Sprawdzić **D-13**: duży Dynamic Type w kategorii XXXL — czy nic się nie obcina.

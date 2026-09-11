@@ -27,8 +27,10 @@ struct AssignOwnerSheet: View {
         switch phase {
         case .idle, .loading:
             LoadingState("Wczytuję dane klienta…")
-        case .failed(let message):
-            InlineError(message)
+        case .failed(let failure):
+            LoadFailureView(failure) {
+                Task { await load() }
+            }
         case .loaded(let client):
             VStack(alignment: .leading, spacing: 0) {
                 // Imię i nazwisko klienta może zawierać cyrylicę — czcionka zależna od pisma.
@@ -56,12 +58,12 @@ struct AssignOwnerSheet: View {
         if !phase.hasLoaded { phase = .loading }
         do {
             guard let client = try await dependencies.repository.client(id: clientID) else {
-                phase = .failed("Nie znaleziono klienta.")
+                phase = .failed(LoadFailure(message: "Nie znaleziono klienta.", isRetryable: false))
                 return
             }
             phase = .loaded(client)
         } catch {
-            phase = .failed(ScreenLoad.message(for: error, fallback: "Nie udało się wczytać danych klienta."))
+            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać danych klienta."))
         }
     }
 

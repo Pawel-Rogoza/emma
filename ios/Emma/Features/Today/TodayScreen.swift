@@ -87,7 +87,7 @@ final class TodayStore: ObservableObject {
                 )
             )
         } catch {
-            phase = .failed(ScreenLoad.message(for: error, fallback: "Nie udało się wczytać dnia."))
+            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać dnia."))
         }
     }
 
@@ -108,9 +108,8 @@ struct TodayScreen: View {
                 switch store.phase {
                 case .idle, .loading:
                     LoadingState("Przygotowuję dzień…")
-                case .failed(let message):
-                    InlineError(message)
-                    SecondaryButton("Spróbuj ponownie") {
+                case .failed(let failure):
+                    LoadFailureView(failure) {
                         Task { await store.load(dependencies) }
                     }
                 case .loaded(let model):

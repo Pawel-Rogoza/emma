@@ -42,11 +42,11 @@ final class CaseStore: ObservableObject {
         phase = .loading
         do {
             guard let legalCase = try await dependencies.repository.legalCase(id: caseID) else {
-                phase = .failed(DomainError.notFound(resource: "sprawa", id: caseID.rawValue).safeMessage)
+                phase = .failed(ScreenLoad.failure(for: DomainError.notFound(resource: "sprawa", id: caseID.rawValue), fallback: "Nie znaleziono sprawy."))
                 return
             }
             guard let client = try await dependencies.repository.client(id: legalCase.clientID) else {
-                phase = .failed(DomainError.notFound(resource: "klient", id: legalCase.clientID.rawValue).safeMessage)
+                phase = .failed(ScreenLoad.failure(for: DomainError.notFound(resource: "klient", id: legalCase.clientID.rawValue), fallback: "Nie znaleziono klienta."))
                 return
             }
             let today = dependencies.today
@@ -70,7 +70,7 @@ final class CaseStore: ObservableObject {
                 )
             )
         } catch {
-            phase = .failed(ScreenLoad.message(for: error, fallback: "Nie udało się wczytać sprawy."))
+            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać sprawy."))
         }
     }
 }
@@ -89,8 +89,10 @@ struct CaseScreen: View {
                 switch store.phase {
                 case .idle, .loading:
                     LoadingState("Wczytuję sprawę…")
-                case .failed(let message):
-                    InlineError(message)
+                case .failed(let failure):
+                    LoadFailureView(failure) {
+                        Task { await store.load(dependencies, caseID: caseID) }
+                    }
                 case .loaded(let model):
                     loaded(model)
                 }

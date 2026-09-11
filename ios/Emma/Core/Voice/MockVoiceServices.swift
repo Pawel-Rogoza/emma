@@ -411,8 +411,6 @@ public final class MockSpeechPlaybackService: SpeechPlaybackService {
     private var continuation: AsyncStream<PlaybackEvent>.Continuation?
     private var current: SpeechPlaybackRequest?
     /// Mock raportuje dokładne zdarzenia odtwarzania, więc informacja nie jest przybliżona.
-    public let reportsExactPlayback = true
-
     public init() {}
 
     public func play(_ request: SpeechPlaybackRequest) async throws {

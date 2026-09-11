@@ -48,6 +48,7 @@ public final class VoiceSessionCoordinator {
     /// Wartość wstrzykiwalna, żeby test mógł sprawdzić **działanie stróża**,
     /// a nie tylko samej metody.
     private let limitCheckInterval: TimeInterval
+    private let sessionStatus: (@MainActor (VoiceSessionID) async -> VoiceSessionStatus?)?
 
     // MARK: Zasoby wewnętrzne
 
@@ -89,7 +90,10 @@ public final class VoiceSessionCoordinator {
         clock: Clock = SystemClock(),
         idleTimeout: TimeInterval = 5 * 60,
         sessionLifetime: TimeInterval = 30 * 60,
-        limitCheckInterval: TimeInterval = 15
+        limitCheckInterval: TimeInterval = 15,
+        /// Sposób zapytania backendu o stan sesji. `nil` oznacza tryb bez backendu
+        /// (np. testy i Demo), w którym nie ma czego uzgadniać.
+        sessionStatus: (@MainActor (VoiceSessionID) async -> VoiceSessionStatus?)? = nil
     ) {
         self.sessionRepository = sessionRepository
         self.actionRepository = actionRepository
@@ -98,6 +102,7 @@ public final class VoiceSessionCoordinator {
         self.idleTimeout = idleTimeout
         self.sessionLifetime = sessionLifetime
         self.limitCheckInterval = limitCheckInterval
+        self.sessionStatus = sessionStatus
         self.state = VoiceUIState()
     }
 
@@ -117,14 +122,9 @@ public final class VoiceSessionCoordinator {
         observers.removeValue(forKey: token)
     }
 
-    public func stateStream() -> AsyncStream<VoiceUIState> {
-        AsyncStream { continuation in
-            let token = addObserver { continuation.yield($0) }
-            continuation.onTermination = { [weak self] _ in
-                Task { @MainActor in self?.removeObserver(token) }
-            }
-        }
-    }
+    // `stateStream()` usunięty: był drugim sposobem obserwacji stanu obok
+    // `addObserver`, a nikt go nie wołał. Dwa sposoby na to samo to zaproszenie,
+    // żeby jedna ścieżka zaczęła się rozjeżdżać z drugą.
 
     // MARK: - Tryb 1: rozmowa z Emmą
 
@@ -654,10 +654,6 @@ public final class VoiceSessionCoordinator {
         }
     }
 
-    public func disarmVoiceConfirmation() {
-        actionEngine.disarm(into: &actionState)
-    }
-
     /// Potwierdzenie. Tworzy jedno wykonanie i unikalny wpis outboxa dla tej wersji (§8.1).
     @discardableResult
     public func confirmAction(
@@ -914,7 +910,8 @@ public final class VoiceSessionCoordinator {
                 guard let interval = self?.limitCheckInterval else { return }
                 try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
                 guard let self, !Task.isCancelled else { return }
-                _ = await self.enforceSessionLimits()
+                if await self.enforceSessionLimits() != nil { continue }
+                _ = await self.reconcileSessionWithBackend()
             }
         }
     }
@@ -945,6 +942,26 @@ public final class VoiceSessionCoordinator {
         }
 
         return nil
+    }
+
+    /// Uzgodnienie stanu sesji z backendem (§5.6, plan linia 342).
+    ///
+    /// Metoda `handleSessionTakenOverByAnotherDevice()` istniała, ale **nikt jej nie wołał**,
+    /// więc przejęcie sesji przez inne urządzenie nie kończyło u nas uprawnienia do zapisu.
+    /// Backend wie o przejęciu pierwszy: raportuje sesję jako nieaktywną, choć my wciąż
+    /// trzymamy połączenie. Wtedy kończymy lokalnie z powodem „przejęta przez inne
+    /// urządzenie” i odbieramy prawo zapisu głosem, zachowując szkic.
+    ///
+    /// - Returns: powód zakończenia, jeśli sesja została zakończona z powodu backendu.
+    @discardableResult
+    public func reconcileSessionWithBackend() async -> VoiceEndReason? {
+        guard let sessionStatus, let sessionID = state.sessionID else { return nil }
+        guard state.connection == .connected || state.connection == .connecting else { return nil }
+        guard let status = await sessionStatus(sessionID) else { return nil }
+        // Aktywna sesja na backendzie niczego nie zmienia — to stan oczekiwany.
+        guard status.isActive == false else { return nil }
+        await handleSessionTakenOverByAnotherDevice()
+        return .takenOverByAnotherDevice
     }
 
     // MARK: - Decyzje o ponowieniu

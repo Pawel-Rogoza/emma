@@ -74,7 +74,7 @@ final class ClientsStore: ObservableObject {
                 )
             )
         } catch {
-            phase = .failed(ScreenLoad.message(for: error, fallback: "Nie udało się wczytać bazy kancelarii."))
+            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać bazy kancelarii."))
         }
     }
 

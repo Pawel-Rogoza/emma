@@ -30,7 +30,7 @@ struct EmmaContextSheet: View {
             if action == nil {
                 ChoiceList(
                     items: firmOptions,
-                    title: { _ in "Cała kancelaria" },
+                    title: { _ in AssistantContext.firm.displayLabel },
                     subtitle: { _ in "Plan dnia i kolejne kroki" }
                 ) { _ in
                     select(nil)

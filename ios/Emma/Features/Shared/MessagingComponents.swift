@@ -129,22 +129,36 @@ struct ConversationRow: View {
 
 // MARK: Potwierdzenie dostarczenia
 
-/// Znacznik statusu wysyłki. Etykieta tekstowa jest dostępna dla czytnika ekranu,
-/// a sam znacznik nie udaje potwierdzenia od dostawcy, którego nie ma.
+/// Znacznik statusu wysyłki. Etykieta tekstowa trafia do czytnika ekranu, a sam
+/// znacznik nie udaje potwierdzenia od dostawcy, którego nie ma.
+///
+/// Który znacznik odpowiada któremu stanowi, rozstrzyga **reguła domenowa**
+/// `MessageTransport.receiptGlyph` — wcześniej ta sama decyzja była powtórzona tutaj
+/// (`== .pending`, `== .delivered || == .read`), czyli w dwóch miejscach naraz.
 struct ReceiptMark: View {
     let transport: MessageTransport
 
     var body: some View {
         HStack(spacing: 1) {
-            Image(systemName: transport == .pending ? "clock" : "checkmark")
-                .font(.system(size: 11, weight: .semibold))
-            if transport == .delivered || transport == .read {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 11, weight: .semibold))
+            switch transport.receiptGlyph {
+            case .none:
+                EmptyView()
+            case .clock:
+                glyph("clock")
+            case .single:
+                glyph("checkmark")
+            case .double:
+                glyph("checkmark")
+                glyph("checkmark")
             }
         }
         .foregroundStyle(transport == .read ? EmmaTheme.receiptRead : EmmaTheme.receiptDefault)
         .accessibilityLabel(transport.displayName)
+    }
+
+    private func glyph(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 11, weight: .semibold))
     }
 }
 

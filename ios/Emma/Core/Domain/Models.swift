@@ -241,20 +241,6 @@ public struct ScheduledEvent: Identifiable, Hashable, Codable, Sendable {
 
     /// Chwila rozpoczęcia w UTC. Używana tylko do prezentacji i porządkowania;
     /// kolizje liczymy w minutach lokalnych, aby uniknąć wpływu zmiany czasu.
-    public func startInstant(referenceDate: Date = Date()) -> MeetingInstant? {
-        var components = DateComponents()
-        components.year = day.year
-        components.month = day.month
-        components.day = day.day
-        components.hour = time.hour
-        components.minute = time.minute
-        var calendar = Calendar(identifier: .gregorian)
-        guard let zone = TimeZone(identifier: EmmaTime.referenceTimeZone) else { return nil }
-        calendar.timeZone = zone
-        guard let date = calendar.date(from: components) else { return nil }
-        return MeetingInstant(utc: date)
-    }
-
     /// Kolizja prowadzącego (§etap 04). Zakończone wydarzenia nie kolidują.
     public func overlaps(with other: ScheduledEvent) -> Bool {
         guard id != other.id,

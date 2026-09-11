@@ -14,7 +14,7 @@ w chmurze. Ten dokument opisuje gotową do użycia drogę.
 | Sposób | Co pokazuje |
 | --- | --- |
 | Prototyp w przeglądarce: `reference/prototype/index.html` | **zatwierdzony wzorzec designu**, interaktywny: pięć zakładek, arkusze, rozmowa z Emmą |
-| `bash ios/scripts/verify-linux-logic.sh` | logika domeny i głosu (161 testów), składnia, odwołania, kontrakt API |
+| `bash ios/scripts/verify-linux-logic.sh` | logika domeny i głosu (170 testów), składnia, odwołania, kontrakt API, martwe API |
 | `bash ios/scripts/start-prototype-preview.sh` | lokalny serwer podglądu prototypu pod `http://127.0.0.1:8099/` |
 
 Czego **nie** daje żadne z tych narzędzi: podglądu prawdziwego interfejsu SwiftUI.

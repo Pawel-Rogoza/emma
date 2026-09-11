@@ -19,10 +19,11 @@ Backend           : repozytorium prywatne, brak dostępu
 
 | Bramka | Stan | Dowód |
 | --- | --- | --- |
-| Testy logiki domenowej i głosu | **wykonane** | `Executed 161 tests, with 0 failures (0 unexpected)` |
+| Testy logiki domenowej i głosu | **wykonane** | `Executed 170 tests, with 0 failures (0 unexpected)` |
 | Kontrola składni wszystkich plików Swift (w tym SwiftUI) | **wykonana** | `Sprawdzono plików: 65, błędów składni: 0` |
-| Kontrola odwołań do zależności i typów systemowych | **wykonana** | `sprawdzono 1078 odwołań, brak odwołań bez deklaracji` |
+| Kontrola odwołań do zależności i typów systemowych | **wykonana** | `sprawdzono 1079 odwołań, brak odwołań bez deklaracji` |
 | Kontrola tokenów koloru wobec referencji | **wykonana** | `100 tokenów, 0 spoza referencji` |
+| Kontrola martwego publicznego API rdzenia | **wykonana** | `0 martwych składowych na 514 sprawdzanych` |
 | Pomiar renderu podglądu dla Linuksa | **wykonany** | `5/5 czcionek, 0 przekroczeń szerokości, 0 ucięć, 0 nachodzenia` |
 | Eksport danych demo tym samym kodem co aplikacja | **wykonany** | `swift run EmmaPreviewExport` → 4 klientów, 2 sprawy, 4 rozmowy, 8 wiadomości |
 | Kontrola typów SwiftUI | **niewykonana** | wymaga kompilatora Apple |

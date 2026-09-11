@@ -83,7 +83,7 @@ final class MessagesStore: ObservableObject {
             rows = filterAndSort(rows)
             phase = .loaded(Model(rows: rows, searchQuery: searchText, filter: filter))
         } catch {
-            phase = .failed(ScreenLoad.message(for: error, fallback: "Nie udało się wczytać rozmów."))
+            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać rozmów."))
         }
     }
 
@@ -151,8 +151,10 @@ struct MessagesScreen: View {
                 switch store.phase {
                 case .idle, .loading:
                     LoadingState("Wczytuję rozmowy…")
-                case .failed(let message):
-                    InlineError(message)
+                case .failed(let failure):
+                    LoadFailureView(failure) {
+                        Task { await load() }
+                    }
                 case .loaded(let model):
                     if model.rows.isEmpty {
                         emptyState(model)

@@ -76,7 +76,7 @@ final class CalendarStore: ObservableObject {
                 )
             )
         } catch {
-            phase = .failed(ScreenLoad.message(for: error, fallback: "Nie udało się wczytać kalendarza."))
+            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać kalendarza."))
         }
     }
 
@@ -133,8 +133,10 @@ struct CalendarScreen: View {
                 switch store.phase {
                 case .idle, .loading:
                     LoadingState("Wczytuję plan…")
-                case .failed(let message):
-                    InlineError(message)
+                case .failed(let failure):
+                    LoadFailureView(failure) {
+                        Task { await load() }
+                    }
                 case .loaded(let model):
                     dayStrip(model)
                         .padding(.bottom, 6)
