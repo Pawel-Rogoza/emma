@@ -19,8 +19,8 @@ Backend           : repozytorium prywatne, brak dostępu
 
 | Bramka | Stan | Dowód |
 | --- | --- | --- |
-| Testy logiki domenowej i głosu | **wykonane** | `Executed 132 tests, with 0 failures (0 unexpected)` |
-| Kontrola składni wszystkich plików Swift (w tym SwiftUI) | **wykonana** | `Sprawdzono plików: 60, błędów składni: 0`
+| Testy logiki domenowej i głosu | **wykonane** | `Executed 142 tests, with 0 failures (0 unexpected)` |
+| Kontrola składni wszystkich plików Swift (w tym SwiftUI) | **wykonana** | `Sprawdzono plików: 63, błędów składni: 0`
 | Kontrola odwołań do zależności i tokenów | **wykonana** | `brak odwołań bez deklaracji` | |
 | Kontrola typów SwiftUI | **niewykonana** | wymaga kompilatora Apple |
 | Kompilacja projektu Xcode | **niewykonana** | wymaga macOS |

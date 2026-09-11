@@ -447,11 +447,25 @@ public enum DemoFixtures {
 
     /// Kursory startowe: wszystko przed tą datą jest przeczytane.
     /// Andrii i Maria mają nieprzeczytane wiadomości dla obu adwokatów.
+    /// Stan odczytu jest **niezależny dla każdego prawnika** (§3.3):
+    /// odczyt jednego nie zmienia licznika drugiego, a kursor nigdy się nie cofa.
+    ///
+    /// Paweł odpowiedział już Andriiowi, Tomasz jeszcze nie — dlatego liczniki
+    /// nieprzeczytanych są różne (Tomasz 3, Paweł 1) i widać, że są liczone osobno.
+    /// Ten sam zestaw danych obsługuje oba profile.
     public static let threadStates: [ThreadUserState] = {
         var states: [ThreadUserState] = []
         for user in users {
+            let isPawel = user.id == UserID.pawel
             states.append(ThreadUserState(userID: user.id, threadID: olenaThread, readCursorSequence: 2))
-            states.append(ThreadUserState(userID: user.id, threadID: andriiThread, readCursorSequence: 0))
+            // Dwie wiadomości Andriia: Paweł ma je za sobą, Tomasz nie.
+            states.append(
+                ThreadUserState(
+                    userID: user.id,
+                    threadID: andriiThread,
+                    readCursorSequence: isPawel ? 2 : 0
+                )
+            )
             states.append(ThreadUserState(userID: user.id, threadID: mariaThread, readCursorSequence: 0))
             states.append(ThreadUserState(userID: user.id, threadID: dmytroThread, readCursorSequence: 3))
         }

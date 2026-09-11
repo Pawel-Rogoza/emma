@@ -20,6 +20,13 @@ public final class AppDependencies: ObservableObject {
     public let voice: VoiceSessionCoordinator
     /// Nazwa zestawu danych demo wybrana na starcie (`--fixture`).
     public let fixtureName: String?
+    /// Zestaw danych demo faktycznie używany (rozstrzygnięty z `fixtureName`).
+    public let fixture: DemoFixture
+    /// Zgłoszenie, gdy przekazano nieznaną nazwę zestawu. Pokazywane właścicielowi,
+    /// żeby literówka w schemacie nie wyglądała jak „demo działa inaczej”.
+    @Published public var fixtureNotice: String?
+    /// Scenariusz mocka głosowego wynikający z zestawu danych.
+    public var voiceScenarioName: String { fixture.voiceScenarioName }
     /// Dzień referencyjny prezentacji: piątek 11 września 2026.
     public let referenceDay: LocalDate
 
@@ -65,11 +72,21 @@ public final class AppDependencies: ObservableObject {
         self.configuration = configuration
         self.fixtureName = fixtureName
 
-        let resolvedClock: Clock = clock ?? DemoClock()
+        // Zestaw danych rozstrzygamy raz, na starcie: dzień referencyjny, zalogowany
+        // prawnik i scenariusz głosu pochodzą z jednego, nazwanego źródła.
+        let resolution = DemoFixtureCatalog.resolve(fixtureName)
+        self.fixture = resolution.fixture
+
+        let resolvedClock: Clock = clock ?? DemoClock(
+            referenceDate: resolution.fixture.referenceDay,
+            hour: resolution.fixture.referenceHour,
+            minute: resolution.fixture.referenceMinute
+        )
         self.clock = resolvedClock
         self.referenceDay = AppDependencies.localDate(from: resolvedClock.now())
 
-        let dataset = DemoFixtures.dataset()
+        var dataset = DemoFixtures.dataset()
+        dataset.currentUserID = resolution.fixture.currentUserID
         self.repository = repository ?? MockRepository(
             dataset: dataset,
             clock: resolvedClock,
@@ -77,6 +94,7 @@ public final class AppDependencies: ObservableObject {
         )
 
         self.currentUser = dataset.user
+        self.fixtureNotice = resolution.notice
 
         self.voice = VoiceSessionCoordinator(
             sessionRepository: self.repository,
@@ -92,8 +110,11 @@ public final class AppDependencies: ObservableObject {
     }
 
     /// Uproszczony start dla podglądów i testów interfejsu.
-    public static func demo() -> AppDependencies {
-        AppDependencies(configuration: AppConfiguration(environment: .demo, apiBaseURL: nil, defaultLocale: "pl-PL"))
+    public static func demo(fixtureName: String? = nil) -> AppDependencies {
+        AppDependencies(
+            configuration: AppConfiguration(environment: .demo, apiBaseURL: nil, defaultLocale: "pl-PL"),
+            fixtureName: fixtureName
+        )
     }
 
     // MARK: Nawigacja

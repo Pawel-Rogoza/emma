@@ -34,7 +34,15 @@ public struct RootShell: View {
                 dependencies.voice.viewDidDisappear()
             }
         }
-        .onAppear { dependencies.refreshUnreadTotal() }
+        .onAppear {
+            dependencies.refreshUnreadTotal()
+            // Literówka w nazwie zestawu danych nie może wyglądać jak „inne demo”:
+            // pokazujemy ją raz, wprost, i zaraz zniknie.
+            if let notice = dependencies.fixtureNotice {
+                dependencies.fixtureNotice = nil
+                dependencies.showToast(notice)
+            }
+        }
     }
 
     @ViewBuilder

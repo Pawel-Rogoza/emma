@@ -50,6 +50,9 @@ Dokumenty: `docs/ios/BASELINE.md`, `docs/ios/DESIGN_CONTRACT.md`,
 **Status: zweryfikowane (składnia) — kompilacja Xcode: niezweryfikowane**
 
 - [x] `ios/project.yml` jako jedyne źródło projektu Xcode (trzy konfiguracje, trzy schematy współdzielone).
+- [x] Pakiety dostawcy przypięte dokładnie (ElevenLabs 3.3.1, LiveKit 2.16.0), adapter za `canImport`.
+- [x] Zestawy danych demo (`--fixture`): dzień referencyjny, zalogowany prawnik i scenariusz mocka
+      wybierane nazwą; nieznana nazwa kończy się czytelnym zgłoszeniem, nie cichym fallbackiem.
 - [x] `Config/{Demo,Staging,Production}.xcconfig` bez sekretów, `Local.xcconfig` w `.gitignore`.
 - [x] `Info.plist`: środowisko, adres backendu, locale, opisy uprawnień mikrofonu i mowy,
       `UIAppFonts` z pięcioma czcionkami, tryb jasny, tylko pion.
@@ -138,8 +141,8 @@ wskaźnik strony głównej i podpis podglądu — nie są częścią aplikacji.
 
 | Bramka | Stan |
 | --- | --- |
-| Testy logiki (SwiftPM, Linux) | **wykonane** — 132 testy, 0 błędów |
-| Kontrola składni wszystkich plików Swift | **wykonana** — 60 plików, 0 błędów |
+| Testy logiki (SwiftPM, Linux) | **wykonane** — 142 testy, 0 błędów |
+| Kontrola składni wszystkich plików Swift | **wykonana** — 63 pliki, 0 błędów |
 | Kontrola odwołań do zależności i tokenów | **wykonana** — 0 odwołań bez deklaracji |
 | Kompilacja projektu Xcode | **niewykonana** — brak macOS |
 | Testy jednostkowe w Xcode | **niewykonana** — brak macOS |

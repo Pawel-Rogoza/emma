@@ -140,17 +140,32 @@ final class ReadStateTests: XCTestCase {
 
     func testCursorsOfTwoLawyersAreIndependent() {
         var states = DemoFixtures.threadStates
-        // Tomasz czyta wątek Andriego.
+        // Punkt odniesienia bierzemy z danych, a nie z założenia, że obaj prawnicy
+        // mają identyczny stan — w demo mają różny (Paweł ma Andriia za sobą).
+        let pawelBefore = states
+            .first { $0.userID == .pawel && $0.threadID == DemoFixtures.andriiThread }?
+            .readCursorSequence
+        let tomaszBefore = states
+            .first { $0.userID == .tomasz && $0.threadID == DemoFixtures.andriiThread }?
+            .readCursorSequence
+
         states = ReadStatePolicy.markRead(
             states: states,
             userID: .tomasz,
             threadID: DemoFixtures.andriiThread,
             snapshotSequence: 2
         )
-        let tomaszState = states.first { $0.userID == .tomasz && $0.threadID == DemoFixtures.andriiThread }
-        let pawelState = states.first { $0.userID == .pawel && $0.threadID == DemoFixtures.andriiThread }
-        XCTAssertEqual(tomaszState?.readCursorSequence, 2)
-        XCTAssertEqual(pawelState?.readCursorSequence, 0, "Odczyt Tomasza nie zaznacza wiadomości Pawłowi")
+
+        let tomaszAfter = states
+            .first { $0.userID == .tomasz && $0.threadID == DemoFixtures.andriiThread }?
+            .readCursorSequence
+        let pawelAfter = states
+            .first { $0.userID == .pawel && $0.threadID == DemoFixtures.andriiThread }?
+            .readCursorSequence
+
+        XCTAssertEqual(tomaszAfter, 2)
+        XCTAssertNotEqual(tomaszBefore, tomaszAfter, "Odczyt Tomasza musi przesunąć jego kursor")
+        XCTAssertEqual(pawelAfter, pawelBefore, "Odczyt Tomasza nie zaznacza wiadomości Pawłowi")
     }
 
     func testOpeningThreadClearsManualUnreadFlag() {

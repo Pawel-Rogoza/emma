@@ -536,7 +536,10 @@ final class AssistantStore: ObservableObject {
             await dependencies.voice.updateContext(currentContext())
             return
         }
-        let scenarioName = "standard-proposal-flow"
+        // Scenariusz wynika z zestawu danych demo (`--fixture`), a nie z zaszytej
+        // nazwy: inaczej schematy „voice-reconnect” czy „voice-barge-in” nie miałyby
+        // żadnego wpływu na działanie aplikacji.
+        let scenarioName = dependencies.voiceScenarioName
         await dependencies.voice.startConversation(
             context: currentContext(),
             user: dependencies.currentUser,

@@ -1161,6 +1161,12 @@ final class MockRepositoryTests: XCTestCase {
 
     func testReadStateIsPerUserAndOnlyMovesForward() async throws {
         let repository = makeRepository()
+        // Kursor Pawła czytamy z **tego samego** repozytorium, przed operacją Tomasza:
+        // tylko wtedy porównanie „przed/po” cokolwiek dowodzi.
+        let pawelCursorBefore = try await repository.readStates(userID: .pawel)
+            .first { $0.threadID == DemoFixtures.andriiThread }?
+            .readCursorSequence
+
         var states = try await repository.readStates(userID: .tomasz)
         guard let state = states.first(where: { $0.threadID == DemoFixtures.andriiThread }) else {
             return XCTFail("brak stanu wątku")
@@ -1181,8 +1187,16 @@ final class MockRepositoryTests: XCTestCase {
         let tomasz = states.first { $0.threadID == DemoFixtures.andriiThread }
         XCTAssertEqual(tomasz?.readCursorSequence, 2)
 
+        // Kursor drugiego prawnika pozostaje nietknięty. Porównujemy stan sprzed
+        // operacji ze stanem po niej — obaj prawnicy mają w demo różne kursory,
+        // więc porównywanie z wartością Tomasza nie mówiłoby nic o niezależności.
         let pawelStates = try await repository.readStates(userID: .pawel)
-        XCTAssertEqual(pawelStates.first { $0.threadID == DemoFixtures.andriiThread }?.readCursorSequence, 0)
+        let pawelCursor = pawelStates.first { $0.threadID == DemoFixtures.andriiThread }?.readCursorSequence
+        XCTAssertEqual(
+            pawelCursor,
+            pawelCursorBefore,
+            "Odczyt Tomasza nie może zmienić kursora Pawła"
+        )
     }
 
     func testUnreadCountFromRepositoryMatchesPolicy() async throws {
