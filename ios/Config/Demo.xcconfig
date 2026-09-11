@@ -1,3 +1,4 @@
+#include? "Local.xcconfig"
 // Konfiguracja Demo — działa bez logowania, internetu i dostawców.
 // Ten plik NIE zawiera sekretów i nie wymaga żadnej modyfikacji, aby uruchomić M1.
 

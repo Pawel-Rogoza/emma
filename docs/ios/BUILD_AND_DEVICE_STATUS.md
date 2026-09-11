@@ -78,6 +78,23 @@ Wypisane wprost, żeby nie zniknęły w raporcie końcowym:
 6. **`Info.plist` i uprawnienia.** Opisy uprawnień są kompletne w `Info.plist`, ale
    `Package.swift` (ścieżka linuksowa) ich nie używa — realny efekt widać tylko na urządzeniu.
 
+## Droga do pierwszej kompilacji bez MacBooka
+
+Właściciel pracuje na Linuksie, więc przygotowano dwie rzeczy, które **nie wymagają Maca**:
+
+| Element | Co daje |
+| --- | --- |
+| `.github/workflows/ios-macos.yml` | kompilacja i testy na runnerze `macos-15` oraz zrzuty ekranu jedenastu ekranów jako artefakt do pobrania |
+| `ios/EmmaUITests/ScreenshotCaptureUITests.swift` | przejście po ekranach i zapis zrzutów wraz z raportem, który wprost oznacza ekrany nieudane |
+| `ios/scripts/start-prototype-preview.sh` | podgląd zatwierdzonego wzorca designu w przeglądarce (`http://127.0.0.1:8099/`) |
+| `ios/scripts/validate-ci-workflow.py` | kontrola struktury workflow — bo uruchomić go lokalnie nie można |
+
+Instrukcja: `docs/ios/CI_MACOS.md`.
+
+**Ten workflow nie został uruchomiony ani razu** — powstał bez macOS i bez dostępu do
+GitHuba. Pierwszy przebieg jest zarazem pierwszą kontrolą typów SwiftUI i pierwszym
+sprawdzeniem, czy przypięte wersje pakietów się rozwiązują.
+
 ## Zalecana kolejność pierwszego uruchomienia na Macu
 
 1. `cd ios && ./scripts/generate-project.sh`

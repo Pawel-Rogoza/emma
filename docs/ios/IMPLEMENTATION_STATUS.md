@@ -261,6 +261,8 @@ Poniżej pełna lista, bez pomijania pozycji niewygodnych.
 | Uruchomienie na symulatorze | **niewykonana** — brak macOS |
 | Test na fizycznym iPhonie | **niewykonana** — brak urządzenia |
 | Porównanie zrzutów z referencją | **niewykonane** — brak symulatora; porównanie oparte na kaskadzie CSS i pomiarach, nie na obrazie |
+| Podgląd wzorca designu na Linuksie | **dostępny** — `reference/prototype/index.html`, także przez `ios/scripts/start-prototype-preview.sh` |
+| Workflow CI dla macOS (build, testy, zrzuty ekranu) | **przygotowany, nieuruchomiony** — brak zdalnego repozytorium i macOS; instrukcja w `docs/ios/CI_MACOS.md` |
 
 ---
 

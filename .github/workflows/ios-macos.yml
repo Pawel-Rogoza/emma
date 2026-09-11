@@ -1,0 +1,225 @@
+# Emma · kompilacja, testy i zrzuty ekranu bez MacBooka
+#
+# Co ten workflow daje:
+#   • pierwszą prawdziwą kontrolę typów SwiftUI (na Linuksie niemożliwą),
+#   • kompilację projektu wygenerowanego z `project.yml` przez XcodeGen,
+#   • testy jednostkowe logiki w Xcode oraz testy logiki z pakietu SwiftPM,
+#   • **zrzuty ekranu jedenastu ekranów** z symulatora jako artefakt do pobrania.
+#
+# Czego nie daje: testu na fizycznym iPhonie (Bluetooth, trasa audio, mikrofon),
+# integracji z dostawcą głosu ani z WhatsApp — to wymaga urządzenia i kont.
+#
+# Uczciwe zastrzeżenie: ten plik nie został uruchomiony ani razu (powstał
+# w środowisku bez macOS). Pierwsze uruchomienie może wymagać drobnych poprawek —
+# dokładnie takich, o jakich mówi `docs/ios/CI_MACOS.md`.
+
+name: Emma · iOS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-macos.yml"
+  pull_request:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-macos.yml"
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Katalog na artefakty w obrębie runnera.
+  ARTIFACTS: ${{ github.workspace }}/artifacts
+
+jobs:
+  ios:
+    name: Kompilacja, testy i zrzuty ekranu
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - name: Pobranie repozytorium
+        uses: actions/checkout@v4
+
+      - name: Wybór Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Wersje narzędzi
+        run: |
+          set -euo pipefail
+          uname -a
+          xcodebuild -version
+          swift --version
+          echo "--- dostępne urządzenia symulatora (iPhone) ---"
+          xcrun simctl list devices available | grep -i iphone | head -10 || true
+
+      - name: Instalacja XcodeGen
+        run: brew install xcodegen
+
+      - name: Generowanie projektu z project.yml
+        working-directory: ios
+        run: ./scripts/generate-project.sh
+
+      - name: Pobranie pakietów (wersje przypięte w project.yml)
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          xcodebuild -resolvePackageDependencies \
+            -project Emma.xcodeproj \
+            -scheme Emma-Demo
+
+      - name: Testy logiki z pakietu SwiftPM (ta sama bramka co na Linuksie)
+        working-directory: ios
+        run: bash scripts/verify-linux-logic.sh
+
+      - name: Wybór symulatora
+        id: simulator
+        run: |
+          set -euo pipefail
+          # Bez wpisywania nazwy modelu na sztywno: zestaw symulatorów na runnerze
+          # zmienia się między obrazami. Preferujemy iPhone 16, a gdy go nie ma —
+          # pierwszy dostępny iPhone.
+          LIST=$(xcrun simctl list devices available)
+          UDID_PATTERN='[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}'
+          DEVICE_ID=$(printf '%s\n' "$LIST" | grep -i 'iPhone 16' | grep -oE "$UDID_PATTERN" | head -1 || true)
+          if [[ -z "$DEVICE_ID" ]]; then
+            DEVICE_ID=$(printf '%s\n' "$LIST" | grep -i 'iPhone' | grep -oE "$UDID_PATTERN" | head -1 || true)
+          fi
+          if [[ -z "$DEVICE_ID" ]]; then
+            echo "Nie znaleziono żadnego dostępnego symulatora iPhone:" >&2
+            printf '%s\n' "$LIST" | head -40 >&2
+            exit 1
+          fi
+          echo "device_id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
+          echo "Wybrany symulator: $(xcrun simctl list devices | grep "$DEVICE_ID" || echo "$DEVICE_ID")"
+          xcrun simctl boot "$DEVICE_ID" || true
+
+      - name: Kompilacja (pierwsza prawdziwa kontrola typów SwiftUI)
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project Emma.xcodeproj \
+            -scheme Emma-Demo \
+            -destination "id=${{ steps.simulator.outputs.device_id }}" \
+            -derivedDataPath .build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            | tail -200
+
+      - name: Testy jednostkowe w Xcode
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Emma.xcodeproj \
+            -scheme Emma-Demo \
+            -destination "id=${{ steps.simulator.outputs.device_id }}" \
+            -derivedDataPath .build/DerivedData \
+            -resultBundlePath "$ARTIFACTS/unit-tests.xcresult" \
+            -only-testing:EmmaTests \
+            CODE_SIGNING_ALLOWED=NO \
+            | tail -200
+
+      - name: Zrzuty ekranu jedenastu ekranów
+        id: screenshots
+        continue-on-error: true
+        working-directory: ios
+        env:
+          # Xcode przekazuje do procesu testów tylko zmienne z prefiksem TEST_RUNNER_.
+          # Zrzuty trafiają też do wyników testu jako załączniki — to kanał pewniejszy.
+          TEST_RUNNER_EMMA_SHOT_DIR: ${{ github.workspace }}/artifacts/screenshots
+        run: |
+          set -o pipefail
+          mkdir -p "$ARTIFACTS/screenshots"
+          xcodebuild test \
+            -project Emma.xcodeproj \
+            -scheme Emma-Demo \
+            -destination "id=${{ steps.simulator.outputs.device_id }}" \
+            -derivedDataPath .build/DerivedData \
+            -resultBundlePath "$ARTIFACTS/screenshots.xcresult" \
+            -only-testing:EmmaUITests/ScreenshotCaptureUITests \
+            CODE_SIGNING_ALLOWED=NO \
+            | tail -200
+
+      - name: Wyciągnięcie zrzutów z wyników testu
+        if: always()
+        run: |
+          set -uo pipefail
+          mkdir -p "$ARTIFACTS/screenshots"
+          RESULT="$ARTIFACTS/screenshots.xcresult"
+          if [[ ! -d "$RESULT" ]]; then
+            echo "Brak pakietu wyników — etap zrzutów nie doszedł do skutku."
+            exit 0
+          fi
+          # Składnia xcresulttool zmieniała się między wersjami Xcode, dlatego próbujemy
+          # kolejno i nie przerywamy pracy, gdy któraś droga jest niedostępna.
+          xcrun xcresulttool export attachments \
+            --path "$RESULT" \
+            --output-path "$ARTIFACTS/screenshots" \
+            && echo "Zrzuty wyeksportowane (export attachments)." \
+            || echo "Nie udało się użyć 'export attachments' — próbuję starszej składni."
+          if ! ls "$ARTIFACTS/screenshots"/*.png >/dev/null 2>&1; then
+            xcrun xcresulttool export \
+              --type file \
+              --path "$RESULT" \
+              --output-path "$ARTIFACTS/screenshots" \
+              && echo "Zrzuty wyeksportowane (starsza składnia)." \
+              || echo "Eksport zrzutów nie powiódł się — zostaje zrzut z symulatora."
+          fi
+          ls -la "$ARTIFACTS/screenshots" || true
+
+      - name: Zrzut z symulatora (droga zapasowa)
+        if: always()
+        run: |
+          set -uo pipefail
+          mkdir -p "$ARTIFACTS/screenshots"
+          # Ten zrzut pokazuje ekran, na którym zatrzymały się testy — bywa
+          # najcenniejszą informacją, gdy test padł.
+          xcrun simctl io "${{ steps.simulator.outputs.device_id }}" screenshot \
+            "$ARTIFACTS/screenshots/stan-symulatora.png" || true
+          ls -la "$ARTIFACTS/screenshots" || true
+
+      - name: Podsumowanie przebiegu
+        if: always()
+        run: |
+          set -uo pipefail
+          {
+            echo "## Emma · iOS"
+            echo
+            echo "| Element | Wynik |"
+            echo "| --- | --- |"
+            echo "| Generowanie projektu z \`project.yml\` | ${{ steps.simulator.outcome == 'success' && 'wykonane' || 'sprawdź log' }} |"
+            echo "| Symulator | \`${{ steps.simulator.outputs.device_id }}\` |"
+            echo "| Logika (SwiftPM) | krok „Testy logiki z pakietu SwiftPM” |"
+            echo "| Testy jednostkowe Xcode | krok „Testy jednostkowe w Xcode” |"
+            echo "| Zrzuty ekranu | ${{ steps.screenshots.outcome }} (krok nieblokujący) |"
+            echo
+            if [[ -f "$ARTIFACTS/screenshots/raport.txt" ]]; then
+              echo "### Raport zrzutów"
+              echo '```'
+              cat "$ARTIFACTS/screenshots/raport.txt"
+              echo '```'
+            else
+              echo "Brak \`raport.txt\` — zrzuty szły drogą zapasową albo etap się nie wykonał."
+            fi
+            echo
+            echo "Artefakt \`emma-ios-artifacts\` zawiera zrzuty ekranu i pakiety wyników testów."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publikacja artefaktów
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emma-ios-artifacts
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 14

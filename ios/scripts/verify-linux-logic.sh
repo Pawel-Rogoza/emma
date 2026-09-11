@@ -37,14 +37,14 @@ echo "== Emma · weryfikacja logiki bez Xcode =="
 "$SWIFT_BIN" --version | head -1
 echo
 
-echo "== 1/4 · Kompilacja i testy logiki (SwiftPM) =="
+echo "== 1/5 · Kompilacja i testy logiki (SwiftPM) =="
 if ! "$SWIFT" test 2>&1 | grep -vE 'no version information'; then
   echo "[BŁĄD] Testy logiki nie przeszły." >&2
   exit 1
 fi
 echo
 
-echo "== 2/4 · Kontrola składni wszystkich plików Swift (w tym SwiftUI) =="
+echo "== 2/5 · Kontrola składni wszystkich plików Swift (w tym SwiftUI) =="
 failures=0
 checked=0
 while IFS= read -r file; do
@@ -65,7 +65,7 @@ if (( failures > 0 )); then
 fi
 
 echo
-echo "== 3/4 · Kontrola odwołań do zależności i repozytorium =="
+echo "== 3/5 · Kontrola odwołań do zależności i repozytorium =="
 if command -v python3 >/dev/null 2>&1; then
   if ! python3 scripts/check-cross-references.py; then
     echo "[BŁĄD] Znaleziono odwołania do nieistniejących składowych." >&2
@@ -76,7 +76,7 @@ else
 fi
 
 echo
-echo "== 4/4 · Kontrola struktury kontraktu API =="
+echo "== 4/5 · Kontrola struktury kontraktu API =="
 if command -v python3 >/dev/null 2>&1; then
   if ! python3 scripts/validate-api-spec.py; then
     echo "[BŁĄD] Kontrakt API ma problem strukturalny." >&2
@@ -86,6 +86,17 @@ else
   echo "[POMINIĘTE] Brak python3 — kontrola kontraktu API nie została wykonana."
 fi
 
+echo
+echo "== 5/5 · Kontrola struktury workflow CI dla macOS =="
+if command -v python3 >/dev/null 2>&1; then
+  if ! python3 scripts/validate-ci-workflow.py; then
+    echo "[BŁĄD] Workflow CI ma problem strukturalny." >&2
+    exit 1
+  fi
+else
+  echo "[POMINIĘTE] Brak python3 — kontrola workflow nie została wykonana."
+fi
+
 cat <<'EOF'
 
 Wynik:
@@ -93,5 +104,7 @@ Wynik:
   - składnia plików SwiftUI: sprawdzona przez parser Swifta
   - odwołania do zależności: sprawdzone filtrem nazw (nie kontrola typów)
   - struktura kontraktu API: sprawdzona (nie jest to walidacja OpenAPI)
+  - struktura workflow CI dla macOS: sprawdzona (nie jest to walidacja GitHub Actions)
+  - podgląd wzorca designu: reference/prototype/index.html w przeglądarce (to wzorzec, nie aplikacja)
   - kompilacja SwiftUI, symulator iOS, test iPhone'a: NIE WYKONANE (brak macOS/Xcode)
 EOF
