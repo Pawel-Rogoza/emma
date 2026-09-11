@@ -95,8 +95,9 @@ struct EmmaActionCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             heading
-            Text(clientName ?? "Kancelaria")
-                .font(EmmaTypography.actionTitle)
+            // Nazwa klienta może być cyrylicą — czcionka wybierana jest wg pisma.
+            Text(resolvedClientName)
+                .font(EmmaTypography.body(for: resolvedClientName, size: 15, weight: .semibold))
                 .foregroundStyle(EmmaTheme.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 16)
@@ -128,6 +129,9 @@ struct EmmaActionCard: View {
     }
 
     // MARK: Nagłówek i metadane
+
+    /// Nazwa klienta z referencji; dla działania firmowego „Kancelaria”.
+    private var resolvedClientName: String { clientName ?? "Kancelaria" }
 
     private var heading: some View {
         HStack(alignment: .center, spacing: 7) {
@@ -240,6 +244,7 @@ struct EmmaActionCard: View {
             ) {
                 onConfirm()
             }
+            .accessibilityLabel(proposal.kind.confirmLabel)
 
             consentNote
         }

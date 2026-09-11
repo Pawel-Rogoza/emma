@@ -453,8 +453,10 @@ final class AssistantStore: ObservableObject {
             return
         }
         // Treść wpisana w polu jest świadomym działaniem w interfejsie, ale musi
-        // dotyczyć tej samej prezentacji, którą pokazuje ekran.
+        // dotyczyć tej samej prezentacji, którą pokazuje ekran. Jeśli koordynator
+        // zna nowszą prezentację **tej samej** akcji, nie zatwierdzamy starej.
         if let active = dependencies.voice.state.activeProposal,
+           active.id == pending.proposal.id,
            active.presentationID != pending.proposal.presentationID {
             await answer("Propozycja zmieniła się od czasu jej pokazania. Sprawdź treść i zatwierdź przyciskiem w karcie.")
             return
@@ -488,14 +490,16 @@ final class AssistantStore: ObservableObject {
     }
 
     private func report(execution: ActionExecution, kind: ActionKind) async {
+        guard let dependencies else { return }
         switch execution.state {
         case .accepted:
             await answer(successMessage(kind))
         case .queued, .claimed, .dispatching:
             await answer(queuedMessage(kind, state: execution.state))
         case .unknown:
-            // Niepewny wynik: mówimy o sprawdzaniu statusu i nie oferujemy ponowienia (§8.3).
-            await answer("Nie znam jeszcze wyniku tego działania. Sprawdzam status wysyłki; automatycznego ponowienia nie ma.")
+            // Niepewny wynik: pytamy o status **raz** i nie ma automatycznego ponowienia (§8.3).
+            await dependencies.voice.refreshExecutionState(actionID: execution.actionID)
+            await answer("Nie znam jeszcze wyniku tego działania. Sprawdziłam status wysyłki; automatycznego ponowienia nie ma.")
         case .failed:
             await answer("Wykonanie nie powiodło się. Treść zostaje na ekranie — możesz przygotować działanie ponownie.")
         }
@@ -801,7 +805,7 @@ final class AssistantStore: ObservableObject {
         client(id: clientID)?.displayName
     }
 
-    func client(id: ClientID) -> Client? {
+    func client(id clientID: ClientID) -> Client? {
         clients.first { $0.id == clientID }
     }
 

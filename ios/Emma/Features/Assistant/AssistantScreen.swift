@@ -156,7 +156,8 @@ struct AssistantScreen: View {
                 Image(systemName: store.contextClient == nil ? "globe" : "folder")
                     .font(.system(size: 15, weight: .regular))
                 Text(store.contextTitle)
-                    .font(EmmaTypography.ui(11))
+                    // Nazwa klienta może być cyrylicą — czcionka wg pisma.
+                    .font(EmmaTypography.body(for: store.contextTitle, size: 11))
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)

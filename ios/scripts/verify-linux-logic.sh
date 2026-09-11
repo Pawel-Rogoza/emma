@@ -6,6 +6,8 @@
 #      tym samym kodem źródłowym, który trafia do targetu iOS.
 #   2. Sprawdza SKŁADNIĘ wszystkich plików Swift, w tym widoków SwiftUI,
 #      przez `swiftc -parse` (analiza składni bez rozwiązywania importów).
+#   3. Sprawdza ODWOŁANIA do elementów zależności i repozytorium — czy widoki nie
+#      wołają składowych, których nie ma. To filtr literówek, nie kontrola typów.
 #
 # Czego ten skrypt NIE robi i nie może zrobić:
 #   - nie kompiluje SwiftUI, nie typuje widoków, nie uruchamia symulatora iOS
@@ -42,7 +44,7 @@ if ! "$SWIFT" test 2>&1 | grep -vE 'no version information'; then
 fi
 echo
 
-echo "== 2/2 · Kontrola składni wszystkich plików Swift (w tym SwiftUI) =="
+echo "== 2/3 · Kontrola składni wszystkich plików Swift (w tym SwiftUI) =="
 failures=0
 checked=0
 while IFS= read -r file; do
@@ -62,10 +64,22 @@ if (( failures > 0 )); then
   exit 1
 fi
 
+echo
+echo "== 3/3 · Kontrola odwołań do zależności i repozytorium =="
+if command -v python3 >/dev/null 2>&1; then
+  if ! python3 scripts/check-cross-references.py; then
+    echo "[BŁĄD] Znaleziono odwołania do nieistniejących składowych." >&2
+    exit 1
+  fi
+else
+  echo "[POMINIĘTE] Brak python3 — kontrola odwołań nie została wykonana."
+fi
+
 cat <<'EOF'
 
 Wynik:
   - logika i testy: sprawdzone przez wykonanie kodu
   - składnia plików SwiftUI: sprawdzona przez parser Swifta
+  - odwołania do zależności: sprawdzone filtrem nazw (nie kontrola typów)
   - kompilacja SwiftUI, symulator iOS, test iPhone'a: NIE WYKONANE (brak macOS/Xcode)
 EOF
