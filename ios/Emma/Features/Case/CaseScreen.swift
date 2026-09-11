@@ -339,9 +339,7 @@ struct CaseScreen: View {
                     ForEach(Array(tasks.enumerated()), id: \.element.id) { index, task in
                         TaskRow(
                             task: task,
-                            dateText: task.priority == .urgent && !task.isDone
-                                ? "Pilne"
-                                : dependencies.dateText.dayLabel(task.dueDate),
+                            dateText: task.rowDateText(dependencies.dateText),
                             clientName: model.client.displayName
                         ) {
                             Task {

@@ -142,7 +142,7 @@ struct MessageOptionsSheet: View {
     @EnvironmentObject private var dependencies: AppDependencies
 
     @State private var message: Message?
-    @State private var clientName: String = "Klient"
+    @State private var clientName: String = Client.unknownDisplayName
 
     var body: some View {
         SheetScaffold(title: "Wiadomość", onClose: { dependencies.dismissSheet() }) {
@@ -201,7 +201,7 @@ struct MessageOptionsSheet: View {
     private func quote(_ message: Message) async {
         let quote = QuotedReference(
             messageID: message.id,
-            authorLabel: message.isOutgoing ? "Kancelaria" : clientName,
+            authorLabel: message.isOutgoing ? OwnerName.firmFallback : clientName,
             text: message.text,
             isAvailable: true
         )

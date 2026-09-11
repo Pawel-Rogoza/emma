@@ -56,6 +56,11 @@ public enum ClientSource: String, Codable, Sendable {
 }
 
 public struct Client: Identifiable, Hashable, Codable, Sendable {
+    /// Nazwa, gdy nie wiemy, o którego klienta chodzi. Referencja zawsze znajduje
+    /// osobę, więc to nie reguła wyglądu, a bezpiecznik: lepiej pokazać „Klient”
+    /// niż puste miejsce. Wcześniej ten sam literał stał w czterech plikach.
+    public static let unknownDisplayName = "Klient"
+
     public let id: ClientID
     public var displayName: String
     public var initials: String
@@ -122,6 +127,19 @@ public struct Client: Identifiable, Hashable, Codable, Sendable {
 
 public enum OwnerName {
     public static let unassigned = "Nieprzypisany"
+
+    /// Nazwa kancelarii, gdy zadanie nie ma klienta. Referencja pokazuje wtedy
+    /// „Kancelaria · właściciel”, a nie samo nazwisko właściciela.
+    public static let firmFallback = "Kancelaria"
+
+    /// Opis wiersza zadania: **klient (albo kancelaria), potem właściciel**.
+    ///
+    /// Kolejność jest przepisana z referencji (`${p?p.name:'Kancelaria'} · ${t.owner}`),
+    /// a nie wymyślona: aplikacja pokazywała odwrotnie i bez nazwy zapasowej, więc
+    /// zadanie bez klienta wyglądało inaczej niż we wzorcu.
+    public static func taskMeta(clientName: String?, ownerID: UserID) -> String {
+        "\(clientName ?? firmFallback) · \(of(ownerID))"
+    }
 
     public static func of(_ id: UserID) -> String {
         switch id {
@@ -265,6 +283,26 @@ public enum TaskPriority: String, Codable, Sendable, CaseIterable, Identifiable 
     case urgent = "Pilne"
 
     public var id: String { rawValue }
+
+    /// Nazwa do pokazania. Wartości surowe są zarazem etykietami referencji (tak samo
+    /// koduje je model danych), więc nie tworzymy drugiego zestawu napisów.
+    public var displayName: String { rawValue }
+}
+
+extension TaskItem {
+    /// Czy wiersz pokazuje wyróżnienie pilności.
+    ///
+    /// Referencja uzależnia je od **dwóch** warunków: priorytet „Pilne” **i** zadanie
+    /// niewykonane. Wiersz patrzył tylko na priorytet, więc ukończone zadanie pilne
+    /// nadal świeciło się na bursztynowo, choć we wzorcu już nie.
+    public var showsUrgentBadge: Bool { priority == .urgent && !isDone }
+
+    /// Tekst po prawej stronie wiersza: albo „Pilne”, albo etykieta dnia.
+    ///
+    /// Ta sama reguła decyduje o treści i o wyróżnieniu, więc nie mogą się rozjechać.
+    public func rowDateText(_ formatter: DateTextFormatter) -> String {
+        showsUrgentBadge ? TaskPriority.urgent.rawValue : formatter.dayLabel(dueDate)
+    }
 }
 
 public struct TaskItem: Identifiable, Hashable, Codable, Sendable {

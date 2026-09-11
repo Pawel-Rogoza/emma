@@ -139,9 +139,7 @@ struct TasksScreen: View {
                     ForEach(Array(model.tasks.enumerated()), id: \.element.id) { index, task in
                         TaskRow(
                             task: task,
-                            dateText: task.priority == .urgent && !task.isDone
-                                ? "Pilne"
-                                : dependencies.dateText.dayLabel(task.dueDate),
+                            dateText: task.rowDateText(dependencies.dateText),
                             clientName: task.clientID.flatMap { model.clientNames[$0] }
                         ) {
                             Task { await toggle(task) }

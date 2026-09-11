@@ -397,7 +397,81 @@ Stan po rundzie 3: **0** martwych publicznych składowych rdzenia na 514 sprawdz
 | Martwe publiczne API rdzenia | 0 z 514 |
 | Pomiar renderu podglądu | bez zastrzeżeń |
 
-## 9. Pierwsze kroki na Macu — kolejność z tego audytu
+## 9. Audyt runda 4 — gdzie ta sama reguła żyła w trzech wersjach
+
+Runda 4 zmieniła pytanie: nie „kto to woła?”, a „**ile razy ta sama reguła jest
+napisana w kodzie?**”. Detektor porównał literały i reguły rdzenia z warstwą widoków.
+
+### A-25 · Wiersz zadania pokazywał nazwy w złej kolejności i gubił kancelarię — **zrobione**
+
+Referencja: `<span>${p ? p.name : 'Kancelaria'} · ${t.owner}</span>` — **klient (albo
+kancelaria), potem właściciel**. Aplikacja pokazywała odwrotnie („Tomasz · Andrii Melnyk”),
+a przy zadaniu bez klienta **gubiła nazwę kancelarii**, zostawiając samo nazwisko
+właściciela. Reguła jest teraz w rdzeniu (`OwnerName.taskMeta`), z trzema testami.
+
+### A-26 · „Klient” jako nazwa zapasowa w czterech plikach — **zrobione**
+
+Gdy aplikacja nie wie, o którego klienta chodzi, pokazuje „Klient”. Ten sam literał stał
+w rdzeniu (`EmmaBriefing`) i w trzech miejscach widoków. Teraz jest jedna stała:
+`Client.unknownDisplayName`. To bezpiecznik, nie reguła wyglądu — referencja zawsze
+znajduje osobę — ale bezpiecznik też powinien być jeden.
+
+### A-27 · Ukończone zadanie pilne świeciło się na bursztynowo — **zrobione (błąd widoczny dla użytkownika)**
+
+Referencja wyróżnia zadanie pilne **warunkiem złożonym**: `t.priority==='Pilne' && !t.done`.
+Wiersz w aplikacji patrzył tylko na priorytet, więc **odhaczone** zadanie pilne nadal
+miało bursztynową plakietkę, choć we wzorcu już nie. Co gorsza, tekst obok liczył warunek
+poprawnie (`!task.isDone`), więc wiersz bywał wewnętrznie sprzeczny: data zamiast „Pilne”,
+ale w kolorze pilności.
+
+Reguła jest teraz jedna (`TaskItem.showsUrgentBadge`, `TaskItem.rowDateText`) i decyduje
+zarazem o treści, jak i o wyróżnieniu — nie mogą się rozjechać. Trzy kopie warunku
+(w `TodayScreen`, `CaseScreen`, `TasksScreen`) zniknęły. Test mutacyjny: usunięcie
+`&& !isDone` wywala `testUrgentDoneTaskIsNotBadged`.
+
+### A-28 · Podgląd pokazywał **trzecią** wersję tego samego wiersza — **zrobione**
+
+Podgląd na Linuksie składał opis zadania własnym sposobem: „właściciel · data”, bez
+„Pilne”. To znaczy, że pokazywał coś, czego nie ma ani w aplikacji, ani w referencji —
+czyli dokładnie to, czego podgląd robić nie powinien. Eksport (`EmmaPreviewExport`) liczy
+teraz wiersze **tymi samymi funkcjami rdzenia, których używa SwiftUI** (`OwnerName.taskMeta`,
+`rowDateText`, `showsUrgentBadge`) i przekazuje gotowe napisy. Podgląd nie ma czego
+składać, więc nie może się rozjechać.
+
+### A-29 · „Pilne” i „Zwykłe” jako literały w formularzu — **zrobione**
+
+Wybór priorytetu wypisywał nazwy ręcznie, choć `TaskPriority` ma je w sobie. Doszło
+`displayName` (równe wartości surowej — te same napisy koduje model danych).
+
+### Czego runda 4 **nie** znalazła (wynik negatywny, też się liczy)
+
+| Detektor | Wynik |
+| --- | --- |
+| Literały wspólne dla rdzenia i widoków | tylko etykiety filtrów („Wszystkie”, „Otwarte”, „Wykonane”, „W kontakcie”, „Nieprzeczytane”, „Przypięte”) — **zgodne z referencją**, każdy filtr ma własny zestaw opcji |
+| Typy w warstwie widoków bez odwołań | tylko `EmmaApp` (typ `@main`, wołany przez runtime — nie jest martwy) |
+| `TODO` / `FIXME` / placeholdery | brak |
+| Adnotacje dostępności | brak duplikatów |
+
+### Runda 4 w liczbach
+
+| Metoda | Wynik |
+| --- | --- |
+| `verify-linux-logic.sh` | **8/8** kroków bez zastrzeżeń |
+| `swift test` | **178** testów, 0 błędów (było 170) |
+| Testy mutacyjne rundy 4 | wyróżnienie pilności bez warunku ukończenia → pada właściwy test |
+| Publiczne składowe rdzenia sprawdzone | 520, martwych: 0 |
+| Pomiar renderu podglądu | bez zastrzeżeń (wiersze zadania z eksportu) |
+
+### Gdzie audyt się zatrzymuje — i dlaczego to nie znaczy „gotowe”
+
+Po rundzie 4 dwa kolejne przebiegi z **nowymi** detektorami nie dały już ani jednego
+znaleziska istotnego dla użytkownika. To nie to samo, co „aplikacja jest sprawdzona”:
+wszystko, co można było ustalić bez macOS, zostało sprawdzone, a to, czego nie można,
+wymaga Maca i jest wypisane w §10. Audyt wznawiamy, gdy pojawi się nowy rodzaj dowodu
+(kompilacja, zrzuty ekranu, prawdziwy dostawca głosu) — bo każdy z nich widzi inną
+klasę błędów.
+
+## 10. Pierwsze kroki na Macu — kolejność z tego audytu
 
 1. `./scripts/generate-project.sh`, build, naprawa błędów typów (lista w `BUILD_AND_DEVICE_STATUS.md`).
 2. Sprawdzić **D-13**: duży Dynamic Type w kategorii XXXL — czy nic się nie obcina.

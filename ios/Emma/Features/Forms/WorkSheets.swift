@@ -163,7 +163,7 @@ struct NoteSheet: View {
     }
 
     private var caption: String {
-        let name = client?.displayName ?? "Klient"
+        let name = client?.displayName ?? Client.unknownDisplayName
         if let legalCase { return "\(name) · \(legalCase.number)" }
         return name
     }
@@ -280,7 +280,7 @@ struct TaskFormSheet: View {
                         Button {
                             priority = candidate
                         } label: {
-                            Text(candidate == .urgent ? "Pilne" : "Zwykłe")
+                            Text(candidate.displayName)
                                 .font(EmmaTypography.ui(12, isSelected ? .semibold : .regular))
                                 .foregroundStyle(isSelected ? EmmaTheme.ink : EmmaTheme.muted)
                                 .frame(maxWidth: .infinity, minHeight: EmmaMetrics.segmentedMinHeight - 6)

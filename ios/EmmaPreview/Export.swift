@@ -20,6 +20,19 @@ import Foundation
 @main
 struct EmmaPreviewExport {
 
+    /// Wiersz zadania policzony tym samym kodem co aplikacja: `OwnerName.taskMeta`,
+    /// `TaskItem.rowDateText`, `TaskItem.showsUrgentBadge`. Podgląd składał ten wiersz
+    /// własnym sposobem i pokazywał trzecią wersję („właściciel · data”, bez „Pilne”),
+    /// więc teraz nie ma czego składać — dostaje gotowe napisy.
+    struct TaskRowPayload: Encodable {
+        let id: String
+        let title: String
+        let meta: String
+        let dateText: String
+        let isDone: Bool
+        let showsUrgentBadge: Bool
+    }
+
     struct Payload: Encodable {
         var generatedFrom = "MockRepository + DemoFixtures (ten sam kod co aplikacja)"
         var referenceDay: LocalDate
@@ -31,6 +44,10 @@ struct EmmaPreviewExport {
         var clients: [Client]
         var cases: [LegalCase]
         var tasks: [TaskItem]
+        /// Wiersze zadania policzone **tym samym kodem co aplikacja** (`OwnerName.taskMeta`,
+        /// `TaskItem.rowDateText`, `TaskItem.showsUrgentBadge`). Podgląd składał je własnym
+        /// sposobem i pokazywał trzecią wersję: „właściciel · data”, bez „Pilne”.
+        var taskRows: [TaskRowPayload]
         var events: [ScheduledEvent]
         var notes: [CaseNote]
         var activity: [ActivityEvent]
@@ -99,6 +116,7 @@ struct EmmaPreviewExport {
         let unreadByThread = Dictionary(uniqueKeysWithValues: unread.map { ($0.key.rawValue, $0.value) })
 
         let formatter = DateTextFormatter(today: clock.today())
+        let clientNames = Dictionary(uniqueKeysWithValues: clients.map { ($0.id, $0.displayName) })
         let openTasksDueToday = try await repository.tasks(
             filter: TaskFilter(scope: .open, dueOnOrBefore: clock.today())
         )
@@ -118,6 +136,19 @@ struct EmmaPreviewExport {
             clients: clients,
             cases: cases,
             tasks: tasks,
+            taskRows: tasks.map { task in
+                TaskRowPayload(
+                    id: task.id.rawValue,
+                    title: task.title,
+                    meta: OwnerName.taskMeta(
+                        clientName: task.clientID.flatMap { clientNames[$0] },
+                        ownerID: task.ownerID
+                    ),
+                    dateText: task.rowDateText(formatter),
+                    isDone: task.isDone,
+                    showsUrgentBadge: task.showsUrgentBadge
+                )
+            },
             events: events,
             notes: notes,
             activity: activity,
@@ -147,7 +178,7 @@ struct EmmaPreviewExport {
                     events: todayEvents,
                     tasks: openTasksDueToday,
                     waitingForReply: clients.filter(\.needsReply),
-                    clientNames: Dictionary(uniqueKeysWithValues: clients.map { ($0.id, $0.displayName) })
+                    clientNames: clientNames
                 ),
                 leadCount: clients.filter { $0.stage != .client }.count,
                 activeCaseCount: cases.filter { $0.status != .closed }.count,

@@ -234,7 +234,7 @@ Poniżej pełna lista, bez pomijania pozycji niewygodnych.
 | Audyt designu bez regresji | **częściowo** | wykonany audyt kodu i designu (`docs/ios/AUDIT.md`); brak porównania zrzutów (brak symulatora) |
 | Instrukcja Xcode i konfiguracja bez sekretów | **dostarczone** | `ios/README-XCODE.md` |
 | Runbooki | **dostarczone** | `docs/ios/RUNBOOKS.md` (osiem sytuacji wymagających decyzji człowieka), `WHATSAPP_ONBOARDING.md`, `PROVIDER_CONTRACT_TESTS.md`, `api/CONTRACT_TEST_CHECKLIST.md`; runbook rollbacku backendu należy do backendu — `blocked_external` |
-| Wyniki kompilacji i testów | **dostarczone dla tego, co wykonalne** | 170 testów logiki, 64 pliki sprawdzone składniowo; kompilacja Xcode: nieuruchomiona |
+| Wyniki kompilacji i testów | **dostarczone dla tego, co wykonalne** | 178 testów logiki, 64 pliki sprawdzone składniowo; kompilacja Xcode: nieuruchomiona |
 | Test migracji, backup/restore, rollback bez ponownych wysyłek | **blocked_external** | należy do backendu |
 | Tag/SHA wydania | **dostarczone** | commity w repozytorium; tag wydania po pierwszej kompilacji na Macu |
 
@@ -252,7 +252,7 @@ Poniżej pełna lista, bez pomijania pozycji niewygodnych.
 
 | Bramka | Stan |
 | --- | --- |
-| Testy logiki (SwiftPM, Linux) | **wykonane** — 170 testów, 0 błędów |
+| Testy logiki (SwiftPM, Linux) | **wykonane** — 178 testów, 0 błędów |
 | Kontrola składni wszystkich plików Swift | **wykonana** — 64 pliki, 0 błędów |
 | Kontrola odwołań do zależności i tokenów | **wykonana** — 0 odwołań bez deklaracji |
 | Kompilacja projektu Xcode | **niewykonana** — brak macOS |

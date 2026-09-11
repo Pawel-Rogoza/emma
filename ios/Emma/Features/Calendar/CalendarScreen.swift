@@ -158,7 +158,7 @@ struct CalendarScreen: View {
                         ForEach(model.events, id: \.id) { event in
                             MeetingCard(
                                 event: event,
-                                clientName: model.clientNames[event.clientID] ?? "Klient"
+                                clientName: model.clientNames[event.clientID] ?? Client.unknownDisplayName
                             ) {
                                 dependencies.present(.eventDetail(event.id))
                             }

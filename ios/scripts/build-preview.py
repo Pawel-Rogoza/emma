@@ -231,20 +231,39 @@ class Renderer:
 
     # --- sekcje ekranów --------------------------------------------------- #
 
+    def task_row_data(self, task: dict) -> dict:
+        """Napisy wiersza zadania z eksportu, a nie sklejane tutaj."""
+        for row in self.data["taskRows"]:
+            if row["id"] == task["id"]:
+                return row
+        return task
+
+    def task_row(self, row: dict, grouped: bool = False) -> str:
+        """Wiersz zadania z napisami policzonymi przez aplikację.
+
+        Podgląd nie składa już opisu samodzielnie: `meta` („klient · właściciel”)
+        i `dateText` („Pilne” albo etykieta dnia) przychodzą z eksportu, czyli z tych
+        samych funkcji rdzenia, których używa SwiftUI. Wcześniej powstała tu trzecia
+        wersja wiersza („właściciel · data”, bez „Pilne”), różna i od aplikacji,
+        i od referencji.
+        """
+        done = " done" if row.get("isDone") else ""
+        urgent = " urgent" if row.get("showsUrgentBadge") else ""
+        # Znacznik odhaczonego zadania jest w referencji ikoną, nie znakiem tekstowym.
+        check = '<svg viewBox="0 0 24 24" fill="none" stroke="#4B7966" stroke-width="3"><path d="M5 13l4 4L19 7"/></svg>' if row.get("isDone") else ""
+        return (
+            f'<div class="task-row{" grouped" if grouped else ""}">'
+            f'<div class="task-check{done}">{check}</div>'
+            f'<div class="task-body"><b>{escaped(row["title"])}</b>'
+            f'<span>{escaped(row["meta"])}</span></div>'
+            f'<div class="task-date{urgent}">{escaped(row["dateText"])}</div></div>'
+        )
+
     def screen_today(self) -> str:
         summary = self.data["todaySummary"]
         tasks = ""
         for task in summary["tasksDueToday"]:
-            urgent = task.get("priority") == "urgent"
-            tasks += f'''
-            <div class="task-row">
-              <div class="task-check"></div>
-              <div class="task-body">
-                <b>{escaped(task["title"])}</b>
-                <span>{escaped(self.labels["owner"])} · {escaped(task.get("dueDate", ""))}</span>
-              </div>
-              <div class="task-date{' urgent' if urgent else ''}">{escaped(task.get("dueDate", ""))}</div>
-            </div>'''
+            tasks += self.task_row(self.task_row_data(task))
 
         cases = ""
         for legal_case in self.data["cases"]:
@@ -452,11 +471,7 @@ class Renderer:
             <span class="event-body"><b>{escaped(e["title"])}</b><small>{escaped(e["status"])} · {escaped(e["kind"])}</small></span></article>'''
             for e in events
         )
-        task_rows = "".join(
-            f'''<div class="task-row"><div class="task-check{' done' if t.get("isDone") else ''}"></div>
-            <div class="task-body"><b>{escaped(t["title"])}</b><span>{escaped(t.get("dueDate", ""))}</span></div></div>'''
-            for t in tasks
-        )
+        task_rows = "".join(self.task_row(self.task_row_data(t), grouped=True) for t in tasks)
         note_rows = "".join(
             f'<div class="note"><b>{escaped(n.get("title", ""))}</b><p>{escaped(n.get("text", ""))}</p></div>'
             for n in notes

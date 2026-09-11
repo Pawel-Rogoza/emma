@@ -616,3 +616,66 @@ final class LoadFailureTests: XCTestCase {
         XCTAssertFalse(phase.isLoading)
     }
 }
+
+// MARK: - Opis wiersza zadania (§13, zgodność z referencją)
+
+final class TaskRowMetaTests: XCTestCase {
+
+    /// Kolejność z referencji: klient pierwszy, właściciel drugi.
+    func testClientComesBeforeOwner() {
+        let meta = OwnerName.taskMeta(clientName: "Olena Kowalska", ownerID: .tomasz)
+        XCTAssertEqual(meta, "Olena Kowalska · Tomasz")
+    }
+
+    /// Zadanie bez klienta pokazuje kancelarię, a nie samo nazwisko właściciela —
+    /// tak robi referencja (`${p ? p.name : 'Kancelaria'} · ${t.owner}`).
+    func testTaskWithoutClientShowsFirmName() {
+        let meta = OwnerName.taskMeta(clientName: nil, ownerID: .pawel)
+        XCTAssertEqual(meta, "Kancelaria · Paweł")
+        XCTAssertEqual(OwnerName.firmFallback, "Kancelaria")
+    }
+
+    /// Pusta nazwa klienta to brak nazwy, nie nazwa pusta.
+    func testEmptyClientNameFallsBackToFirm() {
+        XCTAssertEqual(OwnerName.taskMeta(clientName: nil, ownerID: .tomasz), OwnerName.taskMeta(clientName: OwnerName.firmFallback, ownerID: .tomasz))
+    }
+}
+
+// MARK: - Wyróżnienie zadania pilnego (§13, zgodność z referencją)
+
+final class TaskUrgentBadgeTests: XCTestCase {
+
+    private func task(priority: TaskPriority, isDone: Bool, dueDate: LocalDate = LocalDate(year: 2026, month: 9, day: 11)) -> TaskItem {
+        TaskItem(id: TaskID("task-1"), title: "Zadanie", clientID: nil, caseID: nil, ownerID: .tomasz, dueDate: dueDate, isDone: isDone, priority: priority)
+    }
+
+    /// Reguła referencji: wyróżnienie tylko dla pilnych **i** niewykonanych.
+    func testUrgentUndoneTaskIsBadged() {
+        XCTAssertTrue(task(priority: .urgent, isDone: false).showsUrgentBadge)
+    }
+
+    /// Ten przypadek był błędem: ukończone zadanie pilne nadal świeciło się na bursztynowo,
+    /// choć referencja (`t.priority==='Pilne' && !t.done`) już go nie wyróżnia.
+    func testUrgentDoneTaskIsNotBadged() {
+        XCTAssertFalse(task(priority: .urgent, isDone: true).showsUrgentBadge)
+    }
+
+    func testNormalTaskIsNeverBadged() {
+        XCTAssertFalse(task(priority: .normal, isDone: false).showsUrgentBadge)
+        XCTAssertFalse(task(priority: .normal, isDone: true).showsUrgentBadge)
+    }
+
+    /// Tekst po prawej stronie liczy ta sama reguła, co wyróżnienie.
+    func testRowDateTextFollowsTheSameRule() {
+        let formatter = DateTextFormatter(today: LocalDate(year: 2026, month: 9, day: 11))
+        XCTAssertEqual(task(priority: .urgent, isDone: false).rowDateText(formatter), "Pilne")
+        XCTAssertEqual(task(priority: .urgent, isDone: true).rowDateText(formatter), "Dzisiaj")
+        XCTAssertEqual(task(priority: .normal, isDone: false).rowDateText(formatter), "Dzisiaj")
+    }
+
+    /// Nazwa priorytetu w formularzu pochodzi z tego samego typu, co wartość w danych.
+    func testPriorityDisplayNameMatchesReferenceLabels() {
+        XCTAssertEqual(TaskPriority.urgent.displayName, "Pilne")
+        XCTAssertEqual(TaskPriority.normal.displayName, "Zwykłe")
+    }
+}

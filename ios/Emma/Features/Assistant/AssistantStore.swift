@@ -679,7 +679,7 @@ final class AssistantStore: ObservableObject {
 
         var lines: [String] = []
         let schedule = events.map { event -> String in
-            let name = clientName(for: event.clientID) ?? "Klient"
+            let name = clientName(for: event.clientID) ?? Client.unknownDisplayName
             let pending = event.status == .toConfirm ? " Termin czeka na potwierdzenie." : ""
             return "\(event.time.hhmm): \(name), \(event.title). Prowadzący: \(event.ownerLabel).\(pending)"
         }.joined(separator: "\n")

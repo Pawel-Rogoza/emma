@@ -982,7 +982,7 @@ public struct TaskRow: View {
                         .strikethrough(task.isDone, color: EmmaTheme.mutedSoft)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text(clientName.map { "\(OwnerName.of(task.ownerID)) · \($0)" } ?? OwnerName.of(task.ownerID))
+                    Text(OwnerName.taskMeta(clientName: clientName, ownerID: task.ownerID))
                         .font(EmmaTypography.taskMeta)
                         .foregroundStyle(EmmaTheme.taskMetaText)
                         .multilineTextAlignment(.leading)
@@ -995,10 +995,12 @@ public struct TaskRow: View {
             VStack(alignment: .trailing, spacing: 6) {
                 Text(dateText)
                     .font(EmmaTypography.taskDate)
-                    .foregroundStyle(task.priority == .urgent ? EmmaTheme.pillUrgentText : EmmaTheme.taskDateText)
-                    .padding(.horizontal, task.priority == .urgent ? 7 : 0)
-                    .padding(.vertical, task.priority == .urgent ? 5 : 0)
-                    .background(task.priority == .urgent ? EmmaTheme.pillUrgentBackground : Color.clear)
+                    // Wyróżnienie liczy rdzeń (`showsUrgentBadge`), a nie sam priorytet:
+                    // referencja pokazuje je tylko dla zadań niewykonanych.
+                    .foregroundStyle(task.showsUrgentBadge ? EmmaTheme.pillUrgentText : EmmaTheme.taskDateText)
+                    .padding(.horizontal, task.showsUrgentBadge ? 7 : 0)
+                    .padding(.vertical, task.showsUrgentBadge ? 5 : 0)
+                    .background(task.showsUrgentBadge ? EmmaTheme.pillUrgentBackground : Color.clear)
                     .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.pill, style: .continuous))
             }
         }

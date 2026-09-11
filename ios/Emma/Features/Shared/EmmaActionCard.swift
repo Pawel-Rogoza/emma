@@ -112,7 +112,7 @@ struct EmmaActionCard: View {
     // MARK: Nagłówek i metadane
 
     /// Nazwa klienta z referencji; dla działania firmowego „Kancelaria”.
-    private var resolvedClientName: String { clientName ?? "Kancelaria" }
+    private var resolvedClientName: String { clientName ?? OwnerName.firmFallback }
 
     private var heading: some View {
         HStack(alignment: .center, spacing: 7) {

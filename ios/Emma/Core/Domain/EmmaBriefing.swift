@@ -28,7 +28,7 @@ public enum EmmaBriefing {
         var lines: [String] = []
         lines.append("Dzisiaj w zespole: \(EmmaPlural.label(relevant.count, "wydarzenie", "wydarzenia", "wydarzeń")).")
         for event in relevant {
-            let who = clientNames[event.clientID] ?? "Klient"
+            let who = clientNames[event.clientID] ?? Client.unknownDisplayName
             var line = "\(event.time.hhmm): \(who), \(event.title). Prowadzący: \(event.ownerLabel)."
             if event.status == .toConfirm { line += " Termin czeka na potwierdzenie." }
             lines.append(line)

@@ -287,8 +287,9 @@ struct TodayScreen: View {
     }
 
     private func taskDateText(_ task: TaskItem) -> String {
-        if task.priority == .urgent && !task.isDone { return "Pilne" }
-        return dependencies.dateText.dayLabel(task.dueDate)
+        // Reguła („Pilne” tylko dla niewykonanych) mieszka w rdzeniu, żeby ekrany
+        // i wiersz zadania nie mogły pokazać trzech różnych wersji tego samego.
+        task.rowDateText(dependencies.dateText)
     }
 
     private func toggle(_ task: TaskItem) async {
