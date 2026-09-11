@@ -162,9 +162,7 @@ struct ClientsScreen: View {
             case .inContact:
                 guard client.stage == .inContact else { return false }
             }
-            guard !query.isEmpty else { return true }
-            let haystack = "\(client.displayName) \(client.topic)".lowercased()
-            return haystack.contains(query)
+            return SearchText.matches(query, in: [client.displayName, client.topic])
         }
     }
 
@@ -175,16 +173,13 @@ struct ClientsScreen: View {
                 ? legalCase.status == .closed
                 : legalCase.status.isActive
             guard matchesFilter else { return false }
-            guard !query.isEmpty else { return true }
             let name = model.clientNames[legalCase.clientID] ?? ""
-            let haystack = "\(legalCase.title) \(legalCase.number) \(name)".lowercased()
-            return haystack.contains(query)
+            return SearchText.matches(query, in: [legalCase.title, legalCase.number, name])
         }
     }
 
-    private var normalizedQuery: String {
-        search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    }
+    /// Zapytanie trafia do `SearchText`, które odpowiada za normalizację.
+    private var normalizedQuery: String { search }
 }
 
 // MARK: - Filtry listy

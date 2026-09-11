@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Typografia
 //
@@ -45,9 +48,35 @@ public enum EmmaWeight: Sendable {
         case .semibold: return .semibold
         }
     }
+
+    #if canImport(UIKit)
+    /// Ten sam odpowiednik dla `UIFont`, potrzebny przy skalowaniu Dynamic Type.
+    public var uiWeight: UIFont.Weight {
+        switch self {
+        case .regular: return .regular
+        case .medium: return .medium
+        case .semibold: return .semibold
+        }
+    }
+    #endif
 }
 
 public enum EmmaTypography {
+
+    // MARK: Dynamic Type
+
+    // Plan wymaga, aby przy dużym Dynamic Type treść i obsługa zostały zachowane
+    // (karty mogą urosnąć, nie wymagamy zgodności pikselowej z domyślnym rozmiarem).
+    // Skalowanie dzieje się **tylko tutaj**: wszystkie style przechodzą przez trzy
+    // konstruktory poniżej, więc żaden ekran nie musi o tym wiedzieć.
+    //
+    // Wszystkie style skalują się względem stylu treści `.body`. To świadomie jedna
+    // krzywa zamiast dziewięciu: przewidywalne zachowanie jest ważniejsze niż
+    // „optymalna” krzywa dla każdego rozmiaru. Przy domyślnej wielkości tekstu
+    // wynik jest identyczny z referencją, bo mnożnik wynosi wtedy 1.
+    //
+    // Odstępy i szerokości pozostają stałe (siatka karty z referencji). Tekst rośnie,
+    // a kontenery mają minimalne wysokości, więc treść nie jest obcinana.
 
     // MARK: Podstawa
 
@@ -63,20 +92,29 @@ public enum EmmaTypography {
         case .cyrillic, .mixed:
             // DM Sans nie ma glifów cyrylickich. Referencja w przeglądarce również
             // spada wtedy na `-apple-system`, więc zachowanie jest zgodne.
+            #if canImport(UIKit)
+            let font = UIFont.systemFont(ofSize: size, weight: weight.uiWeight)
+            return Font(UIFontMetrics(forTextStyle: .body).scaledFont(for: font))
+            #else
             return .system(size: size, weight: weight.systemWeight)
+            #endif
         case .latin, .unknown:
-            return .custom(weight.postScriptName, size: size)
+            return .custom(weight.postScriptName, size: size, relativeTo: .body)
         }
     }
 
     /// Czcionka interfejsu (etykiety, przyciski) — zawsze DM Sans.
     public static func ui(_ size: CGFloat, _ weight: EmmaWeight = .regular) -> Font {
-        .custom(weight.postScriptName, size: size)
+        .custom(weight.postScriptName, size: size, relativeTo: .body)
     }
 
     /// Czcionka nagłówków — Manrope (obsługuje cyrylicę, więc nie ma wariantu).
     public static func heading(_ size: CGFloat, bold: Bool = true) -> Font {
-        .custom(bold ? EmmaFontName.manropeExtraBold : EmmaFontName.manropeBold, size: size)
+        .custom(
+            bold ? EmmaFontName.manropeExtraBold : EmmaFontName.manropeBold,
+            size: size,
+            relativeTo: .body
+        )
     }
 
     // MARK: Style interfejsu (DESIGN_CONTRACT §3)

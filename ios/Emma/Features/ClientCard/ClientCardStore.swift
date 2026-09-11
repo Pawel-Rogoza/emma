@@ -58,10 +58,8 @@ final class ClientCardStore: ObservableObject {
                     threadID: threads.first { $0.clientID == clientID }?.id
                 )
             )
-        } catch let error as DomainError {
-            phase = .failed(error.safeMessage)
         } catch {
-            phase = .failed("Nie udało się wczytać karty klienta.")
+            phase = .failed(ScreenLoad.message(for: error, fallback: "Nie udało się wczytać karty klienta."))
         }
     }
 }

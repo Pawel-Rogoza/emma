@@ -103,38 +103,6 @@ public struct EmmaOrb: View {
 // MARK: - Orb z etykietą stanu
 
 /// Orb z nazwą stanu obok. Używany w kartach i na ekranie asystenta.
-public struct EmmaOrbWithStatus: View {
-    private let size: EmmaOrb.Size
-    private let title: String
-    private let status: String
-    private let isActive: Bool
-
-    public init(size: EmmaOrb.Size, title: String, status: String?, isActive: Bool) {
-        self.size = size
-        self.title = title
-        self.status = status ?? ""
-        self.isActive = isActive
-    }
-
-    public var body: some View {
-        HStack(spacing: 10) {
-            EmmaOrb(size: size, isActive: isActive)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(EmmaTypography.ui(14, .semibold))
-                    .foregroundStyle(EmmaTheme.ink)
-                if !status.isEmpty {
-                    Text(status)
-                        .font(EmmaTypography.ui(11))
-                        .foregroundStyle(EmmaTheme.muted)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(status.isEmpty ? title : "\(title). \(status)")
-    }
-}
 
 #Preview("Orb Emmy — rozmiary") {
     VStack(spacing: 24) {

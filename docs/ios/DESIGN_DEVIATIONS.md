@@ -112,17 +112,22 @@ obejmuje całość danych przykładowych.
 
 **Wpływ:** brak dla użytkownika; przy prawdziwym backendzie zastąpi to zapytanie zakresowe.
 
-### D-09 · Wyszukiwanie przez `lowercased()`
+### D-09 · ~~Wyszukiwanie przez `lowercased()`~~ — **zamknięte w audycie kodu**
 
-**Treść:** filtrowanie tekstu ignoruje wielkość liter przez `lowercased()`, a nie
-przez porównanie uwzględniające polskie znaki diakrytyczne.
+**Treść (stan poprzedni):** filtrowanie ignorowało wielkość liter przez `lowercased()`,
+bez uwzględnienia polskich znaków diakrytycznych.
 
-**Powód:** brak odpowiednika `toLocaleLowerCase('pl')`; pełne porównanie wymaga
-uwzględnienia znaków diakrytycznych i jest osobnym zadaniem.
+**Stan obecny:** jedna reguła `SearchText` (`Core/Domain/ClockAndFormatting.swift`)
+składa znaki diakrytyczne i mapuje `ł` → `l` jawnie (`ł` nie jest literą diakrytyczną
+w sensie Unicode, więc samo składanie jej nie usuwa). Ekrany klientów i rozmów
+korzystają z tej reguły zamiast własnych kopii.
 
-**Wpływ:** „Zolc” nie znajdzie „Żółć”. Wpisywanie bez ogonków działa.
+**Wpływ:** „zelazna” znajduje „Żelazna”, „lukasz” znajduje „Łukasz”, cyrylica działa.
+Testy: `SearchTextTests` (8 przypadków).
 
-**Dług:** dodać porównanie diakrytyczno-niewrażliwe.
+**Uwaga:** `PersonResolver` (rozpoznawanie osoby w poleceniu głosowym) nadal używa
+`lowercased()`. To osobna reguła domenowa z własnymi testami; ujednolicenie jest
+kandydatem na przyszłość, ale zmienia zachowanie rozpoznawania i wymaga osobnej decyzji.
 
 ### D-10 · `SegmentedFilter` zamiast listy rozwijanej
 
@@ -160,9 +165,29 @@ bez kont i bez uprawnień.
 
 ---
 
+### D-13 · Dynamic Type: tekst rośnie, odstępy nie
+
+**Treść:** wszystkie style typografii skalują się względem stylu treści (`.body`),
+ale odstępy, promienie i szerokości kart pozostają stałe.
+
+**Powód:** plan wymaga zachowania treści i obsługi przy dużym Dynamic Type, ale nie
+wymaga zgodności pikselowej z domyślnym rozmiarem tekstu. Jedna krzywa skalowania
+w `EmmaTypography` jest przewidywalna i łatwa do sprawdzenia; skalowanie odstępów
+rozjechałoby siatkę kart z referencji bez potrzeby.
+
+**Wpływ:** przy domyślnej wielkości tekstu wygląd jest identyczny z referencją
+(mnożnik 1). Przy dużym tekście litery rosną wewnątrz stałych odstępów — kontenery
+mają **minimalne** wysokości, więc treść nie jest obcinana.
+
+**Wymaga potwierdzenia na urządzeniu:** przewijanie długich nazwisk i przycisków
+przy kategorii dostępności XXXL. To pozycja pierwszego testu na symulatorze.
+
+---
+
 ## Czego ten rejestr nie zawiera
 
 Nie zawiera porównania zrzutów ekranu, bo **nie zostały wykonane** — brak macOS
 i symulatora (patrz `BUILD_AND_DEVICE_STATUS.md`). Ocena zgodności wizualnej opiera się
 na kaskadzie CSS referencji, pomiarach plików czcionek i przeglądzie komponentów.
 Pierwsze realne porównanie obrazu jest pierwszym punktem listy po uruchomieniu na Macu.
+

@@ -536,17 +536,17 @@ final class AssistantStore: ObservableObject {
             await dependencies.voice.updateContext(currentContext())
             return
         }
-        // Scenariusz wynika z zestawu danych demo (`--fixture`), a nie z zaszytej
+        // Scenariusz mocka wynika z zestawu danych demo (`--fixture`), a nie z zaszytej
         // nazwy: inaczej schematy „voice-reconnect” czy „voice-barge-in” nie miałyby
-        // żadnego wpływu na działanie aplikacji.
-        let scenarioName = dependencies.voiceScenarioName
+        // żadnego wpływu na działanie aplikacji. Wybór należy do fabryki usług.
         await dependencies.voice.startConversation(
             context: currentContext(),
             user: dependencies.currentUser,
             installationID: InstallationIdentifier.current,
-            transportFactory: { _ in
-                // Deterministyczny scenariusz demo: bez sieci i bez kont dostawców.
-                MockVoiceTransport(scenario: MockVoiceScenarios.named(scenarioName))
+            // Jedna decyzja „mock czy dostawca” dla całej aplikacji. W Demo zawsze
+            // mock (bez sieci i bez kont), ale to fabryka o tym mówi, a nie ekran.
+            transportFactory: { [dependencies] configuration in
+                dependencies.makeVoiceTransport(configuration: configuration)
             }
         )
     }
@@ -601,7 +601,7 @@ final class AssistantStore: ObservableObject {
             // i jedyny właściwy dla pola polecenia jest `.assistantCommand`.
             target: .assistantCommand,
             language: dependencies.currentUser.interfaceLanguage,
-            service: MockDictationService()
+            service: dependencies.makeDictationService()
         )
     }
 
@@ -649,7 +649,7 @@ final class AssistantStore: ObservableObject {
         isPlayingSummary = isSummary
         await dependencies.voice.startPlayback(
             SpeechPlaybackRequest(text: text, language: language, isSummary: isSummary, sourceID: sourceID),
-            service: MockSpeechPlaybackService()
+            service: dependencies.makePlaybackService()
         )
     }
 

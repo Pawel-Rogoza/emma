@@ -220,9 +220,6 @@ struct MessageOptionsSheet: View {
     }
 
     private func clockText(_ message: Message) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        formatter.timeZone = TimeZone(identifier: EmmaTime.referenceTimeZone)
-        return formatter.string(from: message.sentAt)
+        dependencies.dateText.clockTime(message.sentAt)
     }
 }

@@ -27,6 +27,18 @@ let package = Package(
         .target(
             name: "Emma",
             path: "Emma",
+            // Warstwy zależne od SwiftUI/UIKit są tu jawnie wykluczone, a nie
+            // „przypadkiem pominięte”: dzięki temu `swift build` nie zgłasza
+            // nieobsłużonych plików, a lista tego, co da się sprawdzić na Linuksie,
+            // jest zamknięta i widoczna.
+            exclude: [
+                "App",
+                "DesignSystem",
+                "Features",
+                "VoiceAdapters",
+                // Zasoby trafiają do aplikacji iOS; pakiet logiki ich nie potrzebuje.
+                "Resources"
+            ],
             // Wyłącznie warstwy niezależne od SwiftUI/UIKit/AVFoundation.
             sources: [
                 "Core/Domain",

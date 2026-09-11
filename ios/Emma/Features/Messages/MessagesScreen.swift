@@ -82,15 +82,13 @@ final class MessagesStore: ObservableObject {
 
             rows = filterAndSort(rows)
             phase = .loaded(Model(rows: rows, searchQuery: searchText, filter: filter))
-        } catch let error as DomainError {
-            phase = .failed(error.safeMessage)
         } catch {
-            phase = .failed("Nie udało się wczytać rozmów.")
+            phase = .failed(ScreenLoad.message(for: error, fallback: "Nie udało się wczytać rozmów."))
         }
     }
 
     private func filterAndSort(_ rows: [Row]) -> [Row] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let query = searchText
         return rows
             .filter { row in
                 switch filter {
@@ -100,10 +98,8 @@ final class MessagesStore: ObservableObject {
                 }
             }
             .filter { row in
-                guard !query.isEmpty else { return true }
-                if row.client.displayName.lowercased().contains(query) { return true }
-                if let text = row.preview?.text.lowercased(), text.contains(query) { return true }
-                return false
+                // Treść wiadomości też jest przeszukiwana: nazwisko bywa tylko w treści.
+                SearchText.matches(query, in: [row.client.displayName, row.preview?.text ?? ""])
             }
             .sorted { $0.sortKey > $1.sortKey }
     }

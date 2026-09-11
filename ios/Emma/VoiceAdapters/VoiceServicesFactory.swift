@@ -62,11 +62,14 @@ public enum VoiceServicesFactory {
         return AppleSpeechDictationService(audioSession: audioSession)
     }
 
-    /// Odsłuch. W Demo to mock; docelowo odsłuch korzysta z tego samego zasobu
-    /// audio co rozmowa, więc w przyszłości wskaże ten sam kontroler sesji.
-    public static func makePlaybackService(configuration: AppConfiguration) -> SpeechPlaybackService {
-        _ = configuration
-        return MockSpeechPlaybackService()
+    /// Odsłuch.
+    ///
+    /// Poza Demo odsłuch dostawcy **nie istnieje** — nie ma go w adapterze. Zwracamy
+    /// więc mock w obu wariantach, ale mówimy to wprost, zamiast przyjmować parametr
+    /// konfiguracji i go ignorować (co sugerowałoby wybór, którego nie ma).
+    /// Docelowo odsłuch wskaże ten sam kontroler sesji audio co rozmowa (§5.3).
+    public static func makePlaybackService() -> SpeechPlaybackService {
+        MockSpeechPlaybackService()
     }
 }
 #endif

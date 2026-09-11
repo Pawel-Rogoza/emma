@@ -100,10 +100,8 @@ struct CaseSettingsSheet: View {
                 didPrefill = true
             }
             phase = .loaded(legalCase)
-        } catch let error as DomainError {
-            phase = .failed(error.safeMessage)
         } catch {
-            phase = .failed("Nie udało się wczytać sprawy.")
+            phase = .failed(ScreenLoad.message(for: error, fallback: "Nie udało się wczytać sprawy."))
         }
     }
 

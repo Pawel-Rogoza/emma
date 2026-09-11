@@ -737,6 +737,202 @@ final class VoiceSessionCoordinatorTests: XCTestCase {
         XCTAssertNil(coordinator.currentExecution)
     }
 
+    // MARK: Limity czasu sesji (§5.6)
+
+    /// Bezczynność i czas życia sesji były wcześniej tylko skonfigurowane — nikt ich
+    /// nie sprawdzał, więc sesja mogła trwać dowolnie długo. Te testy pilnują, żeby
+    /// konfiguracja była regułą, a nie dekoracją.
+
+    func testIdleSessionEndsAfterIdleTimeout() async throws {
+        let transport = await attachMock(scenarioWithoutScript())
+        await transport.emitManually(.connectionChanged(.connected))
+        await settle()
+
+        clock.advance(by: 5 * 60 - 1)
+        let beforeLimit = await coordinator.enforceSessionLimits()
+        XCTAssertNil(beforeLimit, "Przed upływem limitu sesja trwa")
+        XCTAssertEqual(coordinator.state.connection, .connected)
+
+        clock.advance(by: 1)
+        let reason = await coordinator.enforceSessionLimits()
+        XCTAssertEqual(reason, .idleTimeout)
+        XCTAssertEqual(coordinator.state.connection, .ended)
+        XCTAssertEqual(coordinator.lastEndReason, .idleTimeout)
+    }
+
+    func testUserActivityPostponesIdleTimeout() async throws {
+        let transport = await attachMock(scenarioWithoutScript())
+        await transport.emitManually(.connectionChanged(.connected))
+        await settle()
+
+        clock.advance(by: 4 * 60)
+        await transport.emitManually(.userSpeechStarted)
+        await settle()
+        clock.advance(by: 4 * 60)
+
+        let reason = await coordinator.enforceSessionLimits()
+        XCTAssertNil(reason, "Ruch użytkownika przesuwa limit bezczynności")
+        XCTAssertEqual(coordinator.state.connection, .connected)
+    }
+
+    func testAgentSpeechAloneDoesNotCountAsUserActivity() async throws {
+        let transport = await attachMock(scenarioWithoutScript())
+        await transport.emitManually(.connectionChanged(.connected))
+        await settle()
+
+        clock.advance(by: 4 * 60)
+        await transport.emitManually(.playbackStarted(approximate: false))
+        await transport.emitManually(.playbackStopped(reason: .completed))
+        await settle()
+        clock.advance(by: 2 * 60)
+
+        let reason = await coordinator.enforceSessionLimits()
+        XCTAssertEqual(reason, .idleTimeout,
+                       "Odtwarzanie bez udziału użytkownika nie jest jego aktywnością")
+    }
+
+    func testSessionLifetimeEndsSessionEvenWithActivity() async throws {
+        let transport = await attachMock(scenarioWithoutScript())
+        await transport.emitManually(.connectionChanged(.connected))
+        await settle()
+
+        // Ruch co minutę przez 29 minut — bezczynność nie zadziała, ale czas życia tak.
+        for _ in 0..<29 {
+            clock.advance(by: 60)
+            await transport.emitManually(.userSpeechStarted)
+            await settle(4)
+        }
+        clock.advance(by: 60)
+
+        let reason = await coordinator.enforceSessionLimits()
+        XCTAssertEqual(reason, .sessionExpired)
+        XCTAssertEqual(coordinator.lastEndReason, .sessionExpired)
+    }
+
+    func testLimitsAreNotEnforcedOutsideActiveSession() async {
+        // Sesja nieaktywna: brak połączenia, więc limity nie mają czego kończyć.
+        clock.advance(by: 60 * 60)
+        let reason = await coordinator.enforceSessionLimits()
+        XCTAssertNil(reason)
+        XCTAssertEqual(coordinator.state.connection, .idle)
+    }
+
+    func testEndingSessionClearsTimers() async throws {
+        let transport = await attachMock(scenarioWithoutScript())
+        await transport.emitManually(.connectionChanged(.connected))
+        await settle()
+        await coordinator.end(reason: .userRequested)
+
+        clock.advance(by: 60 * 60)
+        let reason = await coordinator.enforceSessionLimits()
+        XCTAssertNil(reason, "Po zakończeniu sesji znaczniki czasu są wyczyszczone")
+    }
+
+    /// Stróż limitów musi faktycznie działać — sama metoda wywołana ręcznie
+    /// dowodziłaby tylko, że metoda istnieje.
+    func testLimitWatchdogEndsIdleSessionWithoutExternalCall() async throws {
+        let idleClock = DemoClock()
+        let repository = MockRepository(clock: idleClock, artificialLatency: 0)
+        let watched = VoiceSessionCoordinator(
+            sessionRepository: repository,
+            actionRepository: repository,
+            clock: idleClock,
+            limitCheckInterval: 0.01
+        )
+        let transport = MockVoiceTransport(scenario: scenarioWithoutScript(), delayProvider: { _ in })
+        await watched.attach(
+            transport: transport,
+            configuration: VoiceSessionConfiguration(
+                sessionID: VoiceSessionID("session-watchdog"),
+                context: AssistantContext(scope: .firm),
+                assistantLanguage: .ru,
+                conversationToken: "test-token",
+                expiresAt: idleClock.now().addingTimeInterval(600),
+                capabilities: .mock
+            )
+        )
+        await transport.emitManually(.connectionChanged(.connected))
+
+        // Przesuwamy zegar, ale **nie** wołamy limitów ręcznie.
+        idleClock.advance(by: 6 * 60)
+        await waitUntil("Stróż limitów kończy bezczynną sesję", timeout: 3) {
+            watched.state.connection == .ended
+        }
+        XCTAssertEqual(watched.lastEndReason, .idleTimeout)
+    }
+
+    // MARK: Trasa audio (§5.7, §13)
+
+    func testRouteChangeFromHeadphonesToSpeakerPausesSensitivePlayback() async throws {
+        let transport = await attachMock(scenarioWithoutScript())
+        await transport.emitManually(.connectionChanged(.connected))
+        await transport.emitManually(.audioRouteChanged(.headphones))
+        await settle()
+
+        let playback = ManualPlaybackService()
+        await coordinator.startPlayback(
+            SpeechPlaybackRequest(text: "Treść poufna", language: .pl, sourceID: "msg-route"),
+            service: playback
+        )
+        await waitUntil("Odsłuch trwa") { self.coordinator.state.isPlaybackActive }
+
+        // Odłączenie słuchawek: nie przenosimy odsłuchu na głośnik.
+        await coordinator.handleAudioRouteChange(to: .builtInSpeaker)
+        XCTAssertFalse(coordinator.state.isPlaybackActive)
+        XCTAssertEqual(coordinator.state.route, .builtInSpeaker)
+        XCTAssertNotNil(coordinator.state.lastError, "Użytkownik musi wiedzieć, dlaczego odsłuch stanął")
+    }
+
+    func testRouteChangeToSpeakerWithoutPlaybackChangesNothing() async throws {
+        let transport = await attachMock(scenarioWithoutScript())
+        await transport.emitManually(.connectionChanged(.connected))
+        await transport.emitManually(.audioRouteChanged(.headphones))
+        await settle()
+
+        await coordinator.handleAudioRouteChange(to: .builtInSpeaker)
+        XCTAssertNil(coordinator.state.lastError, "Bez poufnego odsłuchu nie ma czego wstrzymywać")
+    }
+
+    // MARK: Odsłuch jednego właściciela (§5.4)
+
+    /// Odsłuch ma jednego właściciela. Zdarzenie spóźnione — z żądania, które zostało
+    /// zastąpione — nie może zmienić stanu sesji.
+    func testStalePlaybackEventIsIgnored() async throws {
+        let first = ManualPlaybackService()
+        await coordinator.startPlayback(
+            SpeechPlaybackRequest(text: "Pierwsza treść", language: .pl, sourceID: "msg-1"),
+            service: first
+        )
+        let second = ManualPlaybackService()
+        await coordinator.startPlayback(
+            SpeechPlaybackRequest(text: "Druga treść", language: .pl, sourceID: "msg-2"),
+            service: second
+        )
+        await waitUntil("Nowe żądanie jest odtwarzane") { self.coordinator.state.isPlaybackActive }
+
+        // Zdarzenie poprzedniego żądania przychodzi po fakcie.
+        first.emit(.finished(sourceID: "msg-1", reason: .completed))
+        await settle()
+
+        XCTAssertTrue(coordinator.state.isPlaybackActive,
+                      "Spóźnione zakończenie starego odsłuchu nie zatrzymuje bieżącego")
+        XCTAssertNotEqual(coordinator.state.turn, .waiting)
+    }
+
+    func testCurrentPlaybackEventIsApplied() async throws {
+        let service = ManualPlaybackService()
+        await coordinator.startPlayback(
+            SpeechPlaybackRequest(text: "Treść", language: .pl, sourceID: "msg-9"),
+            service: service
+        )
+        await waitUntil("Odsłuch się rozpoczął") { self.coordinator.state.isPlaybackActive }
+        service.emit(.finished(sourceID: "msg-9", reason: .completed))
+        await settle()
+
+        XCTAssertFalse(coordinator.state.isPlaybackActive)
+        XCTAssertEqual(coordinator.state.turn, .waiting)
+    }
+
     func testEndOfSessionDisarmsVoiceConsentAndKeepsDraft() async throws {
         let transport = await attachMock(scenarioWithoutScript())
         await transport.emitManually(.connectionChanged(.connected))
@@ -1345,5 +1541,34 @@ final class MockRepositoryTests: XCTestCase {
         XCTAssertEqual(pawel.id, .pawel)
         let current = try await repository.currentUser()
         XCTAssertEqual(current.id, .pawel)
+    }
+}
+
+// MARK: - Usługa odsłuchu sterowana ręcznie
+
+/// Odsłuch, który sam z siebie nic nie kończy — testy decydują, kiedy przyjdzie
+/// zdarzenie i z jakim identyfikatorem żądania. Dzięki temu można sprawdzić regułę
+/// „spóźnione zdarzenie poprzedniego żądania nie zmienia stanu”, której nie da się
+/// zbadać mockiem kończącym odtwarzanie od razu.
+@MainActor
+private final class ManualPlaybackService: SpeechPlaybackService {
+
+    private var continuation: AsyncStream<PlaybackEvent>.Continuation?
+
+    func play(_ request: SpeechPlaybackRequest) async throws {
+        continuation?.yield(.started(sourceID: request.sourceID, approximate: false))
+    }
+
+    func events() -> AsyncStream<PlaybackEvent> {
+        AsyncStream { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func stop() async {}
+
+    /// Wypuszczenie pojedynczego zdarzenia z wybranym identyfikatorem żądania.
+    func emit(_ event: PlaybackEvent) {
+        continuation?.yield(event)
     }
 }

@@ -29,6 +29,11 @@ public final class AppDependencies: ObservableObject {
     public var voiceScenarioName: String { fixture.voiceScenarioName }
     /// Dzień referencyjny prezentacji: piątek 11 września 2026.
     public let referenceDay: LocalDate
+    /// Jeden kontroler sesji audio dla rozmowy, dyktowania i odsłuchu (§5.3).
+    public let audioSession = AudioSessionController()
+    /// Token dostępu do backendu. Do czasu wdrożenia logowania (etap 07) go nie ma —
+    /// to jedyne miejsce, które ma go dostarczyć. Klucza dostawcy tu nie będzie nigdy.
+    public var accessToken: String? { nil }
 
     // MARK: Stan wspólny
 
@@ -106,6 +111,8 @@ public final class AppDependencies: ObservableObject {
         self.voice.onDictationFailure = { [weak self] failure in
             self?.showToast(failure.safeMessage)
         }
+        wireAudioSessionEvents()
+        observeSessionEnd()
         refreshUnreadTotal()
     }
 
@@ -115,6 +122,67 @@ public final class AppDependencies: ObservableObject {
             configuration: AppConfiguration(environment: .demo, apiBaseURL: nil, defaultLocale: "pl-PL"),
             fixtureName: fixtureName
         )
+    }
+
+    // MARK: Tworzenie usług głosowych
+    //
+    // Aplikacja nie tworzy mocków ani adapterów samodzielnie: wszystkie decyzje
+    // „mock czy dostawca” przechodzą przez `VoiceServicesFactory`. Wcześniej fabryka
+    // istniała, ale nikt jej nie wołał — każdy ekran brał mocka wprost, więc build
+    // bez Demo nadal mówiłby mockiem. To była nieosiągalna ścieżka dostawcy.
+
+    /// Transport dla nowej sesji rozmowy.
+    public func makeVoiceTransport(configuration: VoiceSessionConfiguration) -> VoiceTransport {
+        VoiceServicesFactory.makeTransport(
+            configuration: self.configuration,
+            fixtureName: fixtureName,
+            accessToken: accessToken,
+            mockScenarioName: voiceScenarioName
+        )
+    }
+
+    /// Dyktowanie: w Demo scenariuszowe, na urządzeniu rozpoznawanie mowy systemu.
+    public func makeDictationService() -> DictationService {
+        VoiceServicesFactory.makeDictationService(
+            configuration: configuration,
+            audioSession: audioSession
+        )
+    }
+
+    /// Odsłuch. Poza Demo mock jest nadal mockiem — patrz `VoiceServicesFactory`.
+    public func makePlaybackService() -> SpeechPlaybackService {
+        VoiceServicesFactory.makePlaybackService()
+    }
+
+    /// Zakończenie sesji przez limit czasu musi być widoczne dla użytkownika:
+    /// inaczej rozmowa „sama się rozłącza”, co wygląda jak awaria.
+    private func observeSessionEnd() {
+        _ = voice.addObserver { [weak self] state in
+            guard let self, state.connection == .ended else { return }
+            guard let reason = self.voice.lastEndReason else { return }
+            guard reason == .idleTimeout || reason == .sessionExpired else { return }
+            self.showToast(reason.displayName)
+        }
+    }
+
+    // MARK: Zdarzenia systemu audio
+
+    /// Zmiana trasy i przerwania z systemu trafiają do koordynatora, bo to on
+    /// decyduje o odsłuchu. Politykę trasy ma `AudioRoutePolicy` — tutaj tylko
+    /// przekazujemy zdarzenie.
+    private func wireAudioSessionEvents() {
+        // Zdarzenia systemowe przychodzą z wątków systemowych, a stan aplikacji żyje
+        // na głównym aktorze — izolacja jest podana wprost, a nie domyślna.
+        audioSession.onRouteChange = { [weak self] route in
+            Task { @MainActor in
+                await self?.voice.handleAudioRouteChange(to: route)
+            }
+        }
+        audioSession.onInterruption = { [weak self] reason in
+            Task { @MainActor in
+                await self?.voice.handleSystemAudioInterruption(reason)
+            }
+        }
     }
 
     // MARK: Nawigacja
@@ -232,11 +300,8 @@ public final class AppDependencies: ObservableObject {
             let result = try await operation()
             dataChanged()
             return result
-        } catch let error as DomainError {
-            showToast(error.safeMessage)
-            return nil
         } catch {
-            showToast("Nie udało się wykonać operacji.")
+            showToast(ScreenLoad.message(for: error, fallback: "Nie udało się wykonać operacji."))
             return nil
         }
     }

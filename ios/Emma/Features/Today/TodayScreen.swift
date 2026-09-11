@@ -86,10 +86,8 @@ final class TodayStore: ObservableObject {
                     }
                 )
             )
-        } catch let error as DomainError {
-            phase = .failed(error.safeMessage)
         } catch {
-            phase = .failed("Nie udało się wczytać dnia.")
+            phase = .failed(ScreenLoad.message(for: error, fallback: "Nie udało się wczytać dnia."))
         }
     }
 
@@ -283,7 +281,7 @@ struct TodayScreen: View {
         }
         await dependencies.voice.startPlayback(
             SpeechPlaybackRequest(text: text, language: .pl, isSummary: true, sourceID: "briefing-today"),
-            service: MockSpeechPlaybackService()
+            service: dependencies.makePlaybackService()
         )
     }
 

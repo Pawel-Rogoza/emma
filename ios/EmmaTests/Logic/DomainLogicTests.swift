@@ -512,3 +512,51 @@ final class AssistantContextTests: XCTestCase {
         XCTAssertEqual(result, .rejected("Kontekst klienta wymaga wskazania klienta."))
     }
 }
+
+// MARK: - Dopasowanie tekstu w wyszukiwaniu (§13, D-09)
+
+/// Wyszukiwanie musi znajdować polskie nazwiska po wpisaniu ich bez ogonków —
+/// to najczęstszy odruch przy klawiaturze bez polskich znaków. Reguła jest jedna
+/// (`SearchText`), więc te testy pilnują także tego, że ekrany jej nie omijają.
+final class SearchTextTests: XCTestCase {
+
+    func testFindsDiacriticTextWithoutDiacritics() {
+        XCTAssertTrue(SearchText.matches("zelazna", in: ["Żelazna"]))
+        XCTAssertTrue(SearchText.matches("cwikla", in: ["Ćwikła"]))
+        XCTAssertTrue(SearchText.matches("osmy", in: ["Ósmy"]))
+        XCTAssertTrue(SearchText.matches("kowalczyk", in: ["Kowalczyk"]))
+    }
+
+    func testFindsPolishLWithoutStroke() {
+        // `ł` nie jest literą diakrytyczną w sensie Unicode, więc wymaga jawnego mapowania.
+        XCTAssertTrue(SearchText.matches("lukasz", in: ["Łukasz"]))
+        XCTAssertTrue(SearchText.matches("lukasiewicz", in: ["Łukasiewicz"]))
+    }
+
+    func testIsCaseInsensitive() {
+        XCTAssertTrue(SearchText.matches("OLENA", in: ["Olena Kovalenko"]))
+        XCTAssertTrue(SearchText.matches("olena", in: ["Olena Kovalenko"]))
+    }
+
+    func testMatchesCyrillic() {
+        XCTAssertTrue(SearchText.matches("Олена", in: ["Олена Коваленко"]))
+        XCTAssertTrue(SearchText.matches("коваленко", in: ["Олена Коваленко"]))
+    }
+
+    func testEmptyQueryMatchesEverything() {
+        XCTAssertTrue(SearchText.matches("", in: ["cokolwiek"]))
+        XCTAssertTrue(SearchText.matches("   ", in: ["cokolwiek"]))
+    }
+
+    func testQueryWithSurroundingSpacesMatches() {
+        XCTAssertTrue(SearchText.matches("  kowal  ", in: ["Kowalczyk"]))
+    }
+
+    func testNonMatchingQueryIsRejected() {
+        XCTAssertFalse(SearchText.matches("zielinski", in: ["Kowalczyk", "Olena"]))
+    }
+
+    func testNormalizeRemovesDiacriticsAndLowercases() {
+        XCTAssertEqual(SearchText.normalize("Żelazna Łukasz"), "zelazna lukasz")
+    }
+}

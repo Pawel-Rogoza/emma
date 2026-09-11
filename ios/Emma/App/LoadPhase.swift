@@ -33,3 +33,17 @@ public enum LoadPhase<Value> {
 }
 
 extension LoadPhase: Equatable where Value: Equatable {}
+
+// MARK: - Tłumaczenie błędu na komunikat
+
+/// Jedno miejsce, w którym decydujemy, co użytkownik zobaczy po nieudanym wczytaniu.
+///
+/// Powód istnienia: ten sam trójkąt `catch let error as DomainError { … } catch { … }`
+/// powtarzał się w kilkunastu miejscach. Każda kopia to osobna okazja, żeby jeden
+/// ekran zaczął mówić coś innego albo — gorzej — pokazał surowy błąd techniczny.
+/// `DomainError` ma własny komunikat bezpieczny; wszystko inne dostaje tekst ekranu.
+public enum ScreenLoad {
+    public static func message(for error: Error, fallback: String) -> String {
+        (error as? DomainError)?.safeMessage ?? fallback
+    }
+}

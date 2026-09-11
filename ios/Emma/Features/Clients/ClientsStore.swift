@@ -73,10 +73,8 @@ final class ClientsStore: ObservableObject {
                     clientNames: Dictionary(clients.map { ($0.id, $0.displayName) }, uniquingKeysWith: { first, _ in first })
                 )
             )
-        } catch let error as DomainError {
-            phase = .failed(error.safeMessage)
         } catch {
-            phase = .failed("Nie udało się wczytać bazy kancelarii.")
+            phase = .failed(ScreenLoad.message(for: error, fallback: "Nie udało się wczytać bazy kancelarii."))
         }
     }
 

@@ -134,6 +134,23 @@ public struct DateTextFormatter: Sendable {
         self.today = today
     }
 
+    /// Godzina `HH:mm` w strefie referencyjnej.
+    ///
+    /// Jedno miejsce na całą aplikację: wcześniej ten sam formater powstawał
+    /// w trzech widokach, więc każda poprawka musiałaby trafić w trzy pliki.
+    /// Strefa jest stała świadomie — patrz D-03 w `DESIGN_DEVIATIONS.md`.
+    public func clockTime(_ instant: Date) -> String {
+        Self.clockFormatter.string(from: instant)
+    }
+
+    private static let clockFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "pl_PL")
+        formatter.dateFormat = "HH:mm"
+        formatter.timeZone = TimeZone(identifier: EmmaTime.referenceTimeZone)
+        return formatter
+    }()
+
     public func dayLabel(_ date: LocalDate) -> String {
         if date == today { return "Dzisiaj" }
         if date == today.adding(days: 1) { return "Jutro" }
@@ -234,6 +251,37 @@ public enum ConfirmationPhrases {
             }
         }
         return false
+    }
+}
+
+// MARK: - Dopasowanie tekstu w wyszukiwaniu
+
+/// Jedno miejsce, w którym decydujemy, co znaczy „pasuje do zapytania”.
+///
+/// Powód istnienia: każdy ekran robił `lowercased().contains(…)` po swojemu, więc
+/// wyszukiwanie nie znajdowało „Żelazna” po wpisaniu „zelazna” ani „Łukasz” po
+/// „lukasz” (znana różnica D-09 w `DESIGN_DEVIATIONS.md`). Reguła jest jedna i ma
+/// testy, a nie trzy kopie w trzech widokach.
+public enum SearchText {
+
+    /// Normalizacja zapytania i treści: małe litery, bez znaków diakrytycznych.
+    ///
+    /// `ł` jest osobnym znakiem, nie literą z diakrytykiem — składanie Unicode go nie
+    /// usuwa, więc mapujemy je jawnie. Bez tego najczęstszy odruch przy wpisywaniu
+    /// polskiego nazwiska (bez ogonków) nie znajdowałby niczego.
+    public static func normalize(_ text: String) -> String {
+        text
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "pl_PL"))
+            .replacingOccurrences(of: "ł", with: "l")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Czy zapytanie pasuje do którejkolwiek z podanych części.
+    /// Puste zapytanie pasuje do wszystkiego — filtr jest wtedy wyłączony.
+    public static func matches(_ query: String, in parts: [String]) -> Bool {
+        let needle = normalize(query)
+        guard !needle.isEmpty else { return true }
+        return parts.contains { normalize($0).contains(needle) }
     }
 }
 

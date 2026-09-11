@@ -111,10 +111,8 @@ struct StartCaseSheet: View {
                 didPrefill = true
             }
             phase = .loaded(client)
-        } catch let error as DomainError {
-            phase = .failed(error.safeMessage)
         } catch {
-            phase = .failed("Nie udało się wczytać danych klienta.")
+            phase = .failed(ScreenLoad.message(for: error, fallback: "Nie udało się wczytać danych klienta."))
         }
     }
 

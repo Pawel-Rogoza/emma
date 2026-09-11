@@ -137,12 +137,3 @@ public extension EnvironmentValues {
 // MARK: - Skalowanie tekstu
 
 /// Odstępy rosnące razem z ustawieniem rozmiaru tekstu użytkownika.
-public struct ScaledSpacing: DynamicProperty {
-    @ScaledMetric(relativeTo: .body) private var value: CGFloat
-
-    public init(_ base: CGFloat) {
-        _value = ScaledMetric(wrappedValue: base, relativeTo: .body)
-    }
-
-    public var wrappedValue: CGFloat { value }
-}

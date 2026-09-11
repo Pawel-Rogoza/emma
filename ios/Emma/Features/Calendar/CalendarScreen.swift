@@ -75,10 +75,8 @@ final class CalendarStore: ObservableObject {
                     clientNames: Dictionary(uniqueKeysWithValues: clients.map { ($0.id, $0.displayName) })
                 )
             )
-        } catch let error as DomainError {
-            phase = .failed(error.safeMessage)
         } catch {
-            phase = .failed("Nie udało się wczytać kalendarza.")
+            phase = .failed(ScreenLoad.message(for: error, fallback: "Nie udało się wczytać kalendarza."))
         }
     }
 

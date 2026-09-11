@@ -69,10 +69,8 @@ final class CaseStore: ObservableObject {
                     today: today
                 )
             )
-        } catch let error as DomainError {
-            phase = .failed(error.safeMessage)
         } catch {
-            phase = .failed("Nie udało się wczytać sprawy.")
+            phase = .failed(ScreenLoad.message(for: error, fallback: "Nie udało się wczytać sprawy."))
         }
     }
 }

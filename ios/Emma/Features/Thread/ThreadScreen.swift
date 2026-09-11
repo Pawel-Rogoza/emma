@@ -78,10 +78,8 @@ final class ThreadStore: ObservableObject {
                     loadEarlierAvailable: sorted.count >= pageSize
                 )
             )
-        } catch let error as DomainError {
-            phase = .failed(error.safeMessage)
         } catch {
-            phase = .failed("Nie udało się wczytać rozmowy.")
+            phase = .failed(ScreenLoad.message(for: error, fallback: "Nie udało się wczytać rozmowy."))
         }
     }
 
@@ -97,10 +95,8 @@ final class ThreadStore: ObservableObject {
             updated.messages = MessageOrdering.sorted(older + model.messages)
             updated.loadEarlierAvailable = older.count >= pageSize
             phase = .loaded(updated)
-        } catch let error as DomainError {
-            dictationNotice = error.safeMessage
         } catch {
-            dictationNotice = "Nie udało się wczytać starszych wiadomości."
+            dictationNotice = ScreenLoad.message(for: error, fallback: "Nie udało się wczytać starszych wiadomości.")
         }
     }
 
@@ -222,7 +218,7 @@ final class ThreadStore: ObservableObject {
         await dependencies.voice.startDictation(
             target: target,
             language: model.client.language,
-            service: MockDictationService()
+            service: dependencies.makeDictationService()
         )
     }
 

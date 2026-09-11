@@ -154,32 +154,6 @@ public enum AssistantTurnRole: String, Codable, Sendable {
     case assistant
 }
 
-public struct AssistantTurn: Identifiable, Hashable, Codable, Sendable {
-    public let id: String
-    public var role: AssistantTurnRole
-    public var text: String
-    public var createdAt: Date
-    /// Numer tury w sesji, do odrzucania spóźnionych zdarzeń tej samej tury.
-    public var turnOrdinal: Int
-    public var contextVersion: Version
-
-    public init(
-        id: String,
-        role: AssistantTurnRole,
-        text: String,
-        createdAt: Date,
-        turnOrdinal: Int,
-        contextVersion: Version
-    ) {
-        self.id = id
-        self.role = role
-        self.text = text
-        self.createdAt = createdAt
-        self.turnOrdinal = turnOrdinal
-        self.contextVersion = contextVersion
-    }
-}
-
 // MARK: - Żądania repozytoriów (kontrakt §5.3)
 
 public struct CreateVoiceSession: Sendable {

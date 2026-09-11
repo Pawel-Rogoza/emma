@@ -178,7 +178,7 @@ struct NoteSheet: View {
         await dependencies.voice.startDictation(
             target: .caseNote(clientID: clientID, caseID: caseID),
             language: client?.language ?? .pl,
-            service: MockDictationService()
+            service: dependencies.makeDictationService()
         )
     }
 

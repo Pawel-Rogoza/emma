@@ -472,7 +472,8 @@ public struct ActionEngine: Sendable {
         }
 
         // Jedno wykonanie na akcję: istniejące wykonanie blokuje drugie.
-        if let existing = state.executions[confirmation.actionID] {
+        // Wystarczy sprawdzenie obecności — treść wykonania nie jest tu potrzebna.
+        if state.executions[confirmation.actionID] != nil {
             throw ActionEngineError.duplicateExecution
         }
 

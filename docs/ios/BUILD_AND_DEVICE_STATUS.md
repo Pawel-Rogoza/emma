@@ -19,8 +19,8 @@ Backend           : repozytorium prywatne, brak dostępu
 
 | Bramka | Stan | Dowód |
 | --- | --- | --- |
-| Testy logiki domenowej i głosu | **wykonane** | `Executed 142 tests, with 0 failures (0 unexpected)` |
-| Kontrola składni wszystkich plików Swift (w tym SwiftUI) | **wykonana** | `Sprawdzono plików: 63, błędów składni: 0`
+| Testy logiki domenowej i głosu | **wykonane** | `Executed 161 tests, with 0 failures (0 unexpected)` |
+| Kontrola składni wszystkich plików Swift (w tym SwiftUI) | **wykonana** | `Sprawdzono plików: 64, błędów składni: 0`
 | Kontrola odwołań do zależności i tokenów | **wykonana** | `brak odwołań bez deklaracji` | |
 | Kontrola typów SwiftUI | **niewykonana** | wymaga kompilatora Apple |
 | Kompilacja projektu Xcode | **niewykonana** | wymaga macOS |
@@ -77,6 +77,28 @@ Wypisane wprost, żeby nie zniknęły w raporcie końcowym:
    i powie o tym w konsoli.
 6. **`Info.plist` i uprawnienia.** Opisy uprawnień są kompletne w `Info.plist`, ale
    `Package.swift` (ścieżka linuksowa) ich nie używa — realny efekt widać tylko na urządzeniu.
+
+## Audyt kodu przed pierwszym uruchomieniem
+
+Przed pierwszym uruchomieniem na Macu wykonano audyt jakości (polecenie właściciela).
+Pełny raport: `docs/ios/AUDIT.md`. Najważniejsze skutki:
+
+| Znalezisko | Skutek |
+| --- | --- |
+| Limity sesji głosowej były skonfigurowane, ale **nigdy nie egzekwowane** | dodany stróż limitów + 6 testów |
+| Spóźnione zdarzenie odsłuchu zmieniało stan sesji | korelacja po identyfikatorze żądania + 2 testy |
+| Fabryka usług głosowych była martwym kodem (6 miejsc omijało decyzję mock/dostawca) | jedno miejsce decyzyjne |
+| `AudioRoutePolicy` była martwą logiką bez wywołań | wpięta w zdarzenia systemu audio |
+| 13 kopii tłumaczenia błędu, 3 kopie formatera godziny, 3 kopie reguły wyszukiwania | po jednej implementacji każde |
+| Dynamic Type nie skalował tekstu (wymóg planu) | skalowanie w jednym miejscu (`EmmaTypography`) |
+| 3 typy bez użycia | usunięte |
+
+Testy logiki: **142 → 161**, wszystkie przechodzą. `swift build`: **0 ostrzeżeń**
+(wcześniej 5 kategorii). Cztery mutacje celowo zepsutego kodu wywołały padnięcie
+właściwych testów, co potwierdza, że nowe testy faktycznie coś sprawdzają.
+
+**Nadal niezweryfikowane:** kompilacja SwiftUI. Zmiany w warstwie iOS są tylko
+prze-parsowane — kontrola typów nastąpi na Macu.
 
 ## Droga do pierwszej kompilacji bez MacBooka
 

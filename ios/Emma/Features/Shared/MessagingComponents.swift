@@ -111,7 +111,7 @@ struct ConversationRow: View {
         guard let preview else { return "" }
         let day = AppDependencies.localDate(from: preview.sentAt)
         if day == dependencies.today {
-            return Self.clockFormatter.string(from: preview.sentAt)
+            return dependencies.dateText.clockTime(preview.sentAt)
         }
         return dependencies.dateText.dayLabel(day)
     }
@@ -125,12 +125,6 @@ struct ConversationRow: View {
         return parts.joined(separator: ", ")
     }
 
-    private static let clockFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        formatter.timeZone = TimeZone(identifier: EmmaTime.referenceTimeZone)
-        return formatter
-    }()
 }
 
 // MARK: Potwierdzenie dostarczenia
@@ -284,15 +278,9 @@ struct MessageBubble: View {
     }
 
     private var clockText: String {
-        Self.clockFormatter.string(from: message.sentAt)
+        dependencies.dateText.clockTime(message.sentAt)
     }
 
-    private static let clockFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        formatter.timeZone = TimeZone(identifier: EmmaTime.referenceTimeZone)
-        return formatter
-    }()
 }
 
 // MARK: Separatory

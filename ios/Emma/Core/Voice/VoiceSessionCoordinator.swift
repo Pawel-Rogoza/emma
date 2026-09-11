@@ -44,6 +44,10 @@ public final class VoiceSessionCoordinator {
     private let clock: Clock
     private let idleTimeout: TimeInterval
     private let sessionLifetime: TimeInterval
+    /// Co ile sprawdzamy limity czasu, gdy sesja jest aktywna.
+    /// Wartość wstrzykiwalna, żeby test mógł sprawdzić **działanie stróża**,
+    /// a nie tylko samej metody.
+    private let limitCheckInterval: TimeInterval
 
     // MARK: Zasoby wewnętrzne
 
@@ -56,12 +60,22 @@ public final class VoiceSessionCoordinator {
 
     private var sessionConfiguration: VoiceSessionConfiguration?
     private var actionState = ActionEngine.State()
-    private var observers: [UUID: (VoiceUIState) -> Void] = [:]
+    private var observers: [UUID: @MainActor (VoiceUIState) -> Void] = [:]
     private var internalReducer = VoiceStateReducer()
     private var eventLog: [VoiceEvent] = []
     private var rejections: [VoiceStateReducer.Rejection] = []
     private var actionIDSequence = 0
     private var startedAt: Date?
+    /// Znacznik ostatniej czynności w sesji — podstawa limitu bezczynności.
+    /// Bezczynność to brak ruchu w obie strony, nie brak odtwarzania.
+    private var lastActivityAt: Date?
+    /// Identyfikator bieżącego żądania odsłuchu. Zdarzenia innego żądania są
+    /// odrzucane: odsłuch ma jednego właściciela, a spóźnione zdarzenie starego
+    /// żądania nie może zmienić stanu sesji (§5.4).
+    private var activePlaybackSourceID: String?
+    /// Stróż limitów czasu. Żyje tak długo, jak sesja — należy do właściciela sesji,
+    /// bo opuszczenie ekranu Emmy **nie** kończy rozmowy (§5.6).
+    private var limitsTask: Task<Void, Never>?
 
     /// Pełny ślad zdarzeń sesji. Używany w diagnostyce i w testach kontraktu.
     public var recordedEvents: [VoiceEvent] { eventLog }
@@ -74,7 +88,8 @@ public final class VoiceSessionCoordinator {
         actionEngine: ActionEngine = ActionEngine(),
         clock: Clock = SystemClock(),
         idleTimeout: TimeInterval = 5 * 60,
-        sessionLifetime: TimeInterval = 30 * 60
+        sessionLifetime: TimeInterval = 30 * 60,
+        limitCheckInterval: TimeInterval = 15
     ) {
         self.sessionRepository = sessionRepository
         self.actionRepository = actionRepository
@@ -82,12 +97,16 @@ public final class VoiceSessionCoordinator {
         self.clock = clock
         self.idleTimeout = idleTimeout
         self.sessionLifetime = sessionLifetime
+        self.limitCheckInterval = limitCheckInterval
         self.state = VoiceUIState()
     }
 
     // MARK: Obserwacja stanu
 
-    public func addObserver(_ observer: @escaping (VoiceUIState) -> Void) -> UUID {
+    /// Obserwator stanu. Izolacja jest jawna: koordynator żyje na głównym aktorze
+    /// i tylko stamtąd woła obserwatorów, więc rejestrujący nie musi owijać
+    /// swoich zamknięć w `MainActor.assumeIsolated`.
+    public func addObserver(_ observer: @escaping @MainActor (VoiceUIState) -> Void) -> UUID {
         let token = UUID()
         observers[token] = observer
         observer(state)
@@ -175,6 +194,9 @@ public final class VoiceSessionCoordinator {
             sessionID: configuration.sessionID
         )
         startedAt = clock.now()
+        lastActivityAt = startedAt
+        startLimitWatchdog()
+        lastActivityAt = startedAt
         do {
             try await transport.connect(configuration)
             startTransportSubscription(transport)
@@ -197,9 +219,25 @@ public final class VoiceSessionCoordinator {
         }
     }
 
+    /// Zdarzenia, które liczą się jako czynność w sesji. Świadomie **nie** ma tu
+    /// odtwarzania: mówienie Emmy bez udziału użytkownika nie jest jego aktywnością.
+    private static func isActivity(_ payload: VoiceEventPayload) -> Bool {
+        switch payload {
+        case .userSpeechStarted, .userTranscriptPartial, .userTranscriptFinal,
+             .agentTextDelta, .agentTextFinal,
+             .proposalChanged, .executionChanged, .contextAccepted:
+            return true
+        default:
+            return false
+        }
+    }
+
     /// Przyjęcie pojedynczego zdarzenia z transportu. Ścieżka używana przez adapter
     /// dostawcy oraz przez testy. Spóźnione zdarzenia są odrzucane i zapisywane.
     public func ingest(_ event: VoiceEvent) {
+        if Self.isActivity(event.payload) {
+            lastActivityAt = event.receivedAt
+        }
         eventLog.append(event)
         if eventLog.count > 500 { eventLog.removeFirst(eventLog.count - 500) }
         var mutable = state
@@ -239,6 +277,7 @@ public final class VoiceSessionCoordinator {
             origin: .typedText
         )
         lastUserUtterance = text
+        lastActivityAt = clock.now()
         do {
             try await transport.sendTextTurn(input)
         } catch {
@@ -401,6 +440,9 @@ public final class VoiceSessionCoordinator {
         service: SpeechPlaybackService
     ) async {
         playbackService = service
+        // Nowe żądanie unieważnia poprzednie — także wtedy, gdy poprzednie
+        // jeszcze nie zakończyło odtwarzania.
+        activePlaybackSourceID = request.sourceID
         playbackTask?.cancel()
         let stream = service.events()
         playbackTask = Task { [weak self] in
@@ -425,15 +467,25 @@ public final class VoiceSessionCoordinator {
         }
     }
 
+    /// Czy zdarzenie dotyczy bieżącego żądania odsłuchu.
+    /// Spóźnione zdarzenie poprzedniego żądania nie zmienia stanu sesji.
+    private func isCurrentPlayback(_ sourceID: String) -> Bool {
+        activePlaybackSourceID == sourceID
+    }
+
     private func handle(playback event: PlaybackEvent) {
         switch event {
-        case .started(_, let approximate):
+        case .started(let sourceID, let approximate):
+            guard isCurrentPlayback(sourceID) else { return }
             state.isPlaybackActive = true
             state.playbackIsApproximate = approximate
             state.turn = .speaking
-        case .progress:
-            break
+        case .progress(let sourceID):
+            guard isCurrentPlayback(sourceID) else { return }
         case .finished(let sourceID, let reason):
+            // Koniec odsłuchu **nie** jest dowodem dostarczenia ani zgodą na wysyłkę (§5.4).
+            guard isCurrentPlayback(sourceID) else { return }
+            activePlaybackSourceID = nil
             state.isPlaybackActive = false
             if reason == .interrupted || reason == .routeChanged {
                 state.turn = .interrupted
@@ -441,9 +493,9 @@ public final class VoiceSessionCoordinator {
                 state.turn = .waiting
                 state.mode = state.connection == .connected ? .conversation : .idle
             }
-            // Koniec odsłuchu nie jest dowodem dostarczenia ani zgody na wysyłkę (§5.4).
-            _ = sourceID
-        case .failed(_, let reason):
+        case .failed(let sourceID, let reason):
+            guard isCurrentPlayback(sourceID) else { return }
+            activePlaybackSourceID = nil
             state.isPlaybackActive = false
             state.turn = .interrupted
             state.lastError = reason == .routeChanged
@@ -547,7 +599,9 @@ public final class VoiceSessionCoordinator {
         // a nie wersja wynikowa.
         let baseVersion = actionState.proposals[actionID]?.version ?? .initial
         do {
-            let revised = try actionEngine.revise(
+            // Nowa propozycja trafia do `actionState`; do stanu ekranu idzie wersja
+            // z backendu (`remote`) — lokalna kopia nie jest potrzebna.
+            _ = try actionEngine.revise(
                 actionID: actionID,
                 newText: newText,
                 now: clock.now(),
@@ -629,7 +683,9 @@ public final class VoiceSessionCoordinator {
             now: clock.now()
         )
         do {
-            let execution = try actionEngine.confirm(
+            // Wynik lokalny jest tylko przygotowaniem outboxa; stanem rozstrzygającym
+            // jest odpowiedź backendu, dlatego nie przypisujemy go do zmiennej.
+            _ = try actionEngine.confirm(
                 confirmation,
                 outboxID: "outbox-\(actionID.rawValue)-\(proposal.version.value)",
                 into: &actionState
@@ -779,6 +835,10 @@ public final class VoiceSessionCoordinator {
         self.dictationService = nil
         self.playbackService = nil
         self.startedAt = nil
+        self.lastActivityAt = nil
+        self.activePlaybackSourceID = nil
+        limitsTask?.cancel()
+        limitsTask = nil
 
         // Zgoda głosowa nie przeżywa końca sesji.
         actionState.armedPresentationID = nil
@@ -800,16 +860,91 @@ public final class VoiceSessionCoordinator {
         finalState.activeProposal = actionState.proposals.values.first { $0.state == .proposed }
         if finalState.activeProposal == nil { finalState.action = .none }
         lastEndReason = reason
+        // Powód zakończenia musi być widoczny: „Zakończona” bez wyjaśnienia wygląda
+        // jak awaria, a to była reguła.
+        if reason == .idleTimeout || reason == .sessionExpired {
+            finalState.lastError = reason.displayName
+        }
         state = finalState
     }
 
     /// Samo opuszczenie widoku Emmy **nie** kończy sesji (§5.6).
-    /// Ta metoda istnieje, aby ta reguła była jawna i testowalna.
-    public func viewDidDisappear() {
-        // Celowo puste: nawigacja nie kończy rozmowy.
-        _ = idleTimeout
-        _ = sessionLifetime
-        _ = startedAt
+    /// Metoda jest celowo pusta: nawigacja nie kończy rozmowy, a sesja żyje dalej,
+    /// dopóki nie skończy jej użytkownik albo nie zadziałają limity czasu
+    /// (`enforceSessionLimits()`).
+    public func viewDidDisappear() {}
+
+    // MARK: - Trasa audio i przerwania systemowe
+
+    /// Reakcja na zmianę trasy audio (§13).
+    ///
+    /// Reguła: treść poufna nie może nagle zagrać z głośnika. Decyzję podejmuje
+    /// `AudioRoutePolicy` — czysta logika z własnymi testami — a to miejsce nadaje
+    /// jej skutek. Bez tego wywołania polityka trasy była kodem bez zastosowania.
+    public func handleAudioRouteChange(to current: AudioRoute) async {
+        let previous = state.route
+        state.route = current
+
+        let decision = AudioRoutePolicy.decision(
+            previous: previous,
+            current: current,
+            isSensitivePlaybackActive: state.isPlaybackActive || state.mode == .playback
+        )
+        guard decision == .pausePlaybackAndAsk else { return }
+
+        // Zatrzymanie jest natychmiastowe i lokalne: nie czekamy na dostawcę.
+        await playbackService?.stop()
+        state.isPlaybackActive = false
+        state.turn = .waiting
+        state.lastError = "Odsłuch wstrzymany: zmieniła się trasa audio. Wznów świadomie."
+    }
+
+    /// Przerwanie zgłoszone przez system audio (telefon, inna aplikacja).
+    public func handleSystemAudioInterruption(_ reason: InterruptionReason) async {
+        await interrupt(InterruptionRequest(reason: reason))
+    }
+
+    // MARK: - Limity czasu sesji
+
+    /// Uruchomienie stróża limitów. Jedno zadanie na sesję; poprzednie jest anulowane.
+    private func startLimitWatchdog() {
+        limitsTask?.cancel()
+        limitsTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let interval = self?.limitCheckInterval else { return }
+                try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+                guard let self, !Task.isCancelled else { return }
+                _ = await self.enforceSessionLimits()
+            }
+        }
+    }
+
+    /// Egzekwowanie limitów czasu sesji (§5.6).
+    ///
+    /// Limity były dotąd wyłącznie skonfigurowane — nikt ich nie sprawdzał, więc
+    /// dwudziestominutowa rozmowa „na wieki” i sesja bez czynności trwały dowolnie
+    /// długo. Ta metoda zamienia konfigurację w regułę.
+    ///
+    /// Wywołanie należy do interfejsu (cykliczny zegar) albo do testów; brak
+    /// własnego zegara w koordynatorze jest świadomy: jedno miejsce decyduje o czasie.
+    ///
+    /// - Returns: powód zakończenia, jeśli sesja została zakończona; inaczej `nil`.
+    @discardableResult
+    public func enforceSessionLimits() async -> VoiceEndReason? {
+        guard state.connection == .connected || state.connection == .connecting else { return nil }
+        let now = clock.now()
+
+        if let startedAt, now.timeIntervalSince(startedAt) >= sessionLifetime {
+            await end(reason: .sessionExpired)
+            return .sessionExpired
+        }
+
+        if let reference = lastActivityAt ?? startedAt, now.timeIntervalSince(reference) >= idleTimeout {
+            await end(reason: .idleTimeout)
+            return .idleTimeout
+        }
+
+        return nil
     }
 
     // MARK: - Decyzje o ponowieniu
