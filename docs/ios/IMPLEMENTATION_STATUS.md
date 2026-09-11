@@ -109,6 +109,9 @@ wskaźnik strony głównej i podpis podglądu — nie są częścią aplikacji.
 - [x] Dyktowanie do zamrożonego celu — tekst „wyślij to jutro” **nie** wykonuje akcji.
 - [x] Silnik akcji: korekta unieważnia zgodę, argument modelu językowego nie jest zgodą,
       powtórne potwierdzenie nie tworzy drugiego wykonania, niepewny wynik bez ponowienia.
+- [x] Spójność danych przykładowych (15 testów): brak wiszących odwołań między klientami,
+      sprawami, terminami, zadaniami, notatkami, wątkami i wiadomościami; kursor odczytu
+      nie wyprzedza historii; `currentUserID` istnieje wśród użytkowników.
 - [x] Adaptery dostawcy (ElevenLabs, mowa systemu, sesja audio) — **niezweryfikowane**,
       brak konta i brak macOS.
 
@@ -135,8 +138,9 @@ wskaźnik strony głównej i podpis podglądu — nie są częścią aplikacji.
 
 | Bramka | Stan |
 | --- | --- |
-| Testy logiki (SwiftPM, Linux) | **wykonane** |
-| Kontrola składni wszystkich plików Swift | **wykonana** |
+| Testy logiki (SwiftPM, Linux) | **wykonane** — 132 testy, 0 błędów |
+| Kontrola składni wszystkich plików Swift | **wykonana** — 60 plików, 0 błędów |
+| Kontrola odwołań do zależności i tokenów | **wykonana** — 0 odwołań bez deklaracji |
 | Kompilacja projektu Xcode | **niewykonana** — brak macOS |
 | Testy jednostkowe w Xcode | **niewykonana** — brak macOS |
 | Testy interfejsu (XCUITest) | **niewykonana** — brak macOS |

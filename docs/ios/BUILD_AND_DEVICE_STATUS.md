@@ -19,8 +19,9 @@ Backend           : repozytorium prywatne, brak dostępu
 
 | Bramka | Stan | Dowód |
 | --- | --- | --- |
-| Testy logiki domenowej i głosu | **wykonane** | `Executed 117 tests, with 0 failures (0 unexpected)` |
-| Kontrola składni wszystkich plików Swift (w tym SwiftUI) | **wykonana** | `Sprawdzono plików: 59, błędów składni: 0` |
+| Testy logiki domenowej i głosu | **wykonane** | `Executed 132 tests, with 0 failures (0 unexpected)` |
+| Kontrola składni wszystkich plików Swift (w tym SwiftUI) | **wykonana** | `Sprawdzono plików: 60, błędów składni: 0`
+| Kontrola odwołań do zależności i tokenów | **wykonana** | `brak odwołań bez deklaracji` | |
 | Kontrola typów SwiftUI | **niewykonana** | wymaga kompilatora Apple |
 | Kompilacja projektu Xcode | **niewykonana** | wymaga macOS |
 | Testy jednostkowe w Xcode (`Cmd+U`) | **niewykonana** | wymaga macOS |
@@ -46,6 +47,10 @@ Dwa kroki, żadnego udawania:
 2. `swiftc -parse` po **wszystkich** plikach Swift w projekcie, łącznie z widokami SwiftUI.
    To sprawdza wyłącznie składnię. Parser nie zna typów z SwiftUI, więc **nie wykryje**
    błędów typów, złych sygnatur ani brakujących symboli.
+3. `scripts/check-cross-references.py` — czyta zadeklarowane składowe zależności,
+   repozytorium i tokenów design systemu i porównuje je z użyciami w widokach.
+   Ten filtr znalazł realny błąd (`dataset.user`, którego nie było w `DemoFixtures.Dataset`),
+   ale nie sprawdza typów argumentów ani przeciążeń.
 
 Dlatego pliki SwiftUI mają w rejestrze status „sprawdzone składniowo”, a nie
 „zweryfikowane”. Pierwszym realnym sprawdzeniem typów będzie kompilacja na Macu.
@@ -56,8 +61,9 @@ Wypisane wprost, żeby nie zniknęły w raporcie końcowym:
 
 1. **Sygnatury komponentów.** Widoki pisane równolegle w kilku przyrostach korzystają
    ze wspólnych komponentów (`PersonRow`, `CaseCard`, `MeetingCard`, `InfoList`,
-   `ChoiceList`, `SurfaceCard`, `TaskRow`). Zgodność wywołań sprawdzono przeglądem,
-   nie typami.
+   `ChoiceList`, `SurfaceCard`, `TaskRow`). Sygnatury porównano z miejscami wywołań
+   oraz z `SheetHost` i `RouteDestination`, ale nie sprawdzono ich typami —
+   liczba i typy argumentów pozostają do potwierdzenia przez kompilator.
 2. **Liczba dzieci `ViewBuildera`.** Limit dziesięciu gałęzi jest pilnowany ręcznie —
    parser go nie sprawdza.
 3. **Adnotacje współbieżności.** Projekt włącza `SWIFT_STRICT_CONCURRENCY: complete`
