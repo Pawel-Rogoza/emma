@@ -31,7 +31,7 @@ configFiles:
 
 settings:
   base:
-    SWIFT_VERSION: "5.9"
+    SWIFT_VERSION: "6.0"
     IPHONEOS_DEPLOYMENT_TARGET: "17.0"
     TARGETED_DEVICE_FAMILY: "1"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
@@ -47,6 +47,25 @@ settings:
     # Daty i liczby w logach niezależne od ustawień maszyny dewelopera.
     SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited)
 
+# Pakiety zależności.
+#
+# ElevenLabs to **oficjalne** Swift SDK (nie własny klient HTTP). Wersje są
+# przypięte dokładnie, bo SDK deklaruje LiveKit jako `from: "2.10.0"`, a kolejne
+# wydania LiveKit wymagają coraz nowszego toolchainu — przypięcie chroni build
+# przed niekontrolowaną zmianą zależności przechodniej (§5.1).
+#
+# Uwaga dla pierwszego otwarcia projektu: `xcodegen generate` sam nie pobiera
+# pakietów — zrobi to Xcode przy pierwszym otwarciu projektu (wymaga sieci).
+# Kod adaptera głosu jest objęty `#if canImport(ElevenLabs)`, więc projekt
+# zbuduje się także bez pobranych pakietów, tylko bez ścieżki dostawcy.
+packages:
+  ElevenLabs:
+    url: https://github.com/elevenlabs/elevenlabs-swift-sdk
+    exactVersion: 3.3.1
+  LiveKit:
+    url: https://github.com/livekit/client-sdk-swift
+    exactVersion: 2.16.0
+
 targets:
   Emma:
     type: application
@@ -55,6 +74,11 @@ targets:
       - path: Emma
         excludes:
           - "**/*.md"
+    dependencies:
+      - package: ElevenLabs
+        product: ElevenLabs
+      - package: LiveKit
+        product: LiveKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(EMMA_BUNDLE_ID)

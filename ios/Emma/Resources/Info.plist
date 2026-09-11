@@ -23,6 +23,19 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 
+	<!-- Rejestracja czcionek. Bez tego wpisu pliki .ttf są w pakiecie, ale
+	     UIFont(name:) ich nie znajdzie — dokładnie taką sytuację wykrywa
+	     EmmaFontRegistration.verifyRegisteredFonts() przy starcie.
+	     Nazwy plików muszą być zgodne z tymi w Resources/Fonts. -->
+	<key>UIAppFonts</key>
+	<array>
+		<string>DMSans-Regular.ttf</string>
+		<string>DMSans-Medium.ttf</string>
+		<string>DMSans-SemiBold.ttf</string>
+		<string>Manrope-Bold.ttf</string>
+		<string>Manrope-ExtraBold.ttf</string>
+	</array>
+
 	<!-- Konfiguracja bez sekretów, wstrzykiwana z plików .xcconfig. -->
 	<key>EMMAEnvironment</key>
 	<string>$(EMMA_ENVIRONMENT)</string>

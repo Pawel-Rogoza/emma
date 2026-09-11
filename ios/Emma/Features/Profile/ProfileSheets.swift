@@ -1,0 +1,81 @@
+import SwiftUI
+
+// MARK: - Profil i zespół
+//
+// Port `profile()` oraz `resetPrompt()`/`resetDemo()`. Arkusz jest miejscem,
+// w którym uczciwie mówimy, co w tej wersji jest symulowane.
+
+struct ProfileSheet: View {
+
+    @EnvironmentObject private var dependencies: AppDependencies
+    @State private var users: [User] = []
+
+    var body: some View {
+        SheetScaffold(title: "Twój obszar pracy", onClose: { dependencies.dismissSheet() }) {
+            Text("Kancelaria Rogoża")
+                .font(EmmaTypography.heading(20))
+                .foregroundStyle(EmmaTheme.ink)
+                .padding(.bottom, 12)
+
+            ChoiceList(
+                items: users,
+                title: { $0.displayName },
+                subtitle: nil
+            ) { user in
+                Task { await dependencies.switchUser(to: user.id) }
+            }
+            .padding(.bottom, 16)
+
+            Text("AI i integracja WhatsApp są symulowane. Głos korzysta z funkcji przeglądarki. Data przykładowego dnia: 11 września 2026.")
+                .font(EmmaTypography.ui(11))
+                .foregroundStyle(EmmaTheme.mutedSoft)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 16)
+
+            SecondaryButton("Przywróć dane przykładowe") {
+                dependencies.present(.resetDemo)
+            }
+
+            if dependencies.configuration.usesMockServices {
+                Text("Tryb Demo: \(dependencies.configuration.environment.displayName). Aplikacja nie wykonuje żadnych połączeń sieciowych i nie zawiera kluczy dostawców.")
+                    .font(EmmaTypography.ui(11))
+                    .foregroundStyle(EmmaTheme.mutedSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 14)
+            }
+        }
+        .task {
+            users = (try? await dependencies.repository.users()) ?? []
+        }
+    }
+}
+
+/// Potwierdzenie przywrócenia danych przykładowych.
+struct ResetDemoSheet: View {
+
+    @EnvironmentObject private var dependencies: AppDependencies
+
+    var body: some View {
+        SheetScaffold(title: "Przywrócić dane przykładowe?", onClose: { dependencies.dismissSheet() }) {
+            Text("Usuniesz zmiany, wiadomości, notatki, sprawy i zadania dodane w tej sesji prototypu.")
+                .font(EmmaTypography.ui(13))
+                .foregroundStyle(EmmaTheme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 18)
+
+            HStack(spacing: 10) {
+                SecondaryButton("Wróć") {
+                    dependencies.present(.profile)
+                }
+                PrimaryButton("Przywróć dane") {
+                    Task { await dependencies.resetDemoData() }
+                }
+            }
+        }
+    }
+}
+
+#Preview("Profil") {
+    ProfileSheet()
+        .environmentObject(AppDependencies.demo())
+}

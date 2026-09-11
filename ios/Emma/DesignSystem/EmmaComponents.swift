@@ -1,0 +1,985 @@
+import SwiftUI
+
+// MARK: - Powierzchnie i nagłówki
+
+/// Biała karta z obramowaniem i promieniem z referencji (`.card`).
+public struct SurfaceCard<Content: View>: View {
+    private let padding: EdgeInsets
+    private let content: Content
+
+    public init(
+        padding: EdgeInsets = EdgeInsets(top: 16, leading: 17, bottom: 16, trailing: 17),
+        @ViewBuilder content: () -> Content
+    ) {
+        self.padding = padding
+        self.content = content()
+    }
+
+    public var body: some View {
+        content
+            .padding(padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(EmmaTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
+                    .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
+            }
+    }
+}
+
+/// Nagłówek sekcji: tytuł i opcjonalna akcja tekstowa po prawej.
+public struct SectionHeader: View {
+    private let title: String
+    private let actionTitle: String?
+    private let action: (() -> Void)?
+
+    public init(_ title: String, actionTitle: String? = nil, action: (() -> Void)? = nil) {
+        self.title = title
+        self.actionTitle = actionTitle
+        self.action = action
+    }
+
+    public var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+                .font(EmmaTypography.sectionTitle)
+                .foregroundStyle(EmmaTheme.ink)
+            Spacer(minLength: 8)
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .font(EmmaTypography.ui(12, .medium))
+                    .foregroundStyle(EmmaTheme.accent)
+                    .frame(minHeight: EmmaSpacing.hitTarget)
+                    .contentShape(Rectangle())
+            }
+        }
+        .frame(minHeight: EmmaSpacing.sectionHeaderMinHeight, alignment: .bottom)
+        .padding(.top, EmmaSpacing.sectionTop)
+        .padding(.bottom, EmmaSpacing.sectionBottom)
+    }
+}
+
+/// Nagłówek ekranu głównego: kicker z datą, powitanie i awatar użytkownika.
+public struct ScreenHeader: View {
+    private let kicker: String
+    private let title: String
+    private let userInitials: String
+    private let onUserTap: (() -> Void)?
+
+    public init(kicker: String, title: String, userInitials: String, onUserTap: (() -> Void)? = nil) {
+        self.kicker = kicker
+        self.title = title
+        self.userInitials = userInitials
+        self.onUserTap = onUserTap
+    }
+
+    public var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(kicker)
+                    .font(EmmaTypography.kicker)
+                    .tracking(1.5)
+                    .foregroundStyle(EmmaTheme.mutedSoft)
+                Text(title)
+                    .font(EmmaTypography.welcome)
+                    .tracking(-0.9)
+                    .foregroundStyle(EmmaTheme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                onUserTap?()
+            } label: {
+                PersonAvatar(initials: userInitials, style: .user)
+            }
+            .buttonStyle(.plain)
+            .disabled(onUserTap == nil)
+            .accessibilityLabel("Twój profil")
+        }
+        .padding(.bottom, 4)
+    }
+}
+
+/// Nagłówek ekranu szczegółu: przycisk powrotu, podpis i tytuł.
+public struct DetailHeader: View {
+    private let caption: String
+    private let title: String
+    private let onBack: () -> Void
+    private let trailing: AnyView?
+
+    public init(
+        caption: String,
+        title: String,
+        onBack: @escaping () -> Void,
+        @ViewBuilder trailing: () -> some View = { EmptyView() }
+    ) {
+        self.caption = caption
+        self.title = title
+        self.onBack = onBack
+        self.trailing = AnyView(trailing())
+    }
+
+    public var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Button(action: onBack) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(EmmaTheme.ink)
+                    .frame(width: EmmaMetrics.hitTarget, height: EmmaMetrics.hitTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Wróć")
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(caption.uppercased())
+                    .font(EmmaTypography.ui(12, .semibold))
+                    .tracking(1)
+                    .foregroundStyle(EmmaTheme.mutedSoft)
+                Text(title)
+                    .font(EmmaTypography.detailTitle)
+                    .foregroundStyle(EmmaTheme.ink)
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            trailing
+        }
+        .padding(.bottom, 12)
+    }
+}
+
+// MARK: - Awatary
+
+public struct PersonAvatar: View {
+
+    public enum Style: Sendable {
+        /// Lista rozmów — ton zależny od pozycji.
+        case conversation(Client.AvatarTone)
+        /// Karty osób, klientów i spraw.
+        case person
+        /// Awatar zalogowanego użytkownika w nagłówku.
+        case user
+    }
+
+    private let initials: String
+    private let style: Style
+    private let diameter: CGFloat
+
+    public init(initials: String, style: Style = .person, diameter: CGFloat = EmmaMetrics.avatar) {
+        self.initials = initials
+        self.style = style
+        self.diameter = diameter
+    }
+
+    public var body: some View {
+        Text(initials)
+            .font(.system(size: max(10, diameter * 0.30), weight: .semibold))
+            .foregroundStyle(foreground)
+            .frame(width: diameter, height: diameter)
+            .background(background, in: Circle())
+            .overlay {
+                if case .user = style {
+                    Circle().strokeBorder(Color.white, lineWidth: 3)
+                }
+            }
+            .accessibilityHidden(true)
+    }
+
+    private var background: Color {
+        switch style {
+        case .conversation(let tone): return EmmaTheme.conversationAvatar(tone).background
+        case .person: return EmmaTheme.personAvatarBackground
+        case .user: return EmmaTheme.avatarBackground
+        }
+    }
+
+    private var foreground: Color {
+        switch style {
+        case .conversation(let tone): return EmmaTheme.conversationAvatar(tone).foreground
+        case .person: return EmmaTheme.personAvatarText
+        case .user: return EmmaTheme.avatarText
+        }
+    }
+}
+
+// MARK: - Pigułki statusu
+
+public struct StatusPill: View {
+
+    public enum Kind: Sendable {
+        case neutral
+        case green
+        case amber
+        case urgent
+
+        var colors: (background: Color, text: Color) {
+            switch self {
+            case .neutral: return (EmmaTheme.pillNeutralBackground, EmmaTheme.pillNeutralText)
+            case .green: return (EmmaTheme.pillGreenBackground, EmmaTheme.pillGreenText)
+            case .amber: return (EmmaTheme.pillAmberBackground, EmmaTheme.pillAmberText)
+            case .urgent: return (EmmaTheme.pillUrgentBackground, EmmaTheme.pillUrgentText)
+            }
+        }
+    }
+
+    private let text: String
+    private let kind: Kind
+
+    public init(_ text: String, kind: Kind = .neutral) {
+        self.text = text
+        self.kind = kind
+    }
+
+    public var body: some View {
+        Text(text)
+            .font(EmmaTypography.pill)
+            .foregroundStyle(kind.colors.text)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(kind.colors.background)
+            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.pill, style: .continuous))
+    }
+}
+
+/// Licznik nieprzeczytanych wiadomości.
+public struct UnreadBadge: View {
+    private let count: Int
+    private let compact: Bool
+
+    public init(count: Int, compact: Bool = false) {
+        self.count = count
+        self.compact = compact
+    }
+
+    public var body: some View {
+        Text("\(count)")
+            .font(EmmaTypography.ui(compact ? 11 : 12, .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .frame(minWidth: compact ? EmmaMetrics.tabBadgeMinWidth : 19,
+                   minHeight: compact ? EmmaMetrics.tabBadgeHeight : 19)
+            .background(EmmaTheme.unreadBadge, in: Capsule())
+            .accessibilityLabel(EmmaPlural.unread(count))
+    }
+}
+
+// MARK: - Sterowanie
+
+/// Filtr segmentowy z referencji (`.segmented`).
+public struct SegmentedFilter<Item: Hashable>: View {
+    private let items: [Item]
+    private let title: (Item) -> String
+    @Binding private var selection: Item
+
+    public init(
+        items: [Item],
+        selection: Binding<Item>,
+        title: @escaping (Item) -> String
+    ) {
+        self.items = items
+        self._selection = selection
+        self.title = title
+    }
+
+    public var body: some View {
+        HStack(spacing: 3) {
+            ForEach(items, id: \.self) { item in
+                let isSelected = item == selection
+                Button {
+                    selection = item
+                } label: {
+                    Text(title(item))
+                        .font(EmmaTypography.ui(12, isSelected ? .semibold : .regular))
+                        .foregroundStyle(isSelected ? EmmaTheme.ink : EmmaTheme.muted)
+                        .frame(maxWidth: .infinity, minHeight: EmmaMetrics.segmentedMinHeight - 6)
+                        .background(isSelected ? EmmaTheme.controlSelected : Color.clear)
+                        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.segmentedInner, style: .continuous))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+            }
+        }
+        .padding(3)
+        .background(EmmaTheme.controlBackground)
+        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.segmented, style: .continuous))
+        .frame(minHeight: EmmaMetrics.segmentedMinHeight)
+    }
+}
+
+/// Pole wyszukiwania z referencji (`.search`).
+public struct SearchField: View {
+    @Binding private var text: String
+    private let placeholder: String
+
+    public init(text: Binding<String>, placeholder: String = "Szukaj") {
+        self._text = text
+        self.placeholder = placeholder
+    }
+
+    public var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(EmmaTheme.muted)
+            TextField(placeholder, text: $text)
+                .font(EmmaTypography.ui(16))
+                .foregroundStyle(EmmaTheme.ink)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 15))
+                        .foregroundStyle(EmmaTheme.muted)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Wyczyść wyszukiwanie")
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(minHeight: EmmaMetrics.searchMinHeight)
+        .background(EmmaTheme.controlBackground)
+        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.search, style: .continuous))
+    }
+}
+
+/// Przyciski z referencji: `.primary` i `.secondary`.
+public struct PrimaryButton: View {
+    private let title: String
+    private let systemImage: String?
+    private let isEnabled: Bool
+    private let action: () -> Void
+
+    public init(_ title: String, systemImage: String? = nil, isEnabled: Bool = true, action: @escaping () -> Void) {
+        self.title = title
+        self.systemImage = systemImage
+        self.isEnabled = isEnabled
+        self.action = action
+    }
+
+    public var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                if let systemImage {
+                    Image(systemName: systemImage).font(.system(size: 15, weight: .semibold))
+                }
+                Text(title).font(EmmaTypography.button)
+            }
+            .foregroundStyle(isEnabled ? EmmaTheme.primaryButtonText : EmmaTheme.disabledButtonText)
+            .frame(maxWidth: .infinity, minHeight: EmmaMetrics.primaryButtonMinHeight)
+            .background(isEnabled ? EmmaTheme.primaryButton : EmmaTheme.disabledButton)
+            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+    }
+}
+
+public struct SecondaryButton: View {
+    private let title: String
+    private let systemImage: String?
+    private let isEnabled: Bool
+    private let action: () -> Void
+
+    public init(_ title: String, systemImage: String? = nil, isEnabled: Bool = true, action: @escaping () -> Void) {
+        self.title = title
+        self.systemImage = systemImage
+        self.isEnabled = isEnabled
+        self.action = action
+    }
+
+    public var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                if let systemImage {
+                    Image(systemName: systemImage).font(.system(size: 15, weight: .semibold))
+                }
+                Text(title).font(EmmaTypography.button)
+            }
+            .foregroundStyle(EmmaTheme.secondaryButtonText)
+            .frame(maxWidth: .infinity, minHeight: EmmaMetrics.primaryButtonMinHeight)
+            .background(EmmaTheme.secondaryButton)
+            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.5)
+    }
+}
+
+/// Kwadratowy przycisk ikony (`.icon-button`).
+public struct IconButton: View {
+    private let systemName: String
+    private let accessibilityLabel: String
+    private let isSelected: Bool
+    private let size: CGFloat
+    private let action: () -> Void
+
+    public init(
+        systemName: String,
+        accessibilityLabel: String,
+        isSelected: Bool = false,
+        size: CGFloat = EmmaMetrics.iconButtonSize,
+        action: @escaping () -> Void
+    ) {
+        self.systemName = systemName
+        self.accessibilityLabel = accessibilityLabel
+        self.isSelected = isSelected
+        self.size = size
+        self.action = action
+    }
+
+    public var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: size * 0.38, weight: .medium))
+                .foregroundStyle(isSelected ? Color.white : EmmaTheme.secondaryButtonText)
+                .frame(width: size, height: size)
+                .background(isSelected ? EmmaTheme.primaryButton : EmmaTheme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.iconButton, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: EmmaRadii.iconButton, style: .continuous)
+                        .strokeBorder(EmmaTheme.fieldBorder, lineWidth: 1)
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+// MARK: - Listy informacji i formularze
+
+public struct InfoList: View {
+    public struct Row: Identifiable {
+        public let id = UUID()
+        public let label: String
+        public let value: String
+        public let isMultiline: Bool
+
+        public init(_ label: String, _ value: String, isMultiline: Bool = false) {
+            self.label = label
+            self.value = value
+            self.isMultiline = isMultiline
+        }
+    }
+
+    private let rows: [Row]
+
+    public init(_ rows: [Row]) {
+        self.rows = rows
+    }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                HStack(alignment: .top, spacing: 12) {
+                    Text(row.label)
+                        .font(EmmaTypography.ui(12))
+                        .foregroundStyle(EmmaTheme.muted)
+                    Spacer(minLength: 8)
+                    Text(row.value)
+                        .font(EmmaTypography.ui(12, .medium))
+                        .foregroundStyle(EmmaTheme.ink)
+                        .multilineTextAlignment(.trailing)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, 12)
+                if index < rows.count - 1 {
+                    Divider().overlay(EmmaTheme.infoRowBorder)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .background(EmmaTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .strokeBorder(EmmaTheme.infoRowBorder, lineWidth: 1)
+        }
+    }
+}
+
+/// Etykieta i treść pola formularza (`.form-field`).
+public struct LabeledField<Content: View>: View {
+    private let label: String
+    private let help: String?
+    private let error: String?
+    private let content: Content
+
+    public init(
+        _ label: String,
+        help: String? = nil,
+        error: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.label = label
+        self.help = help
+        self.error = error
+        self.content = content()
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(label)
+                .font(EmmaTypography.fieldLabel)
+                .foregroundStyle(EmmaTheme.muted)
+            content
+            if let help {
+                Text(help)
+                    .font(EmmaTypography.ui(11))
+                    .foregroundStyle(EmmaTheme.mutedSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let error {
+                Text(error)
+                    .font(EmmaTypography.error)
+                    .foregroundStyle(EmmaTheme.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.bottom, 14)
+    }
+}
+
+/// Styl pola tekstowego zgodny z referencją.
+public struct EmmaFieldStyle: ViewModifier {
+    public func body(content: Content) -> some View {
+        content
+            .font(EmmaTypography.fieldValue)
+            .foregroundStyle(EmmaTheme.ink)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+            .frame(minHeight: EmmaMetrics.fieldMinHeight, alignment: .topLeading)
+            .background(EmmaTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.field, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: EmmaRadii.field, style: .continuous)
+                    .strokeBorder(EmmaTheme.fieldBorder, lineWidth: 1)
+            }
+    }
+}
+
+public extension View {
+    func emmaFieldStyle() -> some View { modifier(EmmaFieldStyle()) }
+}
+
+/// Lista wyboru (`.choice-list`).
+public struct ChoiceList<Item: Hashable>: View {
+    private let items: [Item]
+    private let title: (Item) -> String
+    private let subtitle: ((Item) -> String)?
+    private let onSelect: (Item) -> Void
+
+    public init(
+        items: [Item],
+        title: @escaping (Item) -> String,
+        subtitle: ((Item) -> String)? = nil,
+        onSelect: @escaping (Item) -> Void
+    ) {
+        self.items = items
+        self.title = title
+        self.subtitle = subtitle
+        self.onSelect = onSelect
+    }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.element) { index, item in
+                Button {
+                    onSelect(item)
+                } label: {
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(title(item))
+                                .font(EmmaTypography.ui(14, .medium))
+                                .foregroundStyle(EmmaTheme.ink)
+                                .multilineTextAlignment(.leading)
+                            if let subtitle {
+                                Text(subtitle(item))
+                                    .font(EmmaTypography.ui(11))
+                                    .foregroundStyle(EmmaTheme.mutedSoft)
+                                    .multilineTextAlignment(.leading)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(EmmaTheme.mutedSoft)
+                    }
+                    .padding(.horizontal, 15)
+                    .padding(.vertical, 14)
+                    .frame(minHeight: EmmaMetrics.choiceRowMinHeight, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if index < items.count - 1 {
+                    Divider().overlay(EmmaTheme.cardBorder)
+                }
+            }
+        }
+        .background(EmmaTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.choiceList, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: EmmaRadii.choiceList, style: .continuous)
+                .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
+        }
+    }
+}
+
+// MARK: - Stany
+
+public struct EmptyState: View {
+    private let systemImage: String
+    private let title: String
+    private let message: String
+    private let actionTitle: String?
+    private let action: (() -> Void)?
+
+    public init(
+        systemImage: String,
+        title: String,
+        message: String,
+        actionTitle: String? = nil,
+        action: (() -> Void)? = nil
+    ) {
+        self.systemImage = systemImage
+        self.title = title
+        self.message = message
+        self.actionTitle = actionTitle
+        self.action = action
+    }
+
+    public var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 30, weight: .light))
+                .foregroundStyle(EmmaTheme.mutedSoft)
+                .padding(.bottom, 2)
+            Text(title)
+                .font(EmmaTypography.ui(15, .semibold))
+                .foregroundStyle(EmmaTheme.ink)
+            Text(message)
+                .font(EmmaTypography.emptyState)
+                .foregroundStyle(EmmaTheme.muted)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            if let actionTitle, let action {
+                SecondaryButton(actionTitle, action: action)
+                    .frame(maxWidth: 240)
+                    .padding(.top, 6)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 32)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Stan ładowania. Nie używamy nieskończonego wskaźnika bez etykiety.
+public struct LoadingState: View {
+    private let label: String
+
+    public init(_ label: String = "Wczytuję…") {
+        self.label = label
+    }
+
+    public var body: some View {
+        HStack(spacing: 10) {
+            ProgressView().controlSize(.small)
+            Text(label)
+                .font(EmmaTypography.ui(13))
+                .foregroundStyle(EmmaTheme.muted)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+        .accessibilityLabel(label)
+    }
+}
+
+/// Komunikat błędu w formularzu (`.form-error`).
+public struct InlineError: View {
+    private let message: String
+
+    public init(_ message: String) {
+        self.message = message
+    }
+
+    public var body: some View {
+        Text(message)
+            .font(EmmaTypography.error)
+            .foregroundStyle(EmmaTheme.danger)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 12)
+            .accessibilityAddTraits(.isStaticText)
+    }
+}
+
+/// Krótkie potwierdzenie operacji (`#toast`).
+public struct TraceToast: View {
+    private let message: String
+
+    public init(_ message: String) {
+        self.message = message
+    }
+
+    public var body: some View {
+        Text(message)
+            .font(EmmaTypography.ui(12))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 13)
+            .background(EmmaTheme.toastBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .shadow(color: Color.black.opacity(0.18), radius: 12, y: 6)
+            .accessibilityAddTraits(.isStaticText)
+    }
+}
+
+// MARK: - Elementy kancelarii
+
+/// Szybkie akcje (`.quick-actions`): cztery kafle z ikoną i etykietą.
+public struct QuickActions: View {
+    public struct Action: Identifiable {
+        public let id = UUID()
+        public let systemImage: String
+        public let title: String
+        public let handler: () -> Void
+
+        public init(systemImage: String, title: String, handler: @escaping () -> Void) {
+            self.systemImage = systemImage
+            self.title = title
+            self.handler = handler
+        }
+    }
+
+    private let actions: [Action]
+
+    public init(_ actions: [Action]) {
+        self.actions = actions
+    }
+
+    public var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            ForEach(actions) { action in
+                Button(action: action.handler) {
+                    VStack(spacing: 8) {
+                        Image(systemName: action.systemImage)
+                            .font(.system(size: 19, weight: .regular))
+                            .foregroundStyle(EmmaTheme.personAvatarText)
+                        Text(action.title)
+                            .font(EmmaTypography.ui(11))
+                            .foregroundStyle(EmmaTheme.muted)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: EmmaMetrics.quickActionMinHeight)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 10)
+                    .background(EmmaTheme.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(action.title)
+            }
+        }
+    }
+}
+
+/// Statystyki nagłówka przestrzeni roboczej (`.workspace-stats`).
+public struct WorkspaceStats: View {
+    public struct Item: Identifiable {
+        public let id = UUID()
+        public let value: String
+        public let label: String
+
+        public init(value: String, label: String) {
+            self.value = value
+            self.label = label
+        }
+    }
+
+    private let items: [Item]
+
+    public init(_ items: [Item]) {
+        self.items = items
+    }
+
+    public var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.value)
+                        .font(EmmaTypography.heading(23))
+                        .foregroundStyle(EmmaTheme.ink)
+                    Text(item.label)
+                        .font(EmmaTypography.ui(10))
+                        .foregroundStyle(EmmaTheme.mutedSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if index < items.count - 1 {
+                    Rectangle()
+                        .fill(EmmaTheme.border)
+                        .frame(width: 1, height: 34)
+                        .padding(.trailing, 12)
+                }
+            }
+        }
+        .padding(.top, 8)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Wiersz historii sprawy (`.activity-row`).
+public struct ActivityRow: View {
+    private let text: String
+    private let dateText: String
+
+    public init(text: String, dateText: String) {
+        self.text = text
+        self.dateText = dateText
+    }
+
+    public var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Circle()
+                .fill(EmmaTheme.activityMarker)
+                .frame(width: 7, height: 7)
+                .padding(.top, 6)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(text)
+                    .font(EmmaTypography.ui(13, .medium))
+                    .foregroundStyle(EmmaTheme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(dateText)
+                    .font(EmmaTypography.ui(11))
+                    .foregroundStyle(EmmaTheme.mutedSoft)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Karta notatki z rozmowy (`.note-card`).
+public struct NoteCard: View {
+    private let text: String
+    private let footer: String
+
+    public init(text: String, footer: String) {
+        self.text = text
+        self.footer = footer
+    }
+
+    public var body: some View {
+        SurfaceCard {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(text)
+                    .font(EmmaTypography.body(for: text, size: 14))
+                    .foregroundStyle(EmmaTheme.ink.opacity(0.88))
+                    .lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(footer)
+                    .font(EmmaTypography.ui(11))
+                    .foregroundStyle(EmmaTheme.mutedSoft)
+            }
+        }
+    }
+}
+
+/// Wiersz zadania (`.task-row`).
+public struct TaskRow: View {
+    private let task: TaskItem
+    private let dateText: String
+    /// Nazwa klienta rozwiązana przez ekran. Wiersz nie zna repozytorium.
+    private let clientName: String?
+    private let onToggle: () -> Void
+    private let onOpen: () -> Void
+
+    public init(
+        task: TaskItem,
+        dateText: String,
+        clientName: String?,
+        onToggle: @escaping () -> Void,
+        onOpen: @escaping () -> Void
+    ) {
+        self.task = task
+        self.dateText = dateText
+        self.clientName = clientName
+        self.onToggle = onToggle
+        self.onOpen = onOpen
+    }
+
+    public var body: some View {
+        HStack(alignment: .top, spacing: 11) {
+            Button(action: onToggle) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(task.isDone ? EmmaTheme.pillGreenBackground : EmmaTheme.surface)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(task.isDone ? EmmaTheme.pillGreenText.opacity(0.5) : EmmaTheme.checkboxBorder, lineWidth: 1)
+                    if task.isDone {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(EmmaTheme.pillGreenText)
+                    }
+                }
+                .frame(width: EmmaMetrics.taskCheckSize, height: EmmaMetrics.taskCheckSize)
+                .frame(width: EmmaSpacing.hitTarget, height: EmmaSpacing.hitTarget, alignment: .topLeading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(task.isDone ? "Przywróć zadanie" : "Oznacz jako wykonane")
+
+            Button(action: onOpen) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(task.title)
+                        .font(EmmaTypography.taskTitle)
+                        .foregroundStyle(EmmaTheme.ink)
+                        .strikethrough(task.isDone, color: EmmaTheme.mutedSoft)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(clientName.map { "\(OwnerName.of(task.ownerID)) · \($0)" } ?? OwnerName.of(task.ownerID))
+                        .font(EmmaTypography.taskMeta)
+                        .foregroundStyle(EmmaTheme.taskMetaText)
+                        .multilineTextAlignment(.leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            VStack(alignment: .trailing, spacing: 6) {
+                Text(dateText)
+                    .font(EmmaTypography.taskDate)
+                    .foregroundStyle(task.priority == .urgent ? EmmaTheme.pillUrgentText : EmmaTheme.taskDateText)
+                    .padding(.horizontal, task.priority == .urgent ? 7 : 0)
+                    .padding(.vertical, task.priority == .urgent ? 5 : 0)
+                    .background(task.priority == .urgent ? EmmaTheme.pillUrgentBackground : Color.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.pill, style: .continuous))
+            }
+        }
+        .padding(.vertical, 14)
+        .padding(.horizontal, 15)
+        .contentShape(Rectangle())
+    }
+}

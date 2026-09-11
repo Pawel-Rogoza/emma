@@ -269,6 +269,12 @@ public actor MockRepository:
 
     // MARK: - Zadania
 
+    /// Pojedyncze zadanie po identyfikatorze. Ekran szczegółów nie musi
+    /// filtrować całej listy, aby znaleźć jedno zadanie.
+    public func task(id: TaskID) async throws -> TaskItem? {
+        dataset.tasks.first { $0.id == id }
+    }
+
     public func tasks(filter: TaskFilter) async throws -> [TaskItem] {
         await pause()
         return dataset.tasks
@@ -599,6 +605,28 @@ public actor MockRepository:
         updated.readCursorSequence = max(dataset.threadStates[index].readCursorSequence, state.readCursorSequence)
         dataset.threadStates[index] = updated
         return updated
+    }
+
+    /// Liczba nieprzeczytanych wiadomości w każdym wątku dla danego użytkownika.
+    ///
+    /// Liczona przez `ReadStatePolicy`, czyli tę samą regułę, której używa otwarty
+    /// wątek — dzięki temu plakietka na zakładce i licznik w wątku nie mogą się
+    /// rozjechać (§3.3).
+    public func unreadCounts(userID: UserID) async throws -> [ThreadID: Int] {
+        let states = try await readStates(userID: userID)
+        var result: [ThreadID: Int] = [:]
+        for thread in dataset.threads {
+            let messages = try await latestMessages(threadID: thread.id, limit: 200)
+            let state = states.first { $0.threadID == thread.id }
+                ?? ThreadUserState(userID: userID, threadID: thread.id)
+            result[thread.id] = ReadStatePolicy.unreadCount(in: messages, state: state)
+        }
+        return result
+    }
+
+    /// Suma nieprzeczytanych wiadomości — plakietka na zakładce „Rozmowy”.
+    public func unreadTotal(userID: UserID) async throws -> Int {
+        try await unreadCounts(userID: userID).values.reduce(0, +)
     }
 
     public func readStates(userID: UserID) async throws -> [ThreadUserState] {

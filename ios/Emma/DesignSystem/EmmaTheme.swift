@@ -1,0 +1,150 @@
+import SwiftUI
+
+// MARK: - Tokeny kolorów
+//
+// Wartości przeniesione z referencji po rozstrzygnięciu kaskady CSS
+// (`reference/prototype/style.css`, warstwy z linii 2, 4, 11–24).
+// Szczegóły i pochodzenie każdego tokenu: docs/ios/DESIGN_CONTRACT.md §1.
+//
+// Zasada: widoki nie zawierają literałów kolorów. Wyłącznie te tokeny.
+
+public enum EmmaTheme {
+
+    // Powierzchnie i tekst
+    public static let bg = Color(hex: 0xF5F6F8)
+    public static let surface = Color.white
+    public static let ink = Color(hex: 0x152337)
+    public static let muted = Color(hex: 0x687688)
+    public static let mutedSoft = Color(hex: 0x7A8492)
+    public static let border = Color(hex: 0xE2E7ED)
+    public static let cardBorder = Color(hex: 0xE8ECF0)
+    public static let rowSeparator = Color(hex: 0xEDF0F4)
+    public static let checkboxBorder = Color(hex: 0xCBD4DF)
+    public static let taskMetaText = Color(hex: 0x8A95A3)
+    public static let taskDateText = Color(hex: 0x8B96A5)
+
+    // Akcenty
+    public static let accent = Color(hex: 0x3B61D9)
+    public static let accentSoft = Color(hex: 0xEDF2F8)
+    public static let unreadBadge = Color(hex: 0x365FD0)
+    public static let unreadDivider = Color(hex: 0xE1E9F5)
+    public static let unreadDividerText = Color(hex: 0x365D98)
+
+    // Karta Emmy
+    public static let emmaCard = Color(hex: 0x14263C)
+    public static let emmaCardText = Color(hex: 0xDBE3ED)
+    public static let emmaCardMuted = Color(hex: 0x9FB0C4)
+
+    // Przyciski
+    public static let primaryButton = Color(hex: 0x1B314D)
+    public static let primaryButtonText = Color.white
+    public static let secondaryButton = Color(hex: 0xEDF0F5)
+    public static let secondaryButtonText = Color(hex: 0x365373)
+    public static let disabledButton = Color(hex: 0xE5EAF1)
+    public static let disabledButtonText = Color(hex: 0x9DA9B7)
+
+    // Sterowanie
+    public static let controlBackground = Color(hex: 0xE9EDF2)
+    public static let controlSelected = Color.white
+    public static let fieldBorder = Color(hex: 0xDCE5EE)
+    public static let infoRowBorder = Color(hex: 0xE5EAF0)
+    public static let sheetHandle = Color(hex: 0xC9D0D9)
+    public static let sheetBackground = Color(hex: 0xF5F6F8)
+    public static let closeButton = Color(hex: 0xE8ECF1)
+
+    // Komunikator
+    public static let chatBackground = Color(hex: 0xEEF1F5)
+    public static let chatDockBackground = Color(hex: 0xF9FAFC)
+    public static let chatHeaderBorder = Color(hex: 0xE1E6ED)
+    public static let bubbleIncoming = Color.white
+    public static let bubbleOutgoing = Color(hex: 0xDFE8F1)
+    public static let bubbleMeta = Color(hex: 0x738398)
+    public static let composerBorder = Color(hex: 0xDCE3EC)
+    public static let quoteRule = Color(hex: 0x7895B5)
+    public static let quoteBackground = Color(hex: 0xEAF0F6)
+    public static let receiptDefault = Color(hex: 0x82909E)
+    public static let receiptRead = Color(hex: 0x2674D8)
+    public static let chatDayChip = Color(hex: 0xE5EAF0)
+    public static let chatDayChipText = Color(hex: 0x788697)
+    public static let dictationAccent = Color(hex: 0x9A622C)
+    public static let translationText = Color(hex: 0x5E6E80)
+
+    // Status i komunikaty
+    public static let danger = Color(hex: 0xA1533E)
+    public static let toastBackground = Color(hex: 0x213953)
+    public static let pillNeutralBackground = Color(hex: 0xF0F3FC)
+    public static let pillNeutralText = Color(hex: 0x5770AB)
+    public static let pillGreenBackground = Color(hex: 0xEDF4EF)
+    public static let pillGreenText = Color(hex: 0x4B7966)
+    public static let pillAmberBackground = Color(hex: 0xFAF0E5)
+    public static let pillAmberText = Color(hex: 0x986B36)
+    public static let pillUrgentBackground = Color(hex: 0xFBF0E3)
+    public static let pillUrgentText = Color(hex: 0xA47740)
+
+    // Awatary
+    public static let avatarBackground = Color(hex: 0xE9E3D9)
+    public static let avatarText = Color(hex: 0x79664A)
+    public static let personAvatarBackground = Color(hex: 0xEAF0F4)
+    public static let personAvatarText = Color(hex: 0x62778A)
+
+    // Kalendarz
+    public static let daySelected = Color(hex: 0x1C314B)
+    public static let daySelectedNumber = Color.white
+    public static let daySelectedLabel = Color(hex: 0xBFCCDF)
+    public static let dayTodayDot = Color(hex: 0x8BA0B7)
+    public static let weekControlBackground = Color(hex: 0xEDF1F5)
+    public static let weekControlText = Color(hex: 0x4C6480)
+
+    // Pasek zakładek
+    public static let tabBarBackground = Color(hex: 0xFBFCFD)
+    public static let tabBarBorder = Color(hex: 0xE1E7EE)
+    public static let tabActive = Color(hex: 0x254D9D)
+    public static let tabInactive = Color(hex: 0x8A93A0)
+    public static let tabEmmaChip = Color(hex: 0x1A2E47)
+    public static let tabEmmaChipText = Color.white
+
+    // Pozostałe
+    public static let contextStripBackground = Color(hex: 0xEAF0F6)
+    public static let contextStripText = Color(hex: 0x6B84A0)
+    public static let contextStripBorder = Color(hex: 0xDFE7EF)
+    public static let activityMarker = Color(hex: 0xA6B5C7)
+    public static let emmaGradientStart = Color(hex: 0xEAF0F6)
+    public static let emmaGradientEnd = Color(hex: 0xF6F8FA)
+    public static let linkedCaseBackground = Color(hex: 0xEDF2F8)
+    public static let linkedCaseBorder = Color(hex: 0xDCE5F0)
+    public static let draftBackground = Color(hex: 0xFAFCFE)
+    public static let draftBorder = Color(hex: 0xDBE5EE)
+    public static let actionCardBorder = Color(hex: 0xCCDBE9)
+    public static let focusRing = Color(hex: 0x91AFD0)
+
+    /// Kolor awatara z prezentacji listy rozmów. Zależy od **stabilnej pozycji**,
+    /// nie od identyfikatora (§4.3).
+    public static func conversationAvatar(_ tone: Client.AvatarTone) -> (background: Color, foreground: Color) {
+        switch tone {
+        case .none: return (Color(hex: 0xE3EBF1), Color(hex: 0x4E6882))
+        case .one: return (Color(hex: 0xEAE3DA), Color(hex: 0x88704E))
+        case .two: return (Color(hex: 0xEEE4E8), Color(hex: 0x926778))
+        case .three: return (Color(hex: 0xE4E9E2), Color(hex: 0x6A7A60))
+        }
+    }
+
+    /// Stabilne przypisanie tonu do pozycji na liście rozmów.
+    public static func avatarTone(forPresentationIndex index: Int) -> Client.AvatarTone {
+        switch index % 4 {
+        case 1: return .one
+        case 2: return .two
+        case 3: return .three
+        default: return .none
+        }
+    }
+}
+
+extension Color {
+    /// Kolor z zapisu szesnastkowego `0xRRGGBB` w przestrzeni sRGB.
+    public init(hex: UInt32, opacity: Double = 1) {
+        let red = Double((hex >> 16) & 0xFF) / 255
+        let green = Double((hex >> 8) & 0xFF) / 255
+        let blue = Double(hex & 0xFF) / 255
+        self.init(.sRGB, red: red, green: green, blue: blue, opacity: opacity)
+    }
+}
