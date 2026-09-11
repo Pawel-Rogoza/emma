@@ -1,0 +1,19 @@
+// Konfiguracja Demo — działa bez logowania, internetu i dostawców.
+// Ten plik NIE zawiera sekretów i nie wymaga żadnej modyfikacji, aby uruchomić M1.
+
+// Identyfikator pakietu dla symulatora. Właściciel zmienia go dla fizycznego urządzenia
+// na unikalny w swoim koncie Apple.
+EMMA_BUNDLE_ID = pl.kancelaria.emma.demo
+
+// Środowisko aplikacji. Demonstracyjne: MockEnvironment, brak backendu.
+EMMA_ENVIRONMENT = demo
+
+// Adres backendu jest pusty w Demo. Aplikacja nie wykonuje wtedy żadnego requestu
+// sieciowego i nie przechodzi cicho w tryb live.
+EMMA_API_BASE_URL =
+
+// Token podpisywania uzupełnia właściciel lokalnie (Config/Local.xcconfig, poza repo).
+EMMA_DEVELOPMENT_TEAM =
+
+// Kod języka interfejsu. Język Emmy jest osobno konfigurowalny w aplikacji.
+EMMA_DEFAULT_LOCALE = pl

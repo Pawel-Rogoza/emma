@@ -1,0 +1,151 @@
+# XcodeGen — jedyne źródło konfiguracji projektu Xcode.
+#
+# Generowanie:
+#   cd ios && ./scripts/generate-project.sh
+# Wymaga XcodeGen na Macu: brew install xcodegen
+#
+# Nie wpisujemy tu żadnych sekretów ani identyfikatorów podpisania.
+# Bundle ID i DEVELOPMENT_TEAM podaje właściciel w Config/*.xcconfig (lokalnie, poza repo).
+
+name: Emma
+
+options:
+  bundleIdPrefix: pl.kancelaria.emma
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+  generateEmptyDirectories: false
+  defaultConfig: Demo
+
+# Trzy konfiguracje odpowiadają trzem środowiskom z §10 planu (etap 01).
+configs:
+  Demo: debug
+  Staging: release
+  Production: release
+
+configFiles:
+  Demo: Config/Demo.xcconfig
+  Staging: Config/Staging.xcconfig
+  Production: Config/Production.xcconfig
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_UPCOMING_FEATURE_EXISTENTIAL_ANY: YES
+    CLANG_ENABLE_MODULES: YES
+    GCC_TREAT_WARNINGS_AS_ERRORS: NO
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: $(EMMA_DEVELOPMENT_TEAM)
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Daty i liczby w logach niezależne od ustawień maszyny dewelopera.
+    SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited)
+
+targets:
+  Emma:
+    type: application
+    platform: iOS
+    sources:
+      - path: Emma
+        excludes:
+          - "**/*.md"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(EMMA_BUNDLE_ID)
+        PRODUCT_NAME: Emma
+        INFOPLIST_FILE: Emma/Resources/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_EMIT_LOC_STRINGS: YES
+        ENABLE_PREVIEWS: YES
+      configs:
+        Demo:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) EMMA_DEMO
+        Staging:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) EMMA_STAGING
+        Production:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) EMMA_PRODUCTION
+
+  EmmaTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [EmmaTests]
+    dependencies:
+      - target: Emma
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(EMMA_BUNDLE_ID).tests
+        GENERATE_INFOPLIST_FILE: YES
+
+  EmmaUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [EmmaUITests]
+    dependencies:
+      - target: Emma
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(EMMA_BUNDLE_ID).uitests
+        GENERATE_INFOPLIST_FILE: YES
+
+# Shared schemes (§14.1). Każdy wskazuje własną konfigurację i własne fixtures/env.
+schemes:
+  Emma-Demo:
+    build:
+      targets:
+        Emma: all
+        EmmaTests: [test]
+        EmmaUITests: [test]
+    run:
+      config: Demo
+      commandLineArguments:
+        "--demo": true
+        "--fixture": "today-default"
+      environmentVariables:
+        EMMA_FIXTURE: today-default
+    test:
+      config: Demo
+      gatherCoverageData: true
+      targets:
+        - EmmaTests
+        - EmmaUITests
+    profile:
+      config: Demo
+    analyze:
+      config: Demo
+    archive:
+      config: Demo
+
+  Emma-Staging:
+    build:
+      targets:
+        Emma: all
+        EmmaTests: [test]
+    run:
+      config: Staging
+      environmentVariables:
+        EMMA_API_BASE_URL: "$(EMMA_API_BASE_URL)"
+    test:
+      config: Staging
+      targets:
+        - EmmaTests
+    archive:
+      config: Staging
+
+  Emma-Production:
+    build:
+      targets:
+        Emma: all
+    run:
+      config: Production
+      environmentVariables:
+        EMMA_API_BASE_URL: "$(EMMA_API_BASE_URL)"
+    archive:
+      config: Production

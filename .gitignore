@@ -1,0 +1,19 @@
+# Sekrety i konfiguracja lokalna
+ios/Config/Local.xcconfig
+*.xcuserdatad/
+xcuserdata/
+*.xcscmblueprint
+
+# Artefakty budowania
+.build/
+DerivedData/
+build/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# XcodeGen nie generuje tego pliku do repo, ale Xcode potrafi go zapisać lokalnie
+*.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+
+# Systemowe
+.DS_Store

@@ -1,0 +1,10 @@
+// WZÓR pliku lokalnego. Skopiuj jako Local.xcconfig i uzupełnij u siebie.
+// Local.xcconfig jest w .gitignore — nie trafia do repozytorium.
+//
+//   cp Config/Local.xcconfig.example Config/Local.xcconfig
+//
+// Tu wpisuje się wyłącznie identyfikator zespołu Apple i ewentualnie adres backendu.
+// Nie wpisuje się tu żadnych kluczy API dostawców.
+
+EMMA_DEVELOPMENT_TEAM = ABCDE12345
+EMMA_API_BASE_URL = https://example.invalid

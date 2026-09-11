@@ -1,0 +1,29 @@
+{
+  "captured_at": "2026-09-11",
+  "prototype_url": "https://emma-kancelaria-ios.pawrogozas.chatgpt.site",
+  "prototype_source_commit": "b97685b5e2c2cd3d6f78b172b9c0b5cee114270b",
+  "published_version": 5,
+  "scope": "Read-only reference for native SwiftUI implementation; source snapshot, no screenshots.",
+  "files": [
+    {
+      "path": "reference/previous-plan/Emma-Legacy-Voice-Plan.md",
+      "bytes": 86513,
+      "sha256": "79ee0295b08e8dd7f978a2e04bf8ffa27092bb0f838f2f7c1ae2c30d5edbd024"
+    },
+    {
+      "path": "reference/prototype/app.js",
+      "bytes": 71006,
+      "sha256": "f37d2ddb3908d39b246d10632a2beb5e9c0f4c64673d9244881791b470cc2bad"
+    },
+    {
+      "path": "reference/prototype/index.html",
+      "bytes": 1316,
+      "sha256": "448a068b518bb91a2ca4000adc7c841fde5481fb1d503b0bace0a935dfd987a0"
+    },
+    {
+      "path": "reference/prototype/style.css",
+      "bytes": 52791,
+      "sha256": "98625267067f620e303829e528ebf0f44e1df6f5b26b4e829e8afe87b13d6b72"
+    }
+  ]
+}

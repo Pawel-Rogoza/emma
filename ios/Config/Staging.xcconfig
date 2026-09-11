@@ -1,0 +1,15 @@
+// Konfiguracja Staging — przeznaczona do testów z backendem.
+// Wpisujemy tu wyłącznie adres HTTPS. Kluczy dostawców (Qwen, ElevenLabs, Meta)
+// NIE wpisujemy do Xcode ani do tego pliku — pozostają wyłącznie na serwerze (§1.8).
+
+#include? "Local.xcconfig"
+
+EMMA_BUNDLE_ID = pl.kancelaria.emma.staging
+EMMA_ENVIRONMENT = staging
+
+// Właściciel wpisuje adres backendu testowego, np. https://staging.example.invalid
+// Pusty adres = aplikacja pozostaje w trybie demo i to jawnie komunikuje.
+EMMA_API_BASE_URL =
+
+EMMA_DEVELOPMENT_TEAM =
+EMMA_DEFAULT_LOCALE = pl

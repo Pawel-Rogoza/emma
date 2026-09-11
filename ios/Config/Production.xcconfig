@@ -1,0 +1,10 @@
+// Konfiguracja Production — docelowa.
+// Brak sekretów. Klucze dostawców pozostają na serwerze (§1.8, §13).
+
+#include? "Local.xcconfig"
+
+EMMA_BUNDLE_ID = pl.kancelaria.emma
+EMMA_ENVIRONMENT = production
+EMMA_API_BASE_URL =
+EMMA_DEVELOPMENT_TEAM =
+EMMA_DEFAULT_LOCALE = pl

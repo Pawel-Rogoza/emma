@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>pl</string>
+	<key>CFBundleDisplayName</key>
+	<string>Emma</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+
+	<!-- Konfiguracja bez sekretów, wstrzykiwana z plików .xcconfig. -->
+	<key>EMMAEnvironment</key>
+	<string>$(EMMA_ENVIRONMENT)</string>
+	<key>EMMAApiBaseURL</key>
+	<string>$(EMMA_API_BASE_URL)</string>
+	<key>EMMADefaultLocale</key>
+	<string>$(EMMA_DEFAULT_LOCALE)</string>
+
+	<!-- Uprawnienia pobierane przy pierwszym użyciu funkcji, nie przy starcie (§5.7).
+	     Mikrofon opisuje rozmowę z Emmą, nie nagrywanie w tle. -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Mikrofon jest używany wyłącznie po dotknięciu przycisku, aby rozmawiać z Emmą albo podyktować tekst. Nagranie nie jest zapisywane w aplikacji.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Rozpoznawanie mowy zamienia wypowiedziane zdanie na tekst w polu wiadomości, notatki lub zadania. Użyj tekstu, jeśli nie chcesz korzystać z mikrofonu.</string>
+
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>armv7</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UIUserInterfaceStyle</key>
+	<string>Light</string>
+	<!-- Pierwszy release: jasny motyw także przy ciemnym ustawieniu systemu (§2.3). -->
+</dict>
+</plist>
