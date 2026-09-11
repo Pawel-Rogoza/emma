@@ -233,7 +233,7 @@ Poniżej pełna lista, bez pomijania pozycji niewygodnych.
 | --- | --- | --- |
 | Audyt designu bez regresji | **częściowo** | brak porównania zrzutów (brak symulatora) |
 | Instrukcja Xcode i konfiguracja bez sekretów | **dostarczone** | `ios/README-XCODE.md` |
-| Runbooki | **częściowo** | `WHATSAPP_ONBOARDING.md`, `PROVIDER_CONTRACT_TESTS.md`, `api/CONTRACT_TEST_CHECKLIST.md`; brak runbooka rollbacku backendu (należy do backendu) |
+| Runbooki | **dostarczone** | `docs/ios/RUNBOOKS.md` (osiem sytuacji wymagających decyzji człowieka), `WHATSAPP_ONBOARDING.md`, `PROVIDER_CONTRACT_TESTS.md`, `api/CONTRACT_TEST_CHECKLIST.md`; runbook rollbacku backendu należy do backendu — `blocked_external` |
 | Wyniki kompilacji i testów | **dostarczone dla tego, co wykonalne** | 142 testy logiki, 63 pliki sprawdzone składniowo; kompilacja Xcode: nieuruchomiona |
 | Test migracji, backup/restore, rollback bez ponownych wysyłek | **blocked_external** | należy do backendu |
 | Tag/SHA wydania | **dostarczone** | commity w repozytorium; tag wydania po pierwszej kompilacji na Macu |
