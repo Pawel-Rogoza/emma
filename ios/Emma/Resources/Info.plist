@@ -48,6 +48,8 @@
 	     Mikrofon opisuje rozmowę z Emmą, nie nagrywanie w tle. -->
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Mikrofon jest używany wyłącznie po dotknięciu przycisku, aby rozmawiać z Emmą albo podyktować tekst. Nagranie nie jest zapisywane w aplikacji.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Face ID odblokowuje aplikację po powrocie do niej. Zamiast Face ID możesz zawsze użyć hasła urządzenia.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Rozpoznawanie mowy zamienia wypowiedziane zdanie na tekst w polu wiadomości, notatki lub zadania. Użyj tekstu, jeśli nie chcesz korzystać z mikrofonu.</string>
 

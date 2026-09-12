@@ -13,7 +13,6 @@ struct NewLeadSheet: View {
     @State private var name = ""
     @State private var topic = ""
     @State private var language: LanguageCode = .pl
-    @State private var owner: OwnerOption = .unassigned
     @State private var context = ""
     @State private var errorMessage: String?
     @State private var isSaving = false
@@ -38,16 +37,6 @@ struct NewLeadSheet: View {
 
                 LabeledField("Język") {
                     SegmentedFilter(items: languages, selection: $language, title: { $0.displayName })
-                }
-
-                LabeledField("Opiekun") {
-                    ChoiceList(
-                        items: OwnerOption.allCases,
-                        title: { $0.title(current: owner.userID) }
-                    ) { option in
-                        owner = option
-                    }
-                    .disabled(isSaving)
                 }
 
                 LabeledField("Kontekst zgłoszenia") {
@@ -88,7 +77,6 @@ struct NewLeadSheet: View {
             displayName: trimmedName,
             topic: trimmedTopic,
             language: language,
-            ownerID: owner.userID,
             context: context.trimmingCharacters(in: .whitespacesAndNewlines),
             source: .manual,
             createdAt: dependencies.today

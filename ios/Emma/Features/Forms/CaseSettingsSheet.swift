@@ -15,7 +15,6 @@ struct CaseSettingsSheet: View {
     @State private var title = ""
     @State private var summary = ""
     @State private var status: CaseStatus = .inProgress
-    @State private var ownerID: UserID = UserID.tomasz
     @State private var errorMessage: String?
     @State private var isSaving = false
     @State private var didPrefill = false
@@ -59,10 +58,6 @@ struct CaseSettingsSheet: View {
                 .disabled(isSaving)
             }
 
-            LabeledField("Prowadzący") {
-                SegmentedFilter(items: UserID.both, selection: $ownerID, title: { OwnerName.of($0) })
-            }
-
             LabeledField(
                 "Zakres sprawy",
                 help: "Status sprawy nie usuwa zaplanowanych terminów ani zadań."
@@ -98,7 +93,6 @@ struct CaseSettingsSheet: View {
                 title = legalCase.title
                 summary = legalCase.summary
                 status = legalCase.status
-                ownerID = legalCase.ownerID
                 didPrefill = true
             }
             phase = .loaded(legalCase)
@@ -123,7 +117,6 @@ struct CaseSettingsSheet: View {
         updated.title = trimmedTitle
         updated.summary = trimmedSummary
         updated.status = status
-        updated.ownerID = ownerID
 
         let saved = await dependencies.perform {
             try await dependencies.repository.updateCase(updated, expectedVersion: legalCase.version)

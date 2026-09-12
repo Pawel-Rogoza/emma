@@ -176,9 +176,10 @@ public struct Message: Identifiable, Hashable, Codable, Sendable {
         self.version = version
     }
 
-    /// Autor do pokazania w dymku wychodzącym.
+    /// Autor do pokazania w dymku wychodzącym. Konto jest wspólne dla kancelarii,
+    /// więc znany autor to po prostu kancelaria, a nie nazwisko osoby.
     public var outgoingAuthorLabel: String {
-        if let authorID { return OwnerName.of(authorID) }
+        if authorID != nil { return Client.firmDisplayName }
         if let authorLabel { return authorLabel }
         return "WhatsApp Business"
     }

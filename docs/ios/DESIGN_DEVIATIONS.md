@@ -219,6 +219,43 @@ nawigacji zakładki „Dzisiaj”). Ekran nie ładuje repozytorium — brak stan
 
 **Cofnięcie:** przywrócenie `TodayStore` i sekcji z historii gita.
 
+### D-16 · Logowanie demo i blokada Face ID — **decyzja właściciela**
+
+**Treść:** przed powłoką aplikacji stoją dwa ekrany: `LoginScreen` (e-mail + hasło,
+raz na urządzenie) i `LockScreen` (odblokowanie Face ID / hasłem urządzenia przy
+każdym powrocie). Nie ma ich w referencji — prototyp startował od razu na pulpicie.
+
+**Powód:** polecenie właściciela: logowanie ma być, Face ID też.
+
+**Wpływ:** dane logowania są demonstracyjne (nie ma backendu), więc ekran mówi to
+wprost, a brak skonfigurowanej biometrii nie zamyka dostępu na stałe — pokazuje
+jawny przycisk odblokowania. Stan „zalogowany” jest zapamiętywany, więc logowanie
+przeżywa restart, ale sam dostęp nadal wymaga odblokowania.
+
+**Cofnięcie:** usunięcie `Features/Auth/` i bramki w `EmmaApp.swift`.
+
+**Odstępstwo w testach:** scenariusze UI używają argumentu startowego `--skip-auth`,
+żeby nie zależeć od biometrii symulatora. Sam ekran logowania ma osobny test
+(`testLoginScreenAcceptsDemoCredentials`) na argumencie `--reset-auth`.
+
+### D-17 · Koniec podziału na użytkowników i pojęcia opiekuna — **decyzja właściciela**
+
+**Treść:** z domeny, repozytorium, interfejsu i testów usunięte zostały:
+`ownerID` (klient, sprawa, zadanie, termin, notatka, drafty akcji), typ `OwnerName`,
+`assignOwner`, `switchUser`, `users()`, arkusz `AssignOwnerSheet`, filtry per opiekun
+oraz nazwiska „Tomasz”/„Paweł” w zadaniach, terminach, sprawach i briefingu.
+Repozytorium demo nie przypisuje już nikogo do niczego.
+
+**Powód:** polecenie właściciela: zespół ma te same zadania i te same sprawy, więc
+dzielenie pracy per osoba jest fikcją — wszystko należy do kancelarii.
+
+**Wpływ:** aplikacja ma jedno wspólne konto (patrz D-16). Zadania i terminy pokazują
+klienta i status, bez prowadzącego. Profil nie ma przełącznika użytkownika.
+`UserID`/`User` zostają — nadal opisują sesję, nie własność danych.
+
+**Cofnięcie:** przywrócenie pól i arkusza z historii gita; dane demo trzeba by
+wtedy z powrotem przypisać do osób.
+
 ---
 
 ## Czego ten rejestr nie zawiera

@@ -487,16 +487,23 @@ struct ThreadScreen: View {
             }
 
             HStack(alignment: .bottom, spacing: 8) {
-                TextEditor(text: Binding(
-                    get: { model.draft.text },
-                    set: { newValue in Task { await store.updateDraft(newValue, dependencies: dependencies) } }
-                ))
+                // Pole jednoliniowe, które rośnie razem z treścią (1–6 linii).
+                // Wcześniej `TextEditor` startował od 40 pt i wyglądał jak pusty,
+                // wysoki prostokąt, nawet gdy szkic był pusty.
+                TextField(
+                    "Napisz wiadomość…",
+                    text: Binding(
+                        get: { model.draft.text },
+                        set: { newValue in Task { await store.updateDraft(newValue, dependencies: dependencies) } }
+                    ),
+                    axis: .vertical
+                )
+                .lineLimit(1...6)
                 .font(EmmaTypography.composerField)
                 .foregroundStyle(EmmaTheme.ink)
-                .scrollContentBackground(.hidden)
-                .frame(minHeight: 40, maxHeight: 112)
+                .frame(minHeight: 40, alignment: .leading)
                 .padding(.horizontal, 12)
-                .padding(.vertical, 9)
+                .padding(.vertical, 10)
                 .background(EmmaTheme.surface)
                 .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.composer, style: .continuous))
                 .overlay {

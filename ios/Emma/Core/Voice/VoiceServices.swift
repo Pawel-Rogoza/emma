@@ -60,8 +60,6 @@ public protocol ClientRepository: Sendable {
     func client(id: ClientID) async throws -> Client?
     func createClient(_ draft: NewClientDraft) async throws -> Client
     func updateClient(_ client: Client, expectedVersion: Version) async throws -> Client
-    /// Zmiana opiekuna klienta **nie** zmienia przypisań terminów (§etap 03).
-    func assignOwner(clientID: ClientID, ownerID: UserID?, expectedVersion: Version) async throws -> Client
 }
 
 public protocol CaseRepository: Sendable {
@@ -80,7 +78,7 @@ public protocol TaskRepository: Sendable {
 }
 
 public protocol AgendaRepository: Sendable {
-    func events(in range: DateIntervalFilter, ownerID: UserID?) async throws -> [ScheduledEvent]
+    func events(in range: DateIntervalFilter) async throws -> [ScheduledEvent]
     func event(id: EventID) async throws -> ScheduledEvent?
     func createEvent(_ draft: NewEventDraft) async throws -> ScheduledEvent
     func updateEvent(_ event: ScheduledEvent, expectedVersion: Version) async throws -> ScheduledEvent
@@ -119,8 +117,6 @@ public protocol MessagingRepository: Sendable {
 
 public protocol UserRepository: Sendable {
     func currentUser() async throws -> User
-    func users() async throws -> [User]
-    func switchUser(to userID: UserID) async throws -> User
     func updatePreferences(_ user: User) async throws -> User
 }
 
@@ -135,21 +131,17 @@ public struct TaskFilter: Hashable, Codable, Sendable {
     }
 
     public var scope: Scope
-    /// `nil` oznacza obu adwokatów.
-    public var ownerID: UserID?
     public var dueOnOrBefore: LocalDate?
     public var clientID: ClientID?
     public var caseID: CaseID?
 
     public init(
         scope: Scope = .open,
-        ownerID: UserID? = nil,
         dueOnOrBefore: LocalDate? = nil,
         clientID: ClientID? = nil,
         caseID: CaseID? = nil
     ) {
         self.scope = scope
-        self.ownerID = ownerID
         self.dueOnOrBefore = dueOnOrBefore
         self.clientID = clientID
         self.caseID = caseID
@@ -179,7 +171,6 @@ public struct NewClientDraft: Hashable, Sendable {
     public var displayName: String
     public var topic: String
     public var language: LanguageCode
-    public var ownerID: UserID?
     public var context: String
     public var source: ClientSource
     public var createdAt: LocalDate
@@ -188,7 +179,6 @@ public struct NewClientDraft: Hashable, Sendable {
         displayName: String,
         topic: String,
         language: LanguageCode,
-        ownerID: UserID?,
         context: String,
         source: ClientSource = .manual,
         createdAt: LocalDate
@@ -196,7 +186,6 @@ public struct NewClientDraft: Hashable, Sendable {
         self.displayName = displayName
         self.topic = topic
         self.language = language
-        self.ownerID = ownerID
         self.context = context
         self.source = source
         self.createdAt = createdAt
@@ -207,14 +196,12 @@ public struct NewCaseDraft: Hashable, Sendable {
     public var clientID: ClientID
     public var title: String
     public var summary: String
-    public var ownerID: UserID
     public var createdAt: LocalDate
 
-    public init(clientID: ClientID, title: String, summary: String, ownerID: UserID, createdAt: LocalDate) {
+    public init(clientID: ClientID, title: String, summary: String, createdAt: LocalDate) {
         self.clientID = clientID
         self.title = title
         self.summary = summary
-        self.ownerID = ownerID
         self.createdAt = createdAt
     }
 }
@@ -223,7 +210,6 @@ public struct NewTaskDraft: Hashable, Sendable {
     public var title: String
     public var clientID: ClientID?
     public var caseID: CaseID?
-    public var ownerID: UserID
     public var dueDate: LocalDate
     public var priority: TaskPriority
 
@@ -231,14 +217,12 @@ public struct NewTaskDraft: Hashable, Sendable {
         title: String,
         clientID: ClientID?,
         caseID: CaseID?,
-        ownerID: UserID,
         dueDate: LocalDate,
         priority: TaskPriority = .normal
     ) {
         self.title = title
         self.clientID = clientID
         self.caseID = caseID
-        self.ownerID = ownerID
         self.dueDate = dueDate
         self.priority = priority
     }
@@ -251,7 +235,6 @@ public struct NewEventDraft: Hashable, Sendable {
     public var day: LocalDate
     public var time: TimeOfDay
     public var durationMinutes: Int
-    public var ownerID: UserID
     public var kind: EventKind
     public var status: EventStatus
     public var place: String
@@ -263,7 +246,6 @@ public struct NewEventDraft: Hashable, Sendable {
         day: LocalDate,
         time: TimeOfDay,
         durationMinutes: Int,
-        ownerID: UserID,
         kind: EventKind,
         status: EventStatus,
         place: String
@@ -274,7 +256,6 @@ public struct NewEventDraft: Hashable, Sendable {
         self.day = day
         self.time = time
         self.durationMinutes = durationMinutes
-        self.ownerID = ownerID
         self.kind = kind
         self.status = status
         self.place = place

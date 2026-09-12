@@ -25,7 +25,7 @@ final class ScreenshotCaptureUITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = true
         application = XCUIApplication()
-        application.launchArguments = ["--demo", "--fixture", "today-default"]
+        application.launchArguments = ["--demo", "--fixture", "today-default", "--skip-auth"]
         application.launchEnvironment = ["EMMA_FIXTURE": "today-default"]
 
         let base = ProcessInfo.processInfo.environment["EMMA_SHOT_DIR"] ?? NSTemporaryDirectory()
@@ -84,7 +84,7 @@ final class ScreenshotCaptureUITests: XCTestCase {
 
         capture("05-zadania", description: "Wspólna lista zadań") {
             selectTab("today")
-            let tasks = application.buttons["Otwórz listę zadań na dziś"]
+            let tasks = application.buttons["Wszystkie zadania"]
             guard tasks.waitForExistence(timeout: 10) else { return "brak wejścia do zadań na ekranie Dzisiaj" }
             tasks.tap()
             return nil
@@ -128,7 +128,7 @@ final class ScreenshotCaptureUITests: XCTestCase {
             return nil
         }
 
-        capture("11-profil", description: "Profil i przełączanie użytkownika") {
+        capture("11-profil", description: "Profil kancelarii") {
             selectTab("today")
             let profile = application.buttons["Twój profil"]
             guard profile.waitForExistence(timeout: 10) else { return "brak wejścia do profilu" }

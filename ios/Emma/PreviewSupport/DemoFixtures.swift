@@ -44,7 +44,6 @@ public enum DemoFixtures {
         language: .uk,
         topic: "Wezwanie na przesłuchanie",
         stage: .client,
-        ownerID: .tomasz,
         source: .webForm,
         createdAt: LocalDate(year: 2026, month: 9, day: 9),
         briefing: "Klientka otrzymała wezwanie na przesłuchanie. Chce omówić dokumenty i przygotować się do spotkania.",
@@ -61,7 +60,6 @@ public enum DemoFixtures {
         language: .uk,
         topic: "Zatrzymanie osoby bliskiej",
         stage: .new,
-        ownerID: nil,
         source: .webForm,
         createdAt: referenceDay,
         briefing: "Prośba o pilny kontakt w sprawie zatrzymania brata. Informacje o miejscu zatrzymania do ustalenia podczas rozmowy.",
@@ -78,7 +76,6 @@ public enum DemoFixtures {
         language: .ru,
         topic: "Konsultacja prawna",
         stage: .new,
-        ownerID: nil,
         source: .webForm,
         createdAt: referenceDay,
         briefing: "Klientka umówiła konsultację przez stronę. Preferuje rozmowę po rosyjsku i kontakt przez WhatsApp.",
@@ -95,7 +92,6 @@ public enum DemoFixtures {
         language: .pl,
         topic: "Omówienie dokumentów",
         stage: .client,
-        ownerID: .pawel,
         source: .referral,
         createdAt: LocalDate(year: 2026, month: 9, day: 7),
         briefing: "Klient przekazał dokumenty do omówienia podczas konsultacji. Kolejne działania do ustalenia po spotkaniu.",
@@ -117,7 +113,6 @@ public enum DemoFixtures {
         number: "KR / 2026 / 041",
         title: "Przygotowanie do przesłuchania",
         clientID: olenaID,
-        ownerID: .tomasz,
         status: .inProgress,
         summary: "Zapoznanie się z wezwaniem i konsultacja przed przesłuchaniem.",
         createdAt: LocalDate(year: 2026, month: 9, day: 9)
@@ -128,7 +123,6 @@ public enum DemoFixtures {
         number: "KR / 2026 / 038",
         title: "Analiza dokumentów klienta",
         clientID: dmytroID,
-        ownerID: .pawel,
         status: .awaitingClient,
         summary: "Weryfikacja przekazanych dokumentów i ustalenie dalszego zakresu prowadzenia sprawy.",
         createdAt: LocalDate(year: 2026, month: 9, day: 7)
@@ -153,7 +147,6 @@ public enum DemoFixtures {
             day: referenceDay,
             time: TimeOfDay(hhmm: "10:30")!,
             durationMinutes: 30,
-            ownerID: .tomasz,
             kind: .consultation,
             status: .confirmed,
             place: "Online"
@@ -166,7 +159,6 @@ public enum DemoFixtures {
             day: referenceDay,
             time: TimeOfDay(hhmm: "12:00")!,
             durationMinutes: 30,
-            ownerID: .pawel,
             kind: .consultation,
             status: .confirmed,
             place: "Kancelaria"
@@ -179,7 +171,6 @@ public enum DemoFixtures {
             day: referenceDay,
             time: TimeOfDay(hhmm: "14:00")!,
             durationMinutes: 30,
-            ownerID: nil,
             kind: .consultation,
             status: .toConfirm,
             place: "Telefon"
@@ -192,7 +183,6 @@ public enum DemoFixtures {
             day: LocalDate(year: 2026, month: 9, day: 12),
             time: TimeOfDay(hhmm: "11:00")!,
             durationMinutes: 60,
-            ownerID: nil,
             kind: .consultation,
             status: .toConfirm,
             place: "Online"
@@ -205,7 +195,6 @@ public enum DemoFixtures {
             day: LocalDate(year: 2026, month: 9, day: 15),
             time: TimeOfDay(hhmm: "09:00")!,
             durationMinutes: 60,
-            ownerID: .tomasz,
             kind: .caseDeadline,
             status: .confirmed,
             place: "Warszawa · miejsce do sprawdzenia"
@@ -224,7 +213,6 @@ public enum DemoFixtures {
             title: "Oddzwonić w sprawie zatrzymania",
             clientID: andriiID,
             caseID: nil,
-            ownerID: .tomasz,
             dueDate: referenceDay,
             isDone: false,
             priority: .urgent
@@ -234,7 +222,6 @@ public enum DemoFixtures {
             title: "Zapoznać się z wezwaniem",
             clientID: olenaID,
             caseID: caseOlenaID,
-            ownerID: .tomasz,
             dueDate: referenceDay,
             isDone: false,
             priority: .normal
@@ -244,7 +231,6 @@ public enum DemoFixtures {
             title: "Uzupełnić notatkę po konsultacji",
             clientID: dmytroID,
             caseID: caseDmytroID,
-            ownerID: .pawel,
             dueDate: referenceDay,
             isDone: false,
             priority: .normal

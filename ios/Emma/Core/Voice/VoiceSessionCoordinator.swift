@@ -528,7 +528,6 @@ public final class VoiceSessionCoordinator {
         text: String,
         actor: User,
         presentationID: String,
-        taskOwnerID: UserID? = nil,
         taskDueDate: LocalDate? = nil
     ) async -> ActionProposal? {
         actionIDSequence += 1
@@ -546,7 +545,6 @@ public final class VoiceSessionCoordinator {
             threadVersion: sessionConfiguration?.context.threadVersion,
             presentationID: presentationID,
             now: clock.now(),
-            taskOwnerID: taskOwnerID,
             taskDueDate: taskDueDate
         )
         // Auto-rewizja lokalna: nowa propozycja zastępuje poprzednią, nieaktywną.

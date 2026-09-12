@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Ekran „Zadania”
 //
-// Wspólna lista zespołu — port `tasksPage()`. Dwa filtry segmentowe (zakres i osoba)
+// Wspólna lista zespołu — port `tasksPage()`. Jeden filtr segmentowy (zakres)
 // i jedna grupa zadań w karcie. Zakładka „Dzisiaj” pozostaje podświetlona,
 // bo ekran jest wypychany na jej stosie (mapowanie z `nav()`).
 
@@ -25,18 +25,6 @@ final class TasksStore: ObservableObject {
         }
     }
 
-    struct Owner: Hashable, Identifiable {
-        let id: UserID?
-        let title: String
-
-        static let both = Owner(id: nil, title: "Obaj")
-        static let all: [Owner] = [
-            .both,
-            Owner(id: .tomasz, title: OwnerName.of(.tomasz)),
-            Owner(id: .pawel, title: OwnerName.of(.pawel))
-        ]
-    }
-
     struct Model {
         var tasks: [TaskItem]
         var clientNames: [ClientID: String]
@@ -44,13 +32,12 @@ final class TasksStore: ObservableObject {
 
     @Published private(set) var phase: LoadPhase<Model> = .idle
     @Published var scope: Scope = .open
-    @Published var owner: Owner = .both
 
     func load(_ dependencies: AppDependencies) async {
         phase = .loading
         do {
             let tasks = try await dependencies.repository.tasks(
-                filter: TaskFilter(scope: scope.filterScope, ownerID: owner.id)
+                filter: TaskFilter(scope: scope.filterScope)
             )
             let clients = try await dependencies.repository.clients(matching: "", stage: nil)
             phase = .loaded(
@@ -97,9 +84,6 @@ struct TasksScreen: View {
                 .padding(.bottom, 12)
 
                 SegmentedFilter(items: TasksStore.Scope.allCases, selection: $store.scope) { $0.rawValue }
-                    .padding(.bottom, 8)
-
-                SegmentedFilter(items: TasksStore.Owner.all, selection: $store.owner) { $0.title }
                     .padding(.bottom, 14)
 
                 switch store.phase {
@@ -121,7 +105,6 @@ struct TasksScreen: View {
         .scrollIndicators(.hidden)
         .task(id: dependencies.dataVersion) { await store.load(dependencies) }
         .onChange(of: store.scope) { _, _ in Task { await store.load(dependencies) } }
-        .onChange(of: store.owner) { _, _ in Task { await store.load(dependencies) } }
     }
 
     @ViewBuilder

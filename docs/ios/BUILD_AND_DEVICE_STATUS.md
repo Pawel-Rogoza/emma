@@ -3,6 +3,27 @@
 Ten dokument mówi wyłącznie o tym, **co zostało faktycznie sprawdzone**, a czego nie.
 Powstał w środowisku bez macOS i bez Xcode, więc nie może zawierać deklaracji kompilacji.
 
+## Stan bieżący — macOS, Xcode 26.6 (12 września 2026)
+
+Bramki, które wcześniej były „niewykonane z braku macOS”, są **wykonane**:
+
+| Bramka | Stan | Dowód |
+| --- | --- | --- |
+| Kompilacja projektu Xcode (scheme `Emma-Demo`) | **wykonana** | `** BUILD SUCCEEDED **` |
+| Testy logiki domenowej i głosu (`swift test`) | **wykonane** | `Executed 174 tests, with 0 failures` |
+| Testy jednostkowe w Xcode | **wykonane** | `Executed 186 tests, with 0 failures` (w tym 12 dla logowania i Face ID) |
+| Testy interfejsu (XCUITest) | **wykonane** | `Executed 11 tests, with 0 failures` — 10 scenariuszy przepływu + bramka logowania |
+| Uruchomienie na symulatorze | **wykonane** | iPhone 17 Pro (iOS 26.5), `simctl install` + `launch` potwierdzone PID-em |
+| Zrzuty ekranu porównane z referencją | **niewykonane** | zrzuty są zbierane (`ScreenshotCaptureUITests`), ale **nie zostały obejrzane** przez autora zmian |
+| Test na fizycznym iPhonie | **niewykonana** | wymaga urządzenia |
+| Realna rozmowa z dostawcą głosu | **niewykonana** | `blocked_external` — brak konta |
+| Realny odbiór/wysyłka WhatsApp | **niewykonana** | `blocked_external` — brak Tech Providera |
+
+Uwaga o zrzutach ekranu: scena `11-profil` pokazuje profil po usunięciu przełącznika
+użytkowników, a `testLoginScreenAcceptsDemoCredentials` przechodzi samą bramkę dostępu.
+Wygląd ekranów logowania i blokady **nie został oceniony wzrokowo** — to jedyna część
+tej zmiany, która wymaga oka człowieka.
+
 ## Środowisko, w którym powstał kod
 
 ```

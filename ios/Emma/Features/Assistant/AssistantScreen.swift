@@ -469,15 +469,17 @@ struct AssistantScreen: View {
             Button {
                 Task { await store.toggleListening() }
             } label: {
-                Image(systemName: store.isMicrophoneCapturing ? "checkmark" : "mic")
-                    .font(.system(size: 19, weight: .regular))
+                // Nasłuch zatrzymuje wyraźny znak „stop”, a nie „checkmark”:
+                // haczyk sugerował zatwierdzenie, choć przycisk wycisza mikrofon.
+                Image(systemName: store.isMicrophoneCapturing ? "stop.fill" : "mic")
+                    .font(.system(size: store.isMicrophoneCapturing ? 16 : 19, weight: .regular))
                     .foregroundStyle(store.isMicrophoneCapturing ? Color.white : EmmaTheme.emmaMicText)
                     .frame(width: EmmaMetrics.emmaComposerButtonSize, height: EmmaMetrics.emmaComposerButtonSize)
                     .background(store.isMicrophoneCapturing ? EmmaTheme.primaryButton : EmmaTheme.contextStripBackground)
                     .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.composerInner, style: .continuous))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Rozpocznij lub zakończ wypowiedź")
+            .accessibilityLabel(store.isMicrophoneCapturing ? "Zatrzymaj nasłuch" : "Rozpocznij wypowiedź")
             .accessibilityValue(store.isMicrophoneCapturing ? "Nasłuch aktywny" : "Nasłuch wyłączony")
 
             TextField("Napisz do Emmy…", text: $store.composer)

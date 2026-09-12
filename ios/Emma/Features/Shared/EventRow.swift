@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - Wiersz terminu
 //
 // Odtworzenie `.event-row.card` z referencji: godzina z małą datą, tytuł,
-// „status · opiekun” i chevron. Cały wiersz jest przyciskiem otwierającym
+// status i chevron. Cały wiersz jest przyciskiem otwierającym
 // szczegół terminu (`eventDetail`).
 
 struct EventRow: View {
@@ -42,7 +42,7 @@ struct EventRow: View {
                             .foregroundStyle(EmmaTheme.ink)
                             .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text("\(event.status.rawValue) · \(event.ownerLabel)")
+                        Text(event.status.rawValue)
                             .font(EmmaTypography.ui(11))
                             .foregroundStyle(EmmaTheme.mutedSoft)
                             .multilineTextAlignment(.leading)
@@ -68,7 +68,7 @@ struct EventRow: View {
             event.time.hhmm,
             dependencies.dateText.dayLabel(event.day),
             event.title,
-            "\(event.status.rawValue) · \(event.ownerLabel)"
+            event.status.rawValue
         ]
         .joined(separator: ", ")
     }

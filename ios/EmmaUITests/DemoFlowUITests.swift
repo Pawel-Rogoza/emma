@@ -22,7 +22,9 @@ final class DemoFlowUITests: XCTestCase {
         continueAfterFailure = false
         application = XCUIApplication()
         // Ten sam zestaw argumentów co w schemacie Emma-Demo: deterministyczny dzień.
-        application.launchArguments = ["--demo", "--fixture", "today-default"]
+        // `--skip-auth` pomija logowanie i Face ID — scenariusze przepływu demo
+        // sprawdzają aplikację, a nie ekran dostępu (jest na to osobny test).
+        application.launchArguments = ["--demo", "--fixture", "today-default", "--skip-auth"]
         application.launchEnvironment = ["EMMA_FIXTURE": "today-default"]
         application.launch()
     }
@@ -147,8 +149,45 @@ final class DemoFlowUITests: XCTestCase {
         let row = application.staticTexts["Olena Kovalenko"]
         XCTAssertTrue(row.waitForExistence(timeout: 10), "Brak wątku w liście rozmów")
         row.tap()
-        let composer = application.textViews.firstMatch
+        // Pole wiadomości to jednoliniowy `TextField`, który rośnie z treścią
+        // (wcześniej był wysoki `TextEditor`).
+        let composer = application.textFields.firstMatch
         XCTAssertTrue(composer.waitForExistence(timeout: 10), "Brak pola wiadomości w wątku")
+    }
+
+    /// Ekran dostępu: logowanie raz na urządzenie, potem odblokowanie Face ID.
+    /// Ten scenariusz nie używa `--skip-auth`, żeby sprawdzić właśnie tę bramkę.
+    func testLoginScreenAcceptsDemoCredentials() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--demo", "--fixture", "today-default", "--reset-auth"]
+        app.launchEnvironment = ["EMMA_FIXTURE": "today-default"]
+        app.launch()
+
+        let signIn = app.buttons["Zaloguj się"]
+        XCTAssertTrue(signIn.waitForExistence(timeout: 15), "Brak ekranu logowania")
+
+        // Puste pola nie wpuszczają dalej.
+        signIn.tap()
+        XCTAssertTrue(
+            app.staticTexts["Podaj adres e-mail, np. imie@kancelaria.pl."].waitForExistence(timeout: 5),
+            "Brak komunikatu o błędnym adresie e-mail"
+        )
+
+        let email = app.textFields.firstMatch
+        XCTAssertTrue(email.waitForExistence(timeout: 5), "Brak pola e-mail")
+        email.tap()
+        email.typeText("pawel@kancelaria.pl")
+
+        let password = app.secureTextFields.firstMatch
+        XCTAssertTrue(password.waitForExistence(timeout: 5), "Brak pola hasła")
+        password.tap()
+        password.typeText("emma")
+
+        signIn.tap()
+        XCTAssertTrue(
+            tab("today").waitForExistence(timeout: 15),
+            "Po poprawnym logowaniu nie weszliśmy do aplikacji"
+        )
     }
 
     /// Profil otwiera się z nagłówka ekranu głównego (przycisk z inicjałami).
@@ -160,6 +199,7 @@ final class DemoFlowUITests: XCTestCase {
             return
         }
         profile.tap()
-        XCTAssertTrue(application.staticTexts["Twój obszar pracy"].waitForExistence(timeout: 5))
+        XCTAssertTrue(application.staticTexts["Profil kancelarii"].waitForExistence(timeout: 5))
+        XCTAssertTrue(application.buttons["Wyloguj się"].exists, "Brak wylogowania w profilu")
     }
 }

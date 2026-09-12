@@ -29,7 +29,7 @@ public enum EmmaBriefing {
         lines.append("Dzisiaj w zespole: \(EmmaPlural.label(relevant.count, "wydarzenie", "wydarzenia", "wydarzeń")).")
         for event in relevant {
             let who = clientNames[event.clientID] ?? Client.unknownDisplayName
-            var line = "\(event.time.hhmm): \(who), \(event.title). Prowadzący: \(event.ownerLabel)."
+            var line = "\(event.time.hhmm): \(who), \(event.title)."
             if event.status == .toConfirm { line += " Termin czeka na potwierdzenie." }
             lines.append(line)
         }
@@ -37,7 +37,7 @@ public enum EmmaBriefing {
         if tasks.isEmpty {
             lines.append("Do załatwienia: brak otwartych zadań na dziś.")
         } else {
-            let list = tasks.map { "\($0.title) (\(OwnerName.of($0.ownerID)))" }.joined(separator: "; ")
+            let list = tasks.map(\.title).joined(separator: "; ")
             lines.append("Do załatwienia: \(list).")
         }
         if waitingForReply.isEmpty {

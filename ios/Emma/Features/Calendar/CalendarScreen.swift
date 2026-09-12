@@ -13,17 +13,6 @@ import SwiftUI
 @MainActor
 final class CalendarStore: ObservableObject {
 
-    struct Owner: Hashable, Identifiable {
-        let id: UserID?
-        let title: String
-
-        static let all: [Owner] = [
-            Owner(id: nil, title: "Obaj"),
-            Owner(id: .tomasz, title: OwnerName.of(.tomasz)),
-            Owner(id: .pawel, title: OwnerName.of(.pawel))
-        ]
-    }
-
     struct Model {
         var weekStart: LocalDate
         var days: [LocalDate]
@@ -35,7 +24,6 @@ final class CalendarStore: ObservableObject {
     }
 
     @Published private(set) var phase: LoadPhase<Model> = .idle
-    @Published var owner: Owner = .all.first!
     @Published private(set) var selectedDay: LocalDate = LocalDate(year: 2026, month: 9, day: 11)
     @Published private(set) var weekStart: LocalDate = LocalDate(year: 2026, month: 9, day: 7)
 
@@ -52,8 +40,8 @@ final class CalendarStore: ObservableObject {
         do {
             let days = (0..<7).map { weekStart.adding(days: $0) }
             let range = DateIntervalFilter(from: weekStart, through: weekStart.adding(days: 6))
-            let weekEvents = try await dependencies.repository.events(in: range, ownerID: owner.id)
-            let dayEvents = try await dependencies.repository.events(in: .day(selectedDay), ownerID: owner.id)
+            let weekEvents = try await dependencies.repository.events(in: range)
+            let dayEvents = try await dependencies.repository.events(in: .day(selectedDay))
             let clients = try await dependencies.repository.clients(matching: "", stage: nil)
 
             // Znacznik „ma wydarzenie” liczymy z całego tygodnia, nie tylko z widocznego dnia.
@@ -124,9 +112,6 @@ struct CalendarScreen: View {
                 }
                 .padding(.bottom, 12)
 
-                SegmentedFilter(items: CalendarStore.Owner.all, selection: $store.owner) { $0.title }
-                    .padding(.bottom, 12)
-
                 weekControls
                     .padding(.bottom, 12)
 
@@ -181,7 +166,6 @@ struct CalendarScreen: View {
         .background(EmmaTheme.bg)
         .scrollIndicators(.hidden)
         .task(id: dependencies.dataVersion) { await store.load(dependencies) }
-        .onChange(of: store.owner) { _, _ in Task { await store.load(dependencies) } }
     }
 
     private var weekControls: some View {

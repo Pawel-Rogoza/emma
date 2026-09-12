@@ -984,7 +984,7 @@ public struct TaskRow: View {
                         .strikethrough(task.isDone, color: EmmaTheme.mutedSoft)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text(OwnerName.taskMeta(clientName: clientName, ownerID: task.ownerID))
+                    Text(TaskItem.taskMeta(clientName: clientName))
                         .font(EmmaTypography.taskMeta)
                         .foregroundStyle(EmmaTheme.taskMetaText)
                         .multilineTextAlignment(.leading)

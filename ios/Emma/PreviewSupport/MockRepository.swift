@@ -67,16 +67,6 @@ public actor MockRepository:
         dataset.users.first { $0.id == dataset.currentUserID } ?? DemoFixtures.tomasz
     }
 
-    public func users() async throws -> [User] { dataset.users }
-
-    public func switchUser(to userID: UserID) async throws -> User {
-        guard let user = dataset.users.first(where: { $0.id == userID }) else {
-            throw DomainError.notFound(resource: "user", id: userID.rawValue)
-        }
-        dataset.currentUserID = userID
-        return user
-    }
-
     public func updatePreferences(_ user: User) async throws -> User {
         guard let index = dataset.users.firstIndex(where: { $0.id == user.id }) else {
             throw DomainError.notFound(resource: "user", id: user.id.rawValue)
@@ -127,7 +117,6 @@ public actor MockRepository:
             language: draft.language,
             topic: topic,
             stage: .new,
-            ownerID: draft.ownerID,
             source: draft.source,
             createdAt: draft.createdAt,
             briefing: draft.context,
@@ -158,28 +147,6 @@ public actor MockRepository:
         var updated = client
         updated.version = current.version.next()
         dataset.clients[index] = updated
-        return updated
-    }
-
-    /// Zmiana opiekuna klienta **nie** zmienia przypisań terminów (§etap 03).
-    public func assignOwner(clientID: ClientID, ownerID: UserID?, expectedVersion: Version) async throws -> Client {
-        await pause()
-        guard let index = dataset.clients.firstIndex(where: { $0.id == clientID }) else {
-            throw DomainError.notFound(resource: "client", id: clientID.rawValue)
-        }
-        let current = dataset.clients[index]
-        guard current.version == expectedVersion else {
-            throw DomainError.versionConflict(expected: expectedVersion, current: current.version)
-        }
-        var updated = current
-        updated.ownerID = ownerID
-        updated.version = current.version.next()
-        dataset.clients[index] = updated
-        appendActivity(
-            "Zmieniono opiekuna klienta: \(ownerID.map(OwnerName.of) ?? OwnerName.unassigned)",
-            clientID: clientID,
-            caseID: try? await caseForClient(clientID)?.id
-        )
         return updated
     }
 
@@ -222,7 +189,6 @@ public actor MockRepository:
             number: "KR / 2026 / \(String(format: "%03d", nextNumber))",
             title: title,
             clientID: draft.clientID,
-            ownerID: draft.ownerID,
             status: .inProgress,
             summary: summary,
             createdAt: draft.createdAt
@@ -233,7 +199,6 @@ public actor MockRepository:
         // zostają powiązane z nową sprawą.
         if let index = dataset.clients.firstIndex(where: { $0.id == draft.clientID }) {
             dataset.clients[index].stage = .client
-            dataset.clients[index].ownerID = draft.ownerID
         }
         for index in dataset.notes.indices where dataset.notes[index].clientID == draft.clientID && dataset.notes[index].caseID == nil {
             dataset.notes[index].caseID = legalCase.id
@@ -284,7 +249,6 @@ public actor MockRepository:
                 case .done: if !task.isDone { return false }
                 case .all: break
                 }
-                if let ownerID = filter.ownerID, task.ownerID != ownerID { return false }
                 if let due = filter.dueOnOrBefore, task.dueDate > due { return false }
                 if let clientID = filter.clientID, task.clientID != clientID { return false }
                 if let caseID = filter.caseID, task.caseID != caseID { return false }
@@ -318,7 +282,6 @@ public actor MockRepository:
             title: title,
             clientID: draft.clientID,
             caseID: caseID,
-            ownerID: draft.ownerID,
             dueDate: draft.dueDate,
             isDone: false,
             priority: draft.priority
@@ -359,10 +322,10 @@ public actor MockRepository:
 
     // MARK: - Terminy
 
-    public func events(in range: DateIntervalFilter, ownerID: UserID?) async throws -> [ScheduledEvent] {
+    public func events(in range: DateIntervalFilter) async throws -> [ScheduledEvent] {
         await pause()
         return dataset.events
-            .filter { range.contains($0.day) && (ownerID == nil || $0.ownerID == ownerID) }
+            .filter { range.contains($0.day) }
             .sorted { lhs, rhs in
                 if lhs.day != rhs.day { return lhs.day < rhs.day }
                 if lhs.time != rhs.time { return lhs.time < rhs.time }
@@ -390,15 +353,14 @@ public actor MockRepository:
             day: draft.day,
             time: draft.time,
             durationMinutes: draft.durationMinutes,
-            ownerID: draft.ownerID,
             kind: draft.kind,
             status: draft.status,
             place: draft.place.trimmingCharacters(in: .whitespacesAndNewlines)
         )
         if let conflict = dataset.events.first(where: { $0.overlaps(with: candidate) }) {
             throw DomainError.validationFailed(
-                "\(OwnerName.of(draft.ownerID)) ma już wydarzenie o \(conflict.time.hhmm): \(conflict.title). "
-                + "Wybierz inną godzinę lub prowadzącego."
+                "W kalendarzu jest już wydarzenie o \(conflict.time.hhmm): \(conflict.title). "
+                + "Wybierz inną godzinę."
             )
         }
         dataset.events.append(candidate)
@@ -422,13 +384,9 @@ public actor MockRepository:
         try validateEventFields(title: event.title, place: event.place, durationMinutes: event.durationMinutes)
         if let conflict = dataset.events.first(where: { $0.overlaps(with: event) }) {
             throw DomainError.validationFailed(
-                "\(event.ownerLabel) ma już wydarzenie o \(conflict.time.hhmm): \(conflict.title). "
-                + "Wybierz inną godzinę lub prowadzącego."
+                "W kalendarzu jest już wydarzenie o \(conflict.time.hhmm): \(conflict.title). "
+                + "Wybierz inną godzinę."
             )
-        }
-        // Potwierdzenie bez prowadzącego nie przechodzi (§etap 04 gate).
-        if event.status == .confirmed, event.ownerID == nil {
-            throw DomainError.validationFailed("Potwierdzenie wymaga wybrania prowadzącego.")
         }
         var updated = event
         updated.version = current.version.next()

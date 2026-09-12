@@ -327,19 +327,6 @@ public final class AppDependencies: ObservableObject {
         }
     }
 
-    public func switchUser(to userID: UserID) async {
-        guard let user = await perform({ try await self.repository.switchUser(to: userID) }) else { return }
-        currentUser = user
-        navigation = Dictionary(uniqueKeysWithValues: AppTab.allCases.map { ($0, TabNavigation()) })
-        sheet = nil
-        emmaContext = nil
-        pendingEmmaAction = nil
-        pendingVoiceStart = false
-        await voice.handleAccountSwitched()
-        refreshUnreadTotal()
-        showToast("Przełączono na \(user.displayName).")
-    }
-
     /// Przywrócenie danych przykładowych (odpowiada `resetDemo()` z referencji).
     public func resetDemoData() async {
         await voice.handleUserLoggedOut()

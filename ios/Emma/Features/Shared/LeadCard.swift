@@ -4,7 +4,7 @@ import SwiftUI
 //
 // Odtworzenie `.card.large-lead` z referencji (`clientList()` w
 // `reference/prototype/app.js`): wiersz metadanych z pigułką statusu i językiem,
-// wiersz osoby oraz stopka z najbliższym terminem i opiekunem.
+// wiersz osoby oraz stopkę z najbliższym terminem.
 //
 // Karta jest jednym przyciskiem — jak w referencji, gdzie całe `.large-lead`
 // było elementem klikalnym prowadzącym do karty klienta.
@@ -62,10 +62,6 @@ struct LeadCard: View {
                 .foregroundStyle(EmmaTheme.muted)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
-            Text(client.ownerLabel)
-                .font(EmmaTypography.ui(11))
-                .foregroundStyle(EmmaTheme.muted)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -88,7 +84,6 @@ struct LeadCard: View {
     private var accessibilityText: String {
         var parts = [client.displayName, client.topic, statusPillText, client.language.displayName]
         parts.append(nextEventText)
-        parts.append(client.ownerLabel)
         return parts.joined(separator: ", ")
     }
 }

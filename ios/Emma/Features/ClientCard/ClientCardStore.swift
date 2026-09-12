@@ -34,7 +34,7 @@ final class ClientCardStore: ObservableObject {
 
             let window = ClientCardEventWindow.presentation(today: dependencies.today)
             async let legalCaseTask = repository.caseForClient(clientID)
-            async let eventsTask = repository.events(in: window, ownerID: nil)
+            async let eventsTask = repository.events(in: window)
             async let notesTask = repository.notes(clientID: clientID, caseID: nil)
             async let threadsTask = repository.threads()
 

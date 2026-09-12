@@ -5,9 +5,9 @@ import SwiftUI
 // Port arkuszy z referencji: `noteForm`, `taskForm`/`saveTask`, `eventForm`/`saveEvent`,
 // `taskDetail`, `eventDetail`/`confirmEvent`/`finishEvent`.
 //
-// Zasada: walidacja i reguły biznesowe (kolizja prowadzącego, wymóg prowadzącego przy
-// potwierdzeniu) należą do repozytorium. Formularz pokazuje komunikat zwrócony przez
-// repozytorium zamiast powielać te reguły po stronie widoku.
+// Zasada: walidacja i reguły biznesowe (kolizja w kalendarzu) należą do
+// repozytorium. Formularz pokazuje komunikat zwrócony przez repozytorium zamiast
+// powielać te reguły po stronie widoku.
 
 // MARK: Wspólne pola
 
@@ -49,39 +49,6 @@ private struct TimeField: View {
                     if let parsed = TimeOfDay(hhmm: newValue) { time = parsed }
                 }
                 .accessibilityLabel(label)
-        }
-    }
-}
-
-/// Wybór osoby odpowiedzialnej. `nil` nie występuje w zadaniach i terminach —
-/// terminy mogą mieć prowadzącego nieprzypisanego, ale wtedy nie da się ich potwierdzić.
-private struct OwnerPicker: View {
-    let label: String
-    @Binding var ownerID: UserID?
-
-    var body: some View {
-        LabeledField(label) {
-            HStack(spacing: 6) {
-                ForEach([nil, UserID.tomasz, UserID.pawel], id: \.self) { candidate in
-                    let isSelected = candidate == ownerID
-                    Button {
-                        ownerID = candidate
-                    } label: {
-                        Text(candidate.map(OwnerName.of) ?? OwnerName.unassigned)
-                            .font(EmmaTypography.ui(12, isSelected ? .semibold : .regular))
-                            .foregroundStyle(isSelected ? EmmaTheme.ink : EmmaTheme.muted)
-                            .frame(maxWidth: .infinity, minHeight: EmmaMetrics.segmentedMinHeight - 6)
-                            .background(isSelected ? EmmaTheme.controlSelected : Color.clear)
-                            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.segmentedInner, style: .continuous))
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-                }
-            }
-            .padding(3)
-            .background(EmmaTheme.controlBackground)
-            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.segmented, style: .continuous))
         }
     }
 }
@@ -222,7 +189,6 @@ struct TaskFormSheet: View {
 
     @State private var title = ""
     @State private var selectedClient: ClientID?
-    @State private var ownerID: UserID = .tomasz
     @State private var dueDate = LocalDate(year: 2026, month: 9, day: 11)
     @State private var priority: TaskPriority = .normal
     @State private var error: String?
@@ -266,11 +232,6 @@ struct TaskFormSheet: View {
                 .accessibilityLabel("Powiązany klient")
             }
 
-            OwnerPicker(label: "Odpowiedzialny", ownerID: Binding(
-                get: { ownerID },
-                set: { ownerID = $0 ?? .tomasz }
-            ))
-
             DateField(label: "Termin", day: $dueDate)
 
             LabeledField("Priorytet") {
@@ -312,12 +273,10 @@ struct TaskFormSheet: View {
         clients = (try? await dependencies.repository.clients(matching: "", stage: nil)) ?? []
         selectedClient = clientID
         dueDate = dependencies.today
-        ownerID = dependencies.currentUser.id
         if let taskID, let existing = try? await dependencies.repository.task(id: taskID) {
             original = existing
             title = existing.title
             selectedClient = existing.clientID
-            ownerID = existing.ownerID
             dueDate = existing.dueDate
             priority = existing.priority
         }
@@ -336,7 +295,6 @@ struct TaskFormSheet: View {
             var updated = original
             updated.title = trimmed
             updated.clientID = selectedClient
-            updated.ownerID = ownerID
             updated.dueDate = dueDate
             updated.priority = priority
             result = await dependencies.perform {
@@ -349,7 +307,6 @@ struct TaskFormSheet: View {
                         title: trimmed,
                         clientID: selectedClient,
                         caseID: caseID,
-                        ownerID: ownerID,
                         dueDate: dueDate,
                         priority: priority
                     )
@@ -377,7 +334,6 @@ struct EventFormSheet: View {
     @State private var day = LocalDate(year: 2026, month: 9, day: 11)
     @State private var time = TimeOfDay(hhmm: "15:00") ?? TimeOfDay(minutes: 900)!
     @State private var duration = 30
-    @State private var ownerID: UserID? = .tomasz
     @State private var status: EventStatus = .toConfirm
     @State private var place = ""
     @State private var error: String?
@@ -437,8 +393,6 @@ struct EventFormSheet: View {
                 .pickerStyle(.segmented)
             }
 
-            OwnerPicker(label: "Prowadzący", ownerID: $ownerID)
-
             LabeledField("Status") {
                 Picker("Status", selection: $status) {
                     ForEach(EventStatus.allCases) { Text($0.rawValue).tag($0) }
@@ -475,7 +429,6 @@ struct EventFormSheet: View {
             day = existing.day
             time = existing.time
             duration = existing.durationMinutes
-            ownerID = existing.ownerID
             status = existing.status
             place = existing.place
         }
@@ -503,8 +456,6 @@ struct EventFormSheet: View {
             updated.durationMinutes = duration
             updated.status = status
             updated.place = trimmedPlace
-            // Prowadzący jest opcjonalny tylko dla terminu oczekującego na potwierdzenie.
-            updated.ownerID = ownerID
             let saved = await dependencies.perform {
                 try await dependencies.repository.updateEvent(updated, expectedVersion: original.version)
             }
@@ -519,7 +470,6 @@ struct EventFormSheet: View {
                         day: day,
                         time: time,
                         durationMinutes: duration,
-                        ownerID: ownerID ?? dependencies.currentUser.id,
                         kind: kind,
                         status: status,
                         place: trimmedPlace
@@ -553,7 +503,6 @@ struct TaskDetailSheet: View {
 
                 InfoList([
                     .init("Termin", dependencies.dateText.dayLabel(task.dueDate)),
-                    .init("Odpowiedzialny", OwnerName.of(task.ownerID)),
                     .init("Status", task.isDone ? "Wykonane" : "Do zrobienia")
                 ])
                 .padding(.bottom, 16)
@@ -625,7 +574,6 @@ struct EventDetailSheet: View {
                     .init("Kiedy", "\(dependencies.dateText.dayLabel(event.day)), \(event.time.hhmm)"),
                     .init("Czas", "\(event.durationMinutes) min"),
                     .init("Miejsce", event.place),
-                    .init("Prowadzący", event.ownerLabel),
                     .init("Status", event.status.rawValue)
                 ])
                 .padding(.bottom, 16)
@@ -664,19 +612,12 @@ struct EventDetailSheet: View {
             }
             .buttonStyle(.plain)
         case .toConfirm:
-            if event.ownerID == nil {
-                InlineError("Wybierz prowadzącego i status „Potwierdzona”, aby potwierdzić konsultację.")
-                SecondaryButton("Edytuj termin") {
-                    dependencies.present(.eventForm(editing: event.id, clientID: event.clientID, caseID: event.caseID))
-                }
-            } else {
-                PrimaryButton("Potwierdź termin", systemImage: "checkmark") {
-                    Task { await update(event, status: .confirmed) }
-                }
-                .padding(.bottom, 10)
-                SecondaryButton("Edytuj termin") {
-                    dependencies.present(.eventForm(editing: event.id, clientID: event.clientID, caseID: event.caseID))
-                }
+            PrimaryButton("Potwierdź termin", systemImage: "checkmark") {
+                Task { await update(event, status: .confirmed) }
+            }
+            .padding(.bottom, 10)
+            SecondaryButton("Edytuj termin") {
+                dependencies.present(.eventForm(editing: event.id, clientID: event.clientID, caseID: event.caseID))
             }
         case .confirmed:
             PrimaryButton("Zakończ spotkanie", systemImage: "checkmark") {
@@ -690,7 +631,7 @@ struct EventDetailSheet: View {
     }
 
     /// Potwierdzenie i zakończenie przechodzą przez repozytorium, dzięki czemu
-    /// reguła kolizji prowadzącego i wymóg prowadzącego są sprawdzane w jednym miejscu.
+    /// reguła kolizji w kalendarzu jest sprawdzana w jednym miejscu.
     private func update(_ event: ScheduledEvent, status: EventStatus) async {
         error = nil
         var updated = event

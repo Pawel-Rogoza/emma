@@ -52,8 +52,7 @@ final class CaseStore: ObservableObject {
             let today = dependencies.today
             let tasks = try await dependencies.repository.tasks(filter: TaskFilter(scope: .all, caseID: caseID))
             let events = try await dependencies.repository.events(
-                in: DateIntervalFilter(from: today.adding(days: -365), through: today.adding(days: 365)),
-                ownerID: nil
+                in: DateIntervalFilter(from: today.adding(days: -365), through: today.adding(days: 365))
             )
             let notes = try await dependencies.repository.notes(clientID: legalCase.clientID, caseID: caseID)
             let activity = try await dependencies.repository.activity(caseID: caseID)
@@ -160,9 +159,6 @@ struct CaseScreen: View {
                         Text(model.client.displayName)
                             .font(EmmaTypography.personName)
                             .foregroundStyle(EmmaTheme.ink)
-                        Text("Opiekun: \(model.legalCase.ownerLabel)")
-                            .font(EmmaTypography.personSubtitle)
-                            .foregroundStyle(EmmaTheme.muted)
                     }
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.right")
@@ -179,7 +175,7 @@ struct CaseScreen: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(model.client.displayName), opiekun \(model.legalCase.ownerLabel)")
+            .accessibilityLabel(model.client.displayName)
         }
     }
 
@@ -266,7 +262,7 @@ struct CaseScreen: View {
         if let last = model.notes.last {
             NoteCard(
                 text: last.text,
-                footer: "\(OwnerName.of(last.authorID)) · \(dependencies.dateText.dayLabel(last.createdAt))"
+                footer: dependencies.dateText.dayLabel(last.createdAt)
             )
         } else {
             emptyCard("Brak notatek", "Zapisz lub podyktuj ustalenia z klientem.")
@@ -292,7 +288,7 @@ struct CaseScreen: View {
             ForEach(model.notes.reversed(), id: \.id) { note in
                 NoteCard(
                     text: note.text,
-                    footer: "\(OwnerName.of(note.authorID)) · \(dependencies.dateText.dayLabel(note.createdAt))"
+                    footer: dependencies.dateText.dayLabel(note.createdAt)
                 )
                 .padding(.bottom, EmmaSpacing.cardGap)
             }
@@ -313,7 +309,7 @@ struct CaseScreen: View {
                     ForEach(Array(model.activity.enumerated()), id: \.element.id) { index, entry in
                         ActivityRow(
                             text: entry.text,
-                            dateText: "\(OwnerName.of(entry.authorID)) · \(dependencies.dateText.dayLabel(entry.createdAt))"
+                            dateText: dependencies.dateText.dayLabel(entry.createdAt)
                         )
                         if index < model.activity.count - 1 {
                             Divider().overlay(EmmaTheme.rowSeparator)

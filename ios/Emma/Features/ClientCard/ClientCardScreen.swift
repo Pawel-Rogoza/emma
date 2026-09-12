@@ -51,12 +51,7 @@ struct ClientCardScreen: View {
             DetailHeader(
                 caption: client.source.rawValue,
                 title: "Karta klienta",
-                onBack: dependencies.back,
-                trailing: {
-                    IconButton(systemName: "person.2", accessibilityLabel: "Zmień opiekuna") {
-                        dependencies.present(.assignOwner(client.id))
-                    }
-                }
+                onBack: dependencies.back
             )
 
             hero(client)
@@ -179,29 +174,10 @@ struct ClientCardScreen: View {
 
     private func infoSection(_ client: Client) -> some View {
         InfoList([
-            InfoList.Row("Opiekun", client.ownerLabel),
             InfoList.Row("Źródło", client.source.rawValue),
             InfoList.Row("Kontakt od", dependencies.dateText.dayLabel(client.createdAt))
         ])
-        .overlay(alignment: .top) { ownerTapTarget(client) }
         .padding(.vertical, 20)
-    }
-
-    /// Wiersz „Opiekun” jest w referencji klikalny (`.info-list button`), a komponent
-    /// `InfoList` nie przyjmuje akcji na wiersz. Dlatego na obszarze pierwszego wiersza
-    /// nakładamy przezroczysty cel dotyku ≥ 44 pt (§2.2); wygląd listy się nie zmienia.
-    private func ownerTapTarget(_ client: Client) -> some View {
-        Button {
-            dependencies.present(.assignOwner(client.id))
-        } label: {
-            Color.clear
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: EmmaSpacing.hitTarget, maxHeight: EmmaSpacing.hitTarget)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Zmień opiekuna klienta")
-        .accessibilityHint("Otwiera listę opiekunów")
     }
 
     // MARK: Sprawa
@@ -310,10 +286,10 @@ struct ClientCardScreen: View {
         }
     }
 
-    /// Autora i datę pokazujemy w stopce karty notatki — komponent `NoteCard`
+    /// Datę pokazujemy w stopce karty notatki — komponent `NoteCard`
     /// przyjmuje treść i jedną linię stopki.
     private func noteFooter(_ note: CaseNote) -> String {
-        "\(OwnerName.of(note.authorID)) · \(dependencies.dateText.dayLabel(note.createdAt))"
+        dependencies.dateText.dayLabel(note.createdAt)
     }
 
     // MARK: Treści pomocnicze

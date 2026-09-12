@@ -20,9 +20,9 @@ import Foundation
 @main
 struct EmmaPreviewExport {
 
-    /// Wiersz zadania policzony tym samym kodem co aplikacja: `OwnerName.taskMeta`,
+    /// Wiersz zadania policzony tym samym kodem co aplikacja: `TaskItem.taskMeta`,
     /// `TaskItem.rowDateText`, `TaskItem.showsUrgentBadge`. Podgląd składał ten wiersz
-    /// własnym sposobem i pokazywał trzecią wersję („właściciel · data”, bez „Pilne”),
+    /// własnym sposobem i pokazywał trzecią wersję („klient · data”, bez „Pilne”),
     /// więc teraz nie ma czego składać — dostaje gotowe napisy.
     struct TaskRowPayload: Encodable {
         let id: String
@@ -44,9 +44,9 @@ struct EmmaPreviewExport {
         var clients: [Client]
         var cases: [LegalCase]
         var tasks: [TaskItem]
-        /// Wiersze zadania policzone **tym samym kodem co aplikacja** (`OwnerName.taskMeta`,
+        /// Wiersze zadania policzone **tym samym kodem co aplikacja** (`TaskItem.taskMeta`,
         /// `TaskItem.rowDateText`, `TaskItem.showsUrgentBadge`). Podgląd składał je własnym
-        /// sposobem i pokazywał trzecią wersję: „właściciel · data”, bez „Pilne”.
+        /// sposobem i pokazywał trzecią wersję: „klient · data”, bez „Pilne”.
         var taskRows: [TaskRowPayload]
         var events: [ScheduledEvent]
         var notes: [CaseNote]
@@ -56,8 +56,8 @@ struct EmmaPreviewExport {
         var unreadByThread: [String: Int]
         var unreadTotal: Int
         var screenStates: [String]
-        /// Sformatowane napisy z **logiki aplikacji** (`DateTextFormatter`, `EmmaPlural`,
-        /// `OwnerName`), a nie z formatowania w Pythonie. Podgląd pokazuje więc dokładnie
+        /// Sformatowane napisy z **logiki aplikacji** (`DateTextFormatter`, `EmmaPlural`),
+        /// a nie z formatowania w Pythonie. Podgląd pokazuje więc dokładnie
         /// te napisy, które zobaczy użytkownik.
         var labels: [String: String]
         /// Podsumowanie „Dzisiaj” policzone tymi samymi filtrami co `TodayStore`
@@ -96,8 +96,7 @@ struct EmmaPreviewExport {
         let tasks = try await repository.tasks(filter: TaskFilter(scope: .all))
         // Zakres obejmuje cały tydzień demo — podgląd pokazuje plan, nie tylko jeden dzień.
         let events = try await repository.events(
-            in: DateIntervalFilter(from: DemoFixtures.weekStart, through: LocalDate(year: 2026, month: 9, day: 18)),
-            ownerID: nil
+            in: DateIntervalFilter(from: DemoFixtures.weekStart, through: LocalDate(year: 2026, month: 9, day: 18))
         )
         let threads = try await repository.threads()
 
@@ -120,9 +119,9 @@ struct EmmaPreviewExport {
         let openTasksDueToday = try await repository.tasks(
             filter: TaskFilter(scope: .open, dueOnOrBefore: clock.today())
         )
-        let todayEvents = try await repository.events(in: .day(clock.today()), ownerID: nil)
+        let todayEvents = try await repository.events(in: .day(clock.today()))
         let nextConsultation = todayEvents
-            .filter { $0.kind == .consultation && $0.status != .finished && $0.ownerID == user.id }
+            .filter { $0.kind == .consultation && $0.status != .finished }
             .min { $0.time < $1.time }
         let unreadTotal = try await repository.unreadTotal(userID: user.id)
 
@@ -140,9 +139,8 @@ struct EmmaPreviewExport {
                 TaskRowPayload(
                     id: task.id.rawValue,
                     title: task.title,
-                    meta: OwnerName.taskMeta(
-                        clientName: task.clientID.flatMap { clientNames[$0] },
-                        ownerID: task.ownerID
+                    meta: TaskItem.taskMeta(
+                        clientName: task.clientID.flatMap { clientNames[$0] }
                     ),
                     dateText: task.rowDateText(formatter),
                     isDone: task.isDone,
@@ -167,8 +165,6 @@ struct EmmaPreviewExport {
                 "clientCount": EmmaPlural.form(clients.count, "klient", "klientów", "klientów"),
                 "caseCount": EmmaPlural.form(cases.count, "sprawa", "sprawy", "spraw"),
                 "taskCount": EmmaPlural.form(openTasksDueToday.count, "zadanie", "zadania", "zadań"),
-                "owner": OwnerName.of(user.id),
-                "unassigned": OwnerName.unassigned,
                 "eventTimes": events.map { formatter.timeAndDuration($0.time, minutes: $0.durationMinutes) }.joined(separator: " · ")
             ],
             todaySummary: TodaySummary(

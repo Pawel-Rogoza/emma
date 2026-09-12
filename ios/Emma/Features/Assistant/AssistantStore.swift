@@ -381,7 +381,6 @@ final class AssistantStore: ObservableObject {
             text: trimmed,
             actor: dependencies.currentUser,
             presentationID: nextPresentationID(kind: kind),
-            taskOwnerID: kind == .task ? dependencies.currentUser.id : nil,
             taskDueDate: kind == .task ? (dueDate ?? dependencies.today) : nil
         )
         guard let proposal else { return nil }
@@ -670,7 +669,7 @@ final class AssistantStore: ObservableObject {
     func briefing() async -> String {
         guard let dependencies else { return "" }
         let today = dependencies.today
-        let events = ((try? await dependencies.repository.events(in: .day(today), ownerID: nil)) ?? [])
+        let events = ((try? await dependencies.repository.events(in: .day(today))) ?? [])
             .filter { $0.status != .finished }
         let tasks = ((try? await dependencies.repository.tasks(
             filter: TaskFilter(scope: .open, dueOnOrBefore: today)
@@ -681,13 +680,13 @@ final class AssistantStore: ObservableObject {
         let schedule = events.map { event -> String in
             let name = clientName(for: event.clientID) ?? Client.unknownDisplayName
             let pending = event.status == .toConfirm ? " Termin czeka na potwierdzenie." : ""
-            return "\(event.time.hhmm): \(name), \(event.title). Prowadzący: \(event.ownerLabel).\(pending)"
+            return "\(event.time.hhmm): \(name), \(event.title).\(pending)"
         }.joined(separator: "\n")
         lines.append("Dzisiaj w zespole: \(EmmaPlural.label(events.count, "wydarzenie", "wydarzenia", "wydarzeń")). \(schedule)")
         lines.append("")
         let tasksLine = tasks.isEmpty
             ? "brak otwartych zadań na dziś"
-            : tasks.map { "\($0.title) (\(OwnerName.of($0.ownerID)))" }.joined(separator: "; ")
+            : tasks.map(\.title).joined(separator: "; ")
         lines.append("Do załatwienia: \(tasksLine).")
         lines.append(
             waiting.isEmpty
@@ -707,15 +706,14 @@ final class AssistantStore: ObservableObject {
             filter: TaskFilter(scope: .open, clientID: clientID)
         )) ?? [])
         let events = ((try? await dependencies.repository.events(
-            in: DateIntervalFilter(from: today, through: today.adding(days: 180)),
-            ownerID: nil
+            in: DateIntervalFilter(from: today, through: today.adding(days: 180))
         )) ?? [])
             .filter { $0.clientID == clientID && $0.status != .finished }
         let nextEvent = events.min { ($0.day, $0.time) < ($1.day, $1.time) }
 
         var parts: [String] = []
         if let legalCase {
-            parts.append("\(client.displayName). \(legalCase.title). Status: \(legalCase.status.rawValue). Prowadzący: \(OwnerName.of(legalCase.ownerID)).")
+            parts.append("\(client.displayName). \(legalCase.title). Status: \(legalCase.status.rawValue).")
         } else {
             parts.append("\(client.displayName). \(client.topic). Zgłoszenie: \(client.stage.rawValue).")
         }
@@ -733,7 +731,7 @@ final class AssistantStore: ObservableObject {
         if tasks.isEmpty {
             parts.append("Nie ma otwartych zadań.")
         } else {
-            parts.append("Otwarte zadania: " + tasks.map { "\($0.title) (\(OwnerName.of($0.ownerID)))" }.joined(separator: "; ") + ".")
+            parts.append("Otwarte zadania: " + tasks.map(\.title).joined(separator: "; ") + ".")
         }
         return parts.joined(separator: "\n")
     }
@@ -743,8 +741,7 @@ final class AssistantStore: ObservableObject {
         guard let dependencies, let client = client(id: clientID) else { return "" }
         let today = dependencies.today
         let events = ((try? await dependencies.repository.events(
-            in: DateIntervalFilter(from: today.adding(days: -30), through: today.adding(days: 180)),
-            ownerID: nil
+            in: DateIntervalFilter(from: today.adding(days: -30), through: today.adding(days: 180))
         )) ?? [])
             .filter { $0.clientID == clientID && $0.status != .finished }
         let event = events.min { ($0.day, $0.time) < ($1.day, $1.time) }

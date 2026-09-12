@@ -96,7 +96,6 @@ public struct ActionProposal: Identifiable, Hashable, Codable, Sendable {
     public var presentationID: String
     public var state: ProposalState
     /// Dodatkowe pola dla zadań.
-    public var taskOwnerID: UserID?
     public var taskDueDate: LocalDate?
 
     public init(
@@ -116,7 +115,6 @@ public struct ActionProposal: Identifiable, Hashable, Codable, Sendable {
         expiresAt: Date,
         presentationID: String,
         state: ProposalState = .proposed,
-        taskOwnerID: UserID? = nil,
         taskDueDate: LocalDate? = nil
     ) {
         self.id = id
@@ -135,7 +133,6 @@ public struct ActionProposal: Identifiable, Hashable, Codable, Sendable {
         self.expiresAt = expiresAt
         self.presentationID = presentationID
         self.state = state
-        self.taskOwnerID = taskOwnerID
         self.taskDueDate = taskDueDate
     }
 
@@ -295,7 +292,6 @@ public struct ActionEngine: Sendable {
             presentedAt: request.now,
             expiresAt: request.now.addingTimeInterval(confirmationWindow),
             presentationID: request.presentationID,
-            taskOwnerID: request.taskOwnerID,
             taskDueDate: request.taskDueDate
         )
         state.proposals[proposal.id] = proposal
@@ -551,7 +547,6 @@ public struct PrepareActionRequest: Sendable {
     public var threadVersion: Version?
     public var presentationID: String
     public var now: Date
-    public var taskOwnerID: UserID?
     public var taskDueDate: LocalDate?
 
     public init(
@@ -567,7 +562,6 @@ public struct PrepareActionRequest: Sendable {
         threadVersion: Version? = nil,
         presentationID: String,
         now: Date,
-        taskOwnerID: UserID? = nil,
         taskDueDate: LocalDate? = nil
     ) {
         self.actionID = actionID
@@ -582,7 +576,6 @@ public struct PrepareActionRequest: Sendable {
         self.threadVersion = threadVersion
         self.presentationID = presentationID
         self.now = now
-        self.taskOwnerID = taskOwnerID
         self.taskDueDate = taskDueDate
     }
 }

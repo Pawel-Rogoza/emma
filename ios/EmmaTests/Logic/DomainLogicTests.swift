@@ -621,23 +621,20 @@ final class LoadFailureTests: XCTestCase {
 
 final class TaskRowMetaTests: XCTestCase {
 
-    /// Kolejność z referencji: klient pierwszy, właściciel drugi.
-    func testClientComesBeforeOwner() {
-        let meta = OwnerName.taskMeta(clientName: "Olena Kowalska", ownerID: .tomasz)
-        XCTAssertEqual(meta, "Olena Kowalska · Tomasz")
+    /// Wiersz zadania pokazuje nazwę klienta.
+    func testTaskWithClientShowsClientName() {
+        XCTAssertEqual(TaskItem.taskMeta(clientName: "Olena Kowalska"), "Olena Kowalska")
     }
 
-    /// Zadanie bez klienta pokazuje kancelarię, a nie samo nazwisko właściciela —
-    /// tak robi referencja (`${p ? p.name : 'Kancelaria'} · ${t.owner}`).
+    /// Zadanie bez klienta pokazuje kancelarię, bez nazwiska opiekuna.
     func testTaskWithoutClientShowsFirmName() {
-        let meta = OwnerName.taskMeta(clientName: nil, ownerID: .pawel)
-        XCTAssertEqual(meta, "Kancelaria · Paweł")
-        XCTAssertEqual(OwnerName.firmFallback, "Kancelaria")
+        XCTAssertEqual(TaskItem.taskMeta(clientName: nil), "Kancelaria")
+        XCTAssertEqual(Client.firmDisplayName, "Kancelaria")
     }
 
     /// Pusta nazwa klienta to brak nazwy, nie nazwa pusta.
     func testEmptyClientNameFallsBackToFirm() {
-        XCTAssertEqual(OwnerName.taskMeta(clientName: nil, ownerID: .tomasz), OwnerName.taskMeta(clientName: OwnerName.firmFallback, ownerID: .tomasz))
+        XCTAssertEqual(TaskItem.taskMeta(clientName: nil), TaskItem.taskMeta(clientName: Client.firmDisplayName))
     }
 }
 
@@ -646,7 +643,7 @@ final class TaskRowMetaTests: XCTestCase {
 final class TaskUrgentBadgeTests: XCTestCase {
 
     private func task(priority: TaskPriority, isDone: Bool, dueDate: LocalDate = LocalDate(year: 2026, month: 9, day: 11)) -> TaskItem {
-        TaskItem(id: TaskID("task-1"), title: "Zadanie", clientID: nil, caseID: nil, ownerID: .tomasz, dueDate: dueDate, isDone: isDone, priority: priority)
+        TaskItem(id: TaskID("task-1"), title: "Zadanie", clientID: nil, caseID: nil, dueDate: dueDate, isDone: isDone, priority: priority)
     }
 
     /// Reguła referencji: wyróżnienie tylko dla pilnych **i** niewykonanych.

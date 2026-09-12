@@ -119,15 +119,6 @@ struct MeetingCard: View {
                     }
                     .foregroundStyle(EmmaTheme.muted)
 
-                    Label {
-                        Text(event.ownerLabel)
-                            .font(EmmaTypography.meetingMeta)
-                    } icon: {
-                        Image(systemName: "person.2")
-                            .font(.system(size: 12))
-                    }
-                    .foregroundStyle(EmmaTheme.muted)
-
                     Spacer(minLength: 0)
                 }
             }
@@ -144,7 +135,7 @@ struct MeetingCard: View {
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "\(event.title), \(clientName), \(event.time.hhmm), \(event.durationMinutes) minut, \(event.status.rawValue), \(event.place), prowadzi \(event.ownerLabel)"
+            "\(event.title), \(clientName), \(event.time.hhmm), \(event.durationMinutes) minut, \(event.status.rawValue), \(event.place)"
         )
         .accessibilityAddTraits(.isButton)
     }
@@ -160,7 +151,7 @@ struct MeetingCard: View {
 
 // MARK: Sprawa
 
-/// Karta sprawy: numer ze statusem, nazwa, klient i prowadzący, licznik zadań i kolejny termin.
+/// Karta sprawy: numer ze statusem, nazwa, klient, licznik zadań i kolejny termin.
 struct CaseCard: View {
     let legalCase: LegalCase
     let clientName: String
@@ -202,7 +193,7 @@ struct CaseCard: View {
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text("\(clientName) · \(legalCase.ownerLabel)")
+                Text(clientName)
                     .font(EmmaTypography.ui(12))
                     .foregroundStyle(EmmaTheme.muted)
 
@@ -243,17 +234,10 @@ struct CaseCard: View {
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "\(legalCase.title), \(legalCase.number), \(legalCase.status.displayName), \(clientName), prowadzi \(legalCase.ownerLabel), \(EmmaPlural.tasks(openTaskCount))"
+            "\(legalCase.title), \(legalCase.number), \(legalCase.status.displayName), \(clientName), \(EmmaPlural.tasks(openTaskCount))"
         )
         .accessibilityAddTraits(.isButton)
     }
-}
-
-// MARK: Pomocnicze
-
-extension LegalCase {
-    /// Etykieta prowadzącego sprawę.
-    var ownerLabel: String { OwnerName.of(ownerID) }
 }
 
 enum ClientInitials {

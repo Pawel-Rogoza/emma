@@ -15,7 +15,6 @@ struct StartCaseSheet: View {
     @State private var phase: LoadPhase<Client> = .idle
     @State private var title = ""
     @State private var summary = ""
-    @State private var ownerID: UserID = UserID.tomasz
     @State private var errorMessage: String?
     @State private var isSaving = false
     /// Pola wypełniamy raz, przy pierwszym wczytaniu — później nie nadpisujemy
@@ -62,10 +61,6 @@ struct StartCaseSheet: View {
                     .accessibilityLabel("Nazwa sprawy")
             }
 
-            LabeledField("Prowadzący") {
-                SegmentedFilter(items: UserID.both, selection: $ownerID, title: { OwnerName.of($0) })
-            }
-
             LabeledField(
                 "Zakres i ustalenia",
                 help: "Kontakt, konsultacje i dotychczasowe notatki zostaną powiązane z tą sprawą."
@@ -107,9 +102,6 @@ struct StartCaseSheet: View {
             if !didPrefill {
                 title = client.topic
                 summary = client.briefing
-                // Domyślnie prowadzi opiekun klienta; nowy klient nie ma opiekuna,
-                // więc proponujemy zalogowanego adwokata (jak `data.user` w referencji).
-                ownerID = client.ownerID ?? dependencies.currentUser.id
                 didPrefill = true
             }
             phase = .loaded(client)
@@ -134,7 +126,6 @@ struct StartCaseSheet: View {
             clientID: client.id,
             title: trimmedTitle,
             summary: trimmedSummary,
-            ownerID: ownerID,
             createdAt: dependencies.today
         )
 

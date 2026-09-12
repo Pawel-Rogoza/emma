@@ -92,8 +92,6 @@ struct SheetHost: View {
                     ResetDemoSheet()
                 case .newLead:
                     NewLeadSheet()
-                case .assignOwner(let clientID):
-                    AssignOwnerSheet(clientID: clientID)
                 case .startCase(let clientID):
                     StartCaseSheet(clientID: clientID)
                 case .caseSettings(let caseID):
@@ -128,10 +126,10 @@ struct SheetHost: View {
 }
 
 private extension AppSheet {
-    /// Wysokości arkuszy. Trwałe wybory (np. opiekun) są niskie, formularze — wysokie.
+    /// Wysokości arkuszy. Trwałe wybory są niskie, formularze — wysokie.
     var detents: Set<PresentationDetent> {
         switch self {
-        case .assignOwner, .conversationOptions, .messageOptions, .emmaContextSelection, .resetDemo:
+        case .conversationOptions, .messageOptions, .emmaContextSelection, .resetDemo:
             return [.height(320), .large]
         case .profile, .newLead, .startCase, .note, .taskForm, .taskDetail, .eventForm:
             return [.large]

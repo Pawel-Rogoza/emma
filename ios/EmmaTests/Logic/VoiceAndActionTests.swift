@@ -1260,8 +1260,7 @@ final class MockRepositoryTests: XCTestCase {
         XCTAssertEqual(clients.first?.displayName, "Olena Kovalenko")
 
         let todayEvents = try await repository.events(
-            in: .day(DemoFixtures.referenceDay),
-            ownerID: nil
+            in: .day(DemoFixtures.referenceDay)
         )
         XCTAssertEqual(todayEvents.count, 3)
         XCTAssertEqual(todayEvents.first?.time.hhmm, "10:30")
@@ -1284,7 +1283,6 @@ final class MockRepositoryTests: XCTestCase {
                 clientID: DemoFixtures.andriiID,
                 title: "Pomoc w sprawie zatrzymania",
                 summary: "Zakres do ustalenia po pierwszej konsultacji.",
-                ownerID: .tomasz,
                 createdAt: DemoFixtures.referenceDay
             )
         )
@@ -1293,7 +1291,6 @@ final class MockRepositoryTests: XCTestCase {
                 clientID: DemoFixtures.andriiID,
                 title: "Pomoc w sprawie zatrzymania",
                 summary: "Zakres do ustalenia po pierwszej konsultacji.",
-                ownerID: .tomasz,
                 createdAt: DemoFixtures.referenceDay
             )
         )
@@ -1309,35 +1306,14 @@ final class MockRepositoryTests: XCTestCase {
                 clientID: DemoFixtures.andriiID,
                 title: "Pomoc w sprawie zatrzymania",
                 summary: "Zakres po konsultacji.",
-                ownerID: .tomasz,
                 createdAt: DemoFixtures.referenceDay
             )
         )
         let client = try await repository.client(id: DemoFixtures.andriiID)
         XCTAssertEqual(client?.stage, .client)
-        XCTAssertEqual(client?.ownerID, .tomasz)
 
         let tasks = try await repository.tasks(filter: TaskFilter(scope: .all, clientID: DemoFixtures.andriiID))
         XCTAssertTrue(tasks.allSatisfy { $0.caseID == legalCase.id }, "Luźne zadania zostają powiązane ze sprawą")
-    }
-
-    func testChangingClientOwnerDoesNotMoveEventAssignment() async throws {
-        let repository = makeRepository()
-        let before = try await repository.events(in: .day(DemoFixtures.referenceDay), ownerID: nil)
-        let olenaEvent = before.first { $0.clientID == DemoFixtures.olenaID }
-        let client = try await repository.client(id: DemoFixtures.olenaID)
-        _ = try await repository.assignOwner(
-            clientID: DemoFixtures.olenaID,
-            ownerID: .pawel,
-            expectedVersion: client!.version
-        )
-        let after = try await repository.events(in: .day(DemoFixtures.referenceDay), ownerID: nil)
-        XCTAssertEqual(
-            after.first { $0.id == olenaEvent?.id }?.ownerID,
-            .tomasz,
-            "Zmiana opiekuna klienta nie przepisuje prowadzącego terminu"
-        )
-        XCTAssertEqual(after.first { $0.id == olenaEvent?.id }?.version, olenaEvent?.version)
     }
 
     func testOptimisticLockingRejectsStaleUpdate() async throws {
@@ -1355,7 +1331,7 @@ final class MockRepositoryTests: XCTestCase {
         }
     }
 
-    func testEventOverlapIsRejectedForSameOwner() async throws {
+    func testEventOverlapIsRejected() async throws {
         let repository = makeRepository()
         do {
             _ = try await repository.createEvent(
@@ -1366,13 +1342,12 @@ final class MockRepositoryTests: XCTestCase {
                     day: DemoFixtures.referenceDay,
                     time: TimeOfDay(hhmm: "10:45")!,
                     durationMinutes: 30,
-                    ownerID: .tomasz,
                     kind: .consultation,
                     status: .toConfirm,
                     place: "Online"
                 )
             )
-            XCTFail("Oczekiwano kolizji prowadzącego")
+            XCTFail("Oczekiwano kolizji w kalendarzu")
         } catch let error as DomainError {
             guard case .validationFailed(let reason) = error else { return XCTFail("Zły błąd") }
             XCTAssertTrue(reason.contains("10:30"), "Komunikat wskazuje kolidujące wydarzenie")
@@ -1390,28 +1365,12 @@ final class MockRepositoryTests: XCTestCase {
                 day: DemoFixtures.referenceDay,
                 time: TimeOfDay(hhmm: "11:00")!,
                 durationMinutes: 30,
-                ownerID: .tomasz,
                 kind: .consultation,
                 status: .confirmed,
                 place: "Online"
             )
         )
         XCTAssertEqual(event.time.hhmm, "11:00")
-    }
-
-    func testConfirmedEventRequiresOwner() async throws {
-        let repository = makeRepository()
-        var event = try await repository.event(id: DemoFixtures.eventAndriiID)!
-        XCTAssertEqual(event.status, .toConfirm)
-        XCTAssertNil(event.ownerID)
-        event.status = .confirmed
-        do {
-            _ = try await repository.updateEvent(event, expectedVersion: event.version)
-            XCTFail("Potwierdzenie bez prowadzącego nie może przejść")
-        } catch let error as DomainError {
-            guard case .validationFailed(let reason) = error else { return XCTFail("Zły błąd") }
-            XCTAssertTrue(reason.contains("prowadzącego"))
-        }
     }
 
     func testOutgoingMessageStartsAsPendingWithIdempotencyKey() async throws {
@@ -1644,7 +1603,6 @@ final class MockRepositoryTests: XCTestCase {
                     title: "Zadanie z cudzą sprawą",
                     clientID: DemoFixtures.olenaID,
                     caseID: DemoFixtures.caseDmytroID,
-                    ownerID: .tomasz,
                     dueDate: DemoFixtures.referenceDay
                 )
             )
@@ -1661,19 +1619,10 @@ final class MockRepositoryTests: XCTestCase {
                 title: "Zadanie bez wskazanej sprawy",
                 clientID: DemoFixtures.olenaID,
                 caseID: nil,
-                ownerID: .tomasz,
                 dueDate: DemoFixtures.referenceDay
             )
         )
         XCTAssertEqual(task.caseID, DemoFixtures.caseOlenaID)
-    }
-
-    func testSwitchingUserKeepsSeparateReadStates() async throws {
-        let repository = makeRepository()
-        let pawel = try await repository.switchUser(to: .pawel)
-        XCTAssertEqual(pawel.id, .pawel)
-        let current = try await repository.currentUser()
-        XCTAssertEqual(current.id, .pawel)
     }
 }
 

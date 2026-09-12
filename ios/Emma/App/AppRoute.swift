@@ -59,7 +59,6 @@ public enum AppSheet: Hashable, Identifiable, Sendable {
 
     // Klienci i sprawy
     case newLead
-    case assignOwner(ClientID)
     case startCase(ClientID)
     case caseSettings(CaseID)
 
@@ -83,7 +82,6 @@ public enum AppSheet: Hashable, Identifiable, Sendable {
         case .profile: return "profile"
         case .resetDemo: return "reset"
         case .newLead: return "new-lead"
-        case .assignOwner(let clientID): return "assign-\(clientID.rawValue)"
         case .startCase(let clientID): return "start-case-\(clientID.rawValue)"
         case .caseSettings(let caseID): return "case-settings-\(caseID.rawValue)"
         case .note(let clientID, let caseID):

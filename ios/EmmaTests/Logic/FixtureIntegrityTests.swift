@@ -46,31 +46,13 @@ final class FixtureIntegrityTests: XCTestCase {
 
     // MARK: Odwołania między encjami
 
-    func testClientsReferenceExistingOwners() {
-        let dataset = DemoFixtures.Dataset()
-        let userIDs = Set(dataset.users.map(\.id))
-        for client in dataset.clients {
-            // Opiekun może być nieprzypisany — ale jeśli jest, musi istnieć.
-            guard let ownerID = client.ownerID else { continue }
-            XCTAssertTrue(
-                userIDs.contains(ownerID),
-                "Klient \(client.id.rawValue) ma opiekuna spoza listy użytkowników"
-            )
-        }
-    }
-
-    func testCasesReferenceExistingClientsAndOwners() {
+    func testCasesReferenceExistingClients() {
         let dataset = DemoFixtures.Dataset()
         let clientIDs = Set(dataset.clients.map(\.id))
-        let userIDs = Set(dataset.users.map(\.id))
         for legalCase in dataset.cases {
             XCTAssertTrue(
                 clientIDs.contains(legalCase.clientID),
                 "Sprawa \(legalCase.id.rawValue) wskazuje nieistniejącego klienta"
-            )
-            XCTAssertTrue(
-                userIDs.contains(legalCase.ownerID),
-                "Sprawa \(legalCase.id.rawValue) ma prowadzącego spoza listy użytkowników"
             )
         }
     }

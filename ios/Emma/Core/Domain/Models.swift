@@ -61,6 +61,10 @@ public struct Client: Identifiable, Hashable, Codable, Sendable {
     /// niż puste miejsce. Wcześniej ten sam literał stał w czterech plikach.
     public static let unknownDisplayName = "Klient"
 
+    /// Nazwa kancelarii, gdy zadanie nie ma klienta. Cała kancelaria to jeden
+    /// wspólny właściciel, więc nie ma już nazwiska opiekuna.
+    public static let firmDisplayName = "Kancelaria"
+
     public let id: ClientID
     public var displayName: String
     public var initials: String
@@ -68,8 +72,6 @@ public struct Client: Identifiable, Hashable, Codable, Sendable {
     public var language: LanguageCode
     public var topic: String
     public var stage: ClientStage
-    /// `nil` oznacza „Nieprzypisany”. Nie używamy magicznego użytkownika.
-    public var ownerID: UserID?
     public var source: ClientSource
     public var createdAt: LocalDate
     public var briefing: String
@@ -87,7 +89,6 @@ public struct Client: Identifiable, Hashable, Codable, Sendable {
         language: LanguageCode,
         topic: String,
         stage: ClientStage,
-        ownerID: UserID?,
         source: ClientSource,
         createdAt: LocalDate,
         briefing: String,
@@ -103,7 +104,6 @@ public struct Client: Identifiable, Hashable, Codable, Sendable {
         self.language = language
         self.topic = topic
         self.stage = stage
-        self.ownerID = ownerID
         self.source = source
         self.createdAt = createdAt
         self.briefing = briefing
@@ -114,39 +114,12 @@ public struct Client: Identifiable, Hashable, Codable, Sendable {
         self.version = version
     }
 
-    public var ownerLabel: String { ownerID.map(OwnerName.of) ?? OwnerName.unassigned }
-
     /// Kolor awatara z prezentacji. Zależy od **stabilnej pozycji prezentacji**, nie od ID (§4.3).
     public enum AvatarTone: Int, Codable, Sendable, CaseIterable {
         case none = 0
         case one = 1
         case two = 2
         case three = 3
-    }
-}
-
-public enum OwnerName {
-    public static let unassigned = "Nieprzypisany"
-
-    /// Nazwa kancelarii, gdy zadanie nie ma klienta. Referencja pokazuje wtedy
-    /// „Kancelaria · właściciel”, a nie samo nazwisko właściciela.
-    public static let firmFallback = "Kancelaria"
-
-    /// Opis wiersza zadania: **klient (albo kancelaria), potem właściciel**.
-    ///
-    /// Kolejność jest przepisana z referencji (`${p?p.name:'Kancelaria'} · ${t.owner}`),
-    /// a nie wymyślona: aplikacja pokazywała odwrotnie i bez nazwy zapasowej, więc
-    /// zadanie bez klienta wyglądało inaczej niż we wzorcu.
-    public static func taskMeta(clientName: String?, ownerID: UserID) -> String {
-        "\(clientName ?? firmFallback) · \(of(ownerID))"
-    }
-
-    public static func of(_ id: UserID) -> String {
-        switch id {
-        case .tomasz: return "Tomasz"
-        case .pawel: return "Paweł"
-        default: return id.rawValue
-        }
     }
 }
 
@@ -169,7 +142,6 @@ public struct LegalCase: Identifiable, Hashable, Codable, Sendable {
     public var number: String
     public var title: String
     public var clientID: ClientID
-    public var ownerID: UserID
     public var status: CaseStatus
     public var summary: String
     public var createdAt: LocalDate
@@ -180,7 +152,6 @@ public struct LegalCase: Identifiable, Hashable, Codable, Sendable {
         number: String,
         title: String,
         clientID: ClientID,
-        ownerID: UserID,
         status: CaseStatus,
         summary: String,
         createdAt: LocalDate,
@@ -190,7 +161,6 @@ public struct LegalCase: Identifiable, Hashable, Codable, Sendable {
         self.number = number
         self.title = title
         self.clientID = clientID
-        self.ownerID = ownerID
         self.status = status
         self.summary = summary
         self.createdAt = createdAt
@@ -223,8 +193,6 @@ public struct ScheduledEvent: Identifiable, Hashable, Codable, Sendable {
     public var day: LocalDate
     public var time: TimeOfDay
     public var durationMinutes: Int
-    /// `nil` oznacza „Nieprzypisany”; potwierdzenie wymaga wybrania prowadzącego (§etap 04).
-    public var ownerID: UserID?
     public var kind: EventKind
     public var status: EventStatus
     public var place: String
@@ -238,7 +206,6 @@ public struct ScheduledEvent: Identifiable, Hashable, Codable, Sendable {
         day: LocalDate,
         time: TimeOfDay,
         durationMinutes: Int,
-        ownerID: UserID?,
         kind: EventKind,
         status: EventStatus,
         place: String,
@@ -251,23 +218,18 @@ public struct ScheduledEvent: Identifiable, Hashable, Codable, Sendable {
         self.day = day
         self.time = time
         self.durationMinutes = durationMinutes
-        self.ownerID = ownerID
         self.kind = kind
         self.status = status
         self.place = place
         self.version = version
     }
 
-    public var ownerLabel: String { ownerID.map(OwnerName.of) ?? OwnerName.unassigned }
-
     /// Chwila rozpoczęcia w UTC. Używana tylko do prezentacji i porządkowania;
     /// kolizje liczymy w minutach lokalnych, aby uniknąć wpływu zmiany czasu.
-    /// Kolizja prowadzącego (§etap 04). Zakończone wydarzenia nie kolidują.
+    /// Kolizja w kalendarzu kancelarii. Zakończone wydarzenia nie kolidują.
     public func overlaps(with other: ScheduledEvent) -> Bool {
         guard id != other.id,
               day == other.day,
-              ownerID != nil,
-              ownerID == other.ownerID,
               status != .finished,
               other.status != .finished
         else { return false }
@@ -306,6 +268,12 @@ extension TaskItem {
     public func rowDateText(_ formatter: DateTextFormatter) -> String {
         showsUrgentBadge ? TaskPriority.urgent.rawValue : formatter.dayLabel(dueDate)
     }
+
+    /// Opis wiersza zadania: sama nazwa klienta albo „Kancelaria”.
+    /// Cała kancelaria jest jednym właścicielem, więc nie ma nazwiska opiekuna.
+    public static func taskMeta(clientName: String?) -> String {
+        clientName ?? Client.firmDisplayName
+    }
 }
 
 public struct TaskItem: Identifiable, Hashable, Codable, Sendable {
@@ -313,7 +281,6 @@ public struct TaskItem: Identifiable, Hashable, Codable, Sendable {
     public var title: String
     public var clientID: ClientID?
     public var caseID: CaseID?
-    public var ownerID: UserID
     public var dueDate: LocalDate
     public var isDone: Bool
     public var priority: TaskPriority
@@ -324,7 +291,6 @@ public struct TaskItem: Identifiable, Hashable, Codable, Sendable {
         title: String,
         clientID: ClientID?,
         caseID: CaseID?,
-        ownerID: UserID,
         dueDate: LocalDate,
         isDone: Bool,
         priority: TaskPriority,
@@ -334,7 +300,6 @@ public struct TaskItem: Identifiable, Hashable, Codable, Sendable {
         self.title = title
         self.clientID = clientID
         self.caseID = caseID
-        self.ownerID = ownerID
         self.dueDate = dueDate
         self.isDone = isDone
         self.priority = priority

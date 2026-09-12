@@ -112,7 +112,7 @@ struct EmmaActionCard: View {
     // MARK: Nagłówek i metadane
 
     /// Nazwa klienta z referencji; dla działania firmowego „Kancelaria”.
-    private var resolvedClientName: String { clientName ?? OwnerName.firmFallback }
+    private var resolvedClientName: String { clientName ?? Client.firmDisplayName }
 
     private var heading: some View {
         HStack(alignment: .center, spacing: 7) {
@@ -142,16 +142,9 @@ struct EmmaActionCard: View {
         }
     }
 
-    /// „Prowadzący · termin” — dokładnie jak `action-meta` w referencji.
+    /// Termin zadania tworzonego przez Emmę. Akcje nie mają właściciela.
     private var taskMeta: String? {
-        var parts: [String] = []
-        if let ownerID = proposal.taskOwnerID {
-            parts.append(OwnerName.of(ownerID))
-        }
-        if let dueDateText {
-            parts.append(dueDateText)
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        dueDateText
     }
 
     // MARK: Stan prezentacji

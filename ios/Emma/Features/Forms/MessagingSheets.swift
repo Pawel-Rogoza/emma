@@ -201,7 +201,7 @@ struct MessageOptionsSheet: View {
     private func quote(_ message: Message) async {
         let quote = QuotedReference(
             messageID: message.id,
-            authorLabel: message.isOutgoing ? OwnerName.firmFallback : clientName,
+            authorLabel: message.isOutgoing ? Client.firmDisplayName : clientName,
             text: message.text,
             isAvailable: true
         )

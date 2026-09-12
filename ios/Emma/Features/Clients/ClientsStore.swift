@@ -36,7 +36,7 @@ final class ClientsStore: ObservableObject {
             async let clientsTask = repository.clients(matching: "", stage: nil)
             async let casesTask = repository.cases(status: nil)
             async let openTasksTask = repository.tasks(filter: TaskFilter(scope: .open))
-            async let eventsTask = repository.events(in: window, ownerID: nil)
+            async let eventsTask = repository.events(in: window)
 
             let clients = try await clientsTask
             let cases = try await casesTask
@@ -91,7 +91,7 @@ final class ClientsStore: ObservableObject {
 
 // MARK: - Okno terminów listy
 
-/// Repozytorium udostępnia terminy wyłącznie zakresem dat (`events(in:ownerID:)`),
+/// Repozytorium udostępnia terminy wyłącznie zakresem dat (`events(in:)`),
 /// dlatego lista pobiera szerokie okno prezentacji wokół dnia referencyjnego
 /// zamiast zgadywać pojedyncze dni. Kolumna godzin z referencji nie występuje.
 enum ClientsEventWindow {

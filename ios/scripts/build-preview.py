@@ -453,7 +453,7 @@ class Renderer:
             <div class="back-header"><b>{escaped(legal_case["number"])}</b><span>PROWADZONA SPRAWA</span></div>
             <div class="case-title"><span class="pill">{escaped(legal_case["status"])}</span>
               <h1>{escaped(legal_case["title"])}</h1>
-              <p>{escaped(client["displayName"]) if client else ""} · Opiekun: {escaped(legal_case.get("owner", ""))}</p></div>
+              <p>{escaped(client["displayName"]) if client else ""}</p></div>
             <button class="case-emma"><div style="{self.orb_css("32px")}"></div>
               <span><b>Przygotuj mnie do tej sprawy</b><small>Emma · notatki, terminy, kolejne kroki</small></span>
               <span class="sound-icon"></span></button>

@@ -8,25 +8,15 @@ import SwiftUI
 struct ProfileSheet: View {
 
     @EnvironmentObject private var dependencies: AppDependencies
-    @State private var users: [User] = []
 
     var body: some View {
-        SheetScaffold(title: "Twój obszar pracy", onClose: { dependencies.dismissSheet() }) {
+        SheetScaffold(title: "Profil kancelarii", onClose: { dependencies.dismissSheet() }) {
             Text("Kancelaria Rogoża")
                 .font(EmmaTypography.heading(20))
                 .foregroundStyle(EmmaTheme.ink)
                 .padding(.bottom, 12)
 
-            ChoiceList(
-                items: users,
-                title: { $0.displayName },
-                subtitle: nil
-            ) { user in
-                Task { await dependencies.switchUser(to: user.id) }
-            }
-            .padding(.bottom, 16)
-
-            Text("AI i integracja WhatsApp są symulowane. Głos działa w trybie demonstracyjnym. Data przykładowego dnia: 11 września 2026.")
+            Text("Jedno wspólne konto zespołu: te same sprawy, zadania i rozmowy. AI i integracja WhatsApp są symulowane. Głos działa w trybie demonstracyjnym. Data przykładowego dnia: 11 września 2026.")
                 .font(EmmaTypography.ui(11))
                 .foregroundStyle(EmmaTheme.mutedSoft)
                 .fixedSize(horizontal: false, vertical: true)
@@ -36,6 +26,9 @@ struct ProfileSheet: View {
                 dependencies.present(.resetDemo)
             }
 
+            AccountActionsSection()
+                .padding(.top, 20)
+
             if dependencies.configuration.usesMockServices {
                 Text("Tryb Demo: \(dependencies.configuration.environment.displayName). Aplikacja nie wykonuje żadnych połączeń sieciowych i nie zawiera kluczy dostawców.")
                     .font(EmmaTypography.ui(11))
@@ -43,9 +36,6 @@ struct ProfileSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 14)
             }
-        }
-        .task {
-            users = (try? await dependencies.repository.users()) ?? []
         }
     }
 }
@@ -78,4 +68,10 @@ struct ResetDemoSheet: View {
 #Preview("Profil") {
     ProfileSheet()
         .environmentObject(AppDependencies.demo())
+        .environmentObject(
+            AuthStore(
+                authenticator: PreviewBiometricAuthenticator(),
+                defaults: UserDefaults(suiteName: "preview.profile")!
+            )
+        )
 }
