@@ -10,25 +10,22 @@ public enum DemoFixtures {
     public static let referenceDay = LocalDate(year: 2026, month: 9, day: 11)
     public static let weekStart = LocalDate(year: 2026, month: 9, day: 7)
 
-    // MARK: Użytkownicy
+    // MARK: Użytkownik
+    //
+    // Jedno wspólne konto kancelarii. Wcześniej były tu dwie osoby (Tomasz i Paweł)
+    // z osobnymi kursorami odczytu — dziś zespół ma te same sprawy i zadania, więc
+    // dzielenie pracy per osoba było fikcją (D-17). Konto nadal istnieje, bo sesja,
+    // stan odczytu i preferencje muszą być do czegoś przypisane.
 
-    public static let tomasz = User(
-        id: .tomasz,
-        displayName: "Tomasz Rogoża",
-        initials: "TR",
+    public static let kancelaria = User(
+        id: .kancelaria,
+        displayName: "Kancelaria Rogoża",
+        initials: "KR",
         interfaceLanguage: .pl,
         assistantLanguage: .ru
     )
 
-    public static let pawel = User(
-        id: .pawel,
-        displayName: "Paweł Rogoża",
-        initials: "PR",
-        interfaceLanguage: .pl,
-        assistantLanguage: .ru
-    )
-
-    public static let users: [User] = [tomasz, pawel]
+    public static let users: [User] = [kancelaria]
 
     // MARK: Klienci
 
@@ -245,7 +242,7 @@ public enum DemoFixtures {
             clientID: olenaID,
             caseID: caseOlenaID,
             text: "Klientka potwierdziła język ukraiński. Na konsultacji sprawdzić kompletność przekazanych dokumentów.",
-            authorID: .tomasz,
+            authorID: .kancelaria,
             createdAt: LocalDate(year: 2026, month: 9, day: 10)
         ),
         CaseNote(
@@ -253,7 +250,7 @@ public enum DemoFixtures {
             clientID: dmytroID,
             caseID: caseDmytroID,
             text: "Dokumenty otrzymane. Do omówienia podczas konsultacji w piątek.",
-            authorID: .pawel,
+            authorID: .kancelaria,
             createdAt: LocalDate(year: 2026, month: 9, day: 10)
         )
     ]
@@ -265,7 +262,7 @@ public enum DemoFixtures {
             clientID: olenaID,
             caseID: caseOlenaID,
             createdAt: referenceDay,
-            authorID: .tomasz
+            authorID: .kancelaria
         ),
         ActivityEvent(
             id: ActivityID("activity-2"),
@@ -273,7 +270,7 @@ public enum DemoFixtures {
             clientID: dmytroID,
             caseID: caseDmytroID,
             createdAt: LocalDate(year: 2026, month: 9, day: 10),
-            authorID: .pawel
+            authorID: .kancelaria
         )
     ]
 
@@ -333,7 +330,7 @@ public enum DemoFixtures {
             id: MessageID("msg-olena-2"),
             threadID: olenaThread,
             direction: .outgoing,
-            authorID: .tomasz,
+            authorID: .kancelaria,
             providerMessageID: "wamid.demo.olena.2",
             text: "Дякую. До зустрічі о 10:30.",
             sentAt: instant(referenceDay, "09:18"),
@@ -406,7 +403,7 @@ public enum DemoFixtures {
             id: MessageID("msg-dmytro-2"),
             threadID: dmytroThread,
             direction: .outgoing,
-            authorID: .pawel,
+            authorID: .kancelaria,
             providerMessageID: "wamid.demo.dmytro.2",
             text: "Dziękuję, do zobaczenia w kancelarii.",
             sentAt: instant(referenceDay, "08:45"),
@@ -432,26 +429,16 @@ public enum DemoFixtures {
     ]
 
     /// Kursory startowe: wszystko przed tą datą jest przeczytane.
-    /// Andrii i Maria mają nieprzeczytane wiadomości dla obu adwokatów.
-    /// Stan odczytu jest **niezależny dla każdego prawnika** (§3.3):
-    /// odczyt jednego nie zmienia licznika drugiego, a kursor nigdy się nie cofa.
+    /// Andrii i Maria mają nieprzeczytane wiadomości, Olena i Dmytro nie.
     ///
-    /// Paweł odpowiedział już Andriiowi, Tomasz jeszcze nie — dlatego liczniki
-    /// nieprzeczytanych są różne (Tomasz 3, Paweł 1) i widać, że są liczone osobno.
-    /// Ten sam zestaw danych obsługuje oba profile.
+    /// Stan odczytu jest nadal przypisany do konta (`userID`), bo to warunek
+    /// działania liczników nieprzeczytanych §3.3 — ale w demo istnieje **jedno
+    /// wspólne konto kancelarii**, więc licznik jest jeden, a nie „per prawnik”.
     public static let threadStates: [ThreadUserState] = {
         var states: [ThreadUserState] = []
         for user in users {
-            let isPawel = user.id == UserID.pawel
             states.append(ThreadUserState(userID: user.id, threadID: olenaThread, readCursorSequence: 2))
-            // Dwie wiadomości Andriia: Paweł ma je za sobą, Tomasz nie.
-            states.append(
-                ThreadUserState(
-                    userID: user.id,
-                    threadID: andriiThread,
-                    readCursorSequence: isPawel ? 2 : 0
-                )
-            )
+            states.append(ThreadUserState(userID: user.id, threadID: andriiThread, readCursorSequence: 0))
             states.append(ThreadUserState(userID: user.id, threadID: mariaThread, readCursorSequence: 0))
             states.append(ThreadUserState(userID: user.id, threadID: dmytroThread, readCursorSequence: 3))
         }
@@ -465,7 +452,7 @@ public enum DemoFixtures {
     public static let replyProposal = ActionProposal(
         id: ActionID("action-reply-olena"),
         kind: .reply,
-        actorUserID: .tomasz,
+        actorUserID: .kancelaria,
         clientID: olenaID,
         caseID: caseOlenaID,
         threadID: olenaThread,
@@ -505,7 +492,7 @@ public enum DemoFixtures {
     public static let replyProposalRussian = ActionProposal(
         id: ActionID("action-reply-maria"),
         kind: .reply,
-        actorUserID: .tomasz,
+        actorUserID: .kancelaria,
         clientID: mariaID,
         caseID: nil,
         threadID: mariaThread,
@@ -545,22 +532,17 @@ public enum DemoFixtures {
         public var threads: [ConversationThread]
         public var messages: [Message]
         public var threadStates: [ThreadUserState]
-        public var currentUserID: UserID
 
-        /// Użytkownik, na którego patrzy demo.
+        /// Konto, na które patrzy demo — jedno wspólne konto kancelarii.
         ///
-        /// Kancelaria ma dwóch prawników, a `currentUserID` wskazuje, kto jest zalogowany.
-        /// Brak pasującego użytkownika oznacza błąd w danych przykładowych, a nie stan,
-        /// który interfejs miałby obsłużyć — dlatego kończymy głośno, zamiast po cichu
-        /// pokazywać losową osobę (np. pokazanie cudzych rozmów jako własnych).
+        /// Nie ma już wyboru „kto jest zalogowany”: brak konta oznacza błąd w danych
+        /// przykładowych, a nie stan do obsłużenia w interfejsie, dlatego kończymy
+        /// głośno, zamiast pokazywać przypadkową osobę.
         public var user: User {
-            if let match = users.first(where: { $0.id == currentUserID }) {
-                return match
+            guard let first = users.first else {
+                preconditionFailure("DemoFixtures: zestaw danych nie ma konta kancelarii")
             }
-            preconditionFailure(
-                "DemoFixtures: brak użytkownika o identyfikatorze \(currentUserID.rawValue) "
-                + "przy \(users.count) użytkownikach w zestawie danych"
-            )
+            return first
         }
 
         public init(
@@ -573,8 +555,7 @@ public enum DemoFixtures {
             activity: [ActivityEvent] = DemoFixtures.activity,
             threads: [ConversationThread] = DemoFixtures.threads,
             messages: [Message] = DemoFixtures.messages,
-            threadStates: [ThreadUserState] = DemoFixtures.threadStates,
-            currentUserID: UserID = UserID.tomasz
+            threadStates: [ThreadUserState] = DemoFixtures.threadStates
         ) {
             self.users = users
             self.clients = clients
@@ -586,7 +567,6 @@ public enum DemoFixtures {
             self.threads = threads
             self.messages = messages
             self.threadStates = threadStates
-            self.currentUserID = currentUserID
         }
     }
 
@@ -605,7 +585,7 @@ public enum DemoFixtures {
                     id: MessageID("msg-long-\(sequence)"),
                     threadID: olenaThread,
                     direction: isIncoming ? .incoming : .outgoing,
-                    authorID: isIncoming ? nil : .tomasz,
+                    authorID: isIncoming ? nil : .kancelaria,
                     authorLabel: isIncoming ? "Olena Kovalenko" : nil,
                     providerMessageID: "wamid.demo.long.\(sequence)",
                     text: isIncoming

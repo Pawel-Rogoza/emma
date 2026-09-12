@@ -3,13 +3,14 @@ import Foundation
 // MARK: - Zestawy danych demo (fixtures)
 //
 // Schemat `Emma-Demo` przekazuje `--fixture <nazwa>`. Ten plik nadaje temu
-// argumentowi realne znaczenie: wybiera dzień referencyjny, zalogowanego prawnika
-// i scenariusz mocka głosowego.
+// argumentowi realne znaczenie: wybiera dzień referencyjny i scenariusz mocka
+// głosowego. Konto jest jedno (wspólne dla kancelarii), więc zestawy nie różnią
+// się już „zalogowanym prawnikiem”.
 //
 // Dlaczego osobny katalog, a nie rozgałęzienia w widokach: zachowanie demo ma być
 // **powtarzalne i nazwane**. Zestaw danych opisany w jednym miejscu można wskazać
 // w schemacie, w testach interfejsu i w raporcie — i za każdym razem dostaje się
-// ten sam dzień, ten sam użytkownik i ta sama sekwencja zdarzeń głosu.
+// ten sam dzień i ta sama sekwencja zdarzeń głosu.
 //
 // Nieznana nazwa **nie jest po cichu ignorowana**: demo działa dalej na zestawie
 // domyślnym, ale zapisuje czytelne zgłoszenie, które pokazuje właścicielowi,
@@ -23,8 +24,6 @@ public struct DemoFixture: Sendable, Equatable {
     public let referenceDay: LocalDate
     public let referenceHour: Int
     public let referenceMinute: Int
-    /// Kto jest zalogowany w demo.
-    public let currentUserID: UserID
     /// Scenariusz mocka głosowego (`MockVoiceScenarios.allNames`).
     public let voiceScenarioName: String
     /// Jednozdaniowy opis: co ten zestaw pokazuje.
@@ -41,25 +40,22 @@ public enum DemoFixtureCatalog {
             referenceDay: LocalDate(year: 2026, month: 9, day: 11),
             referenceHour: 9,
             referenceMinute: 41,
-            currentUserID: .tomasz,
             voiceScenarioName: "standard-proposal-flow",
             summary: "Zwykły dzień kancelarii: propozycja Emmy, zgoda, wykonanie."
         ),
         DemoFixture(
-            name: "second-lawyer",
+            name: "mixed-languages",
             referenceDay: LocalDate(year: 2026, month: 9, day: 11),
             referenceHour: 9,
             referenceMinute: 41,
-            currentUserID: .pawel,
             voiceScenarioName: "mixed-languages",
-            summary: "Ten sam dzień oczami drugiego prawnika — inne liczniki nieprzeczytanych."
+            summary: "Dzień z rozmową prowadzoną w dwóch językach naraz."
         ),
         DemoFixture(
             name: "voice-reconnect",
             referenceDay: LocalDate(year: 2026, month: 9, day: 11),
             referenceHour: 9,
             referenceMinute: 41,
-            currentUserID: .tomasz,
             voiceScenarioName: "reconnect",
             summary: "Dzień ze zrywającym się połączeniem głosowym i zdarzeniami spóźnionymi."
         ),
@@ -68,7 +64,6 @@ public enum DemoFixtureCatalog {
             referenceDay: LocalDate(year: 2026, month: 9, day: 11),
             referenceHour: 9,
             referenceMinute: 41,
-            currentUserID: .tomasz,
             voiceScenarioName: "permission-denied",
             summary: "Odmowa dostępu do mikrofonu: interfejs działa dalej, tekst pozostaje dostępny."
         ),
@@ -77,7 +72,6 @@ public enum DemoFixtureCatalog {
             referenceDay: LocalDate(year: 2026, month: 9, day: 11),
             referenceHour: 9,
             referenceMinute: 41,
-            currentUserID: .tomasz,
             voiceScenarioName: "barge-in",
             summary: "Przerwanie wypowiedzi Emmy głosem i korekta propozycji."
         )

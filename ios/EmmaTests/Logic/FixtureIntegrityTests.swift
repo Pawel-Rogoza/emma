@@ -4,9 +4,9 @@ import XCTest
 // MARK: - Spójność danych przykładowych
 //
 // Powód istnienia tych testów: cały interfejs demo czyta `DemoFixtures`, a błąd
-// w danych (wiszące odwołanie, brak użytkownika wskazanego przez `currentUserID`)
-// objawia się dopiero w widoku — na przykład pustym ekranem albo cudzymi rozmowami
-// pokazanymi jako własne. Tutaj sprawdzamy to bez interfejsu.
+// w danych (wiszące odwołanie, autor notatki spoza kont) objawia się dopiero
+// w widoku — na przykład pustym ekranem albo rozmowami bez licznika. Tutaj
+// sprawdzamy to bez interfejsu.
 //
 // Testy wykonują się na Linuksie razem z resztą logiki (§12.2 planu).
 
@@ -14,23 +14,13 @@ final class FixtureIntegrityTests: XCTestCase {
 
     // MARK: Użytkownicy
 
-    func testCurrentUserExistsInUsers() {
+    /// Demo ma **jedno** wspólne konto kancelarii — podział na osoby zniknął
+    /// razem z właścicielem danych zadania (D-17).
+    func testDemoHasSingleSharedAccount() {
         let dataset = DemoFixtures.Dataset()
-        XCTAssertTrue(
-            dataset.users.contains { $0.id == dataset.currentUserID },
-            "currentUserID wskazuje użytkownika, którego nie ma w zestawie danych"
-        )
-        XCTAssertEqual(dataset.user.id, dataset.currentUserID)
-    }
-
-    func testDemoHasTwoLawyersWithDistinctIdentifiers() {
-        let dataset = DemoFixtures.Dataset()
-        XCTAssertGreaterThanOrEqual(dataset.users.count, 2, "Kancelaria w demo ma dwóch prawników")
-        XCTAssertEqual(
-            Set(dataset.users.map(\.id)).count,
-            dataset.users.count,
-            "Identyfikatory użytkowników muszą być unikalne"
-        )
+        XCTAssertEqual(dataset.users.count, 1, "Demo ma mieć jedno wspólne konto kancelarii")
+        XCTAssertEqual(dataset.users.first?.id, .kancelaria)
+        XCTAssertEqual(dataset.user.id, .kancelaria)
     }
 
     func testEveryUserHasInitialsAndLanguages() {
@@ -161,8 +151,8 @@ final class FixtureIntegrityTests: XCTestCase {
         }
     }
 
-    /// Stan odczytu musi istnieć dla obu prawników w każdym wątku — inaczej
-    /// jeden z nich zobaczyłby cudzy licznik nieprzeczytanych.
+    /// Stan odczytu musi istnieć dla konta w każdym wątku — inaczej licznik
+    /// nieprzeczytanych nie miałby z czego powstać.
     func testThreadStatesCoverEveryThreadForEveryUser() {
         let dataset = DemoFixtures.Dataset()
         for user in dataset.users {

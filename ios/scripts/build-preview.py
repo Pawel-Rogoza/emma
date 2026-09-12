@@ -269,7 +269,7 @@ class Renderer:
             <div class="home-head">
               <div>
                 <p class="kicker">{escaped(self.labels["kicker"])}</p>
-                <h1 class="welcome">Dzień dobry, {escaped(self.labels["owner"] + "u")}</h1>
+                <h1 class="welcome">Dzień dobry</h1>
               </div>
               <span class="avatar"></span>
             </div>
@@ -286,14 +286,13 @@ class Renderer:
     def screen_clients(self) -> str:
         rows = ""
         for client in self.data["clients"]:
-            owner = self.labels["unassigned"] if client.get("ownerID") is None else self.labels["owner"]
             rows += f'''
             <button class="person">
               <span class="avatar">{initials(client)}</span>
               <span class="person-info">
                 <b>{escaped(client["displayName"])}</b>
                 <span>{escaped(client["topic"])}</span>
-                <small>{escaped(client["language"].upper())} · {escaped(owner)}</small>
+                <small>{escaped(client["language"].upper())}</small>
               </span>
               <span class="chip">{escaped(client["stage"])}</span>
             </button>'''

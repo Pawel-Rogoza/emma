@@ -34,13 +34,8 @@ final class DemoFixtureCatalogTests: XCTestCase {
         }
     }
 
-    func testEveryFixtureReferencesKnownUserAndPlausibleTime() {
-        let userIDs = Set(DemoFixtures.users.map(\.id))
+    func testEveryFixtureHasPlausibleTime() {
         for fixture in DemoFixtureCatalog.all {
-            XCTAssertTrue(
-                userIDs.contains(fixture.currentUserID),
-                "Zestaw \(fixture.name) wskazuje nieistniejącego użytkownika"
-            )
             XCTAssertTrue((0...23).contains(fixture.referenceHour))
             XCTAssertTrue((0...59).contains(fixture.referenceMinute))
         }
@@ -90,28 +85,16 @@ final class DemoFixtureCatalogTests: XCTestCase {
         }
     }
 
-    /// Dwa zestawy z różnymi użytkownikami muszą faktycznie dawać różne liczniki
-    /// nieprzeczytanych — inaczej „drugi prawnik” niczego nie pokazuje.
-    func testSecondLawyerFixtureHasDifferentUnreadState() async throws {
+    /// Demo ma jedno wspólne konto kancelarii, więc licznik nieprzeczytanych jest
+    /// jeden: Andrii (2) + Maria (1). Wcześniej ten test porównywał dwóch prawników
+    /// — razem z podziałem na osoby zniknęło to porównanie (D-17).
+    func testSharedAccountHasSingleUnreadTotal() async throws {
         let repository = MockRepository(
-            dataset: {
-                var dataset = DemoFixtures.dataset()
-                dataset.currentUserID = .pawel
-                return dataset
-            }(),
+            dataset: DemoFixtures.dataset(),
             clock: DemoClock(),
             artificialLatency: 0
         )
-        // Tomasz nie odpowiedział jeszcze Andriiowi ani Marii (2 + 1),
-        // Paweł ma Andriia za sobą, więc zostaje tylko Maria (1).
-        let tomasz = try await repository.unreadTotal(userID: .tomasz)
-        let pawel = try await repository.unreadTotal(userID: .pawel)
-        XCTAssertEqual(tomasz, 3)
-        XCTAssertEqual(pawel, 1)
-        XCTAssertNotEqual(
-            tomasz,
-            pawel,
-            "Liczniki nieprzeczytanych obu prawników nie mogą być identyczne w demo"
-        )
+        let total = try await repository.unreadTotal(userID: .kancelaria)
+        XCTAssertEqual(total, 3, "Andrii 2 + Maria 1, reszta przeczytana")
     }
 }

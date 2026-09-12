@@ -64,7 +64,8 @@ public actor MockRepository:
     // MARK: - Użytkownicy
 
     public func currentUser() async throws -> User {
-        dataset.users.first { $0.id == dataset.currentUserID } ?? DemoFixtures.tomasz
+        // Jedno wspólne konto kancelarii — nie ma już wyboru zalogowanej osoby.
+        dataset.user
     }
 
     public func updatePreferences(_ user: User) async throws -> User {
@@ -461,7 +462,7 @@ public actor MockRepository:
                 clientID: clientID,
                 caseID: caseID,
                 createdAt: clock.today(),
-                authorID: dataset.currentUserID
+                authorID: dataset.user.id
             ),
             at: 0
         )

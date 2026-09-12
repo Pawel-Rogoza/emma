@@ -9,15 +9,6 @@ import Foundation
 
 public enum EmmaBriefing {
 
-    public static func vocative(_ name: String) -> String {
-        guard let first = name.split(separator: " ").first.map(String.init) else { return name }
-        switch first {
-        case "Tomasz": return "Tomaszu"
-        case "Paweł": return "Pawle"
-        default: return first
-        }
-    }
-
     public static func briefing(
         events: [ScheduledEvent],
         tasks: [TaskItem],

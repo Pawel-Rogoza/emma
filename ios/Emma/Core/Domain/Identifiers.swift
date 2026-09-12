@@ -6,16 +6,17 @@ import Foundation
 // użytkownika na 0/1, a nazwiska na klucz rekordu. Typy opakowujące zapobiegają
 // pomyleniu identyfikatora klienta z identyfikatorem sprawy w sygnaturach API.
 
-/// Identyfikator użytkownika (adwokata). W demo: `user-tomasz`, `user-pawel`.
+/// Identyfikator użytkownika. W demo: `user-kancelaria` — jedno wspólne konto
+/// zespołu. Konto nadal jest potrzebne (sesja, stan odczytu, preferencje), ale
+/// **nie opisuje własności danych**: sprawy i zadania należą do kancelarii,
+/// a nie do osoby (decyzja właściciela, `DESIGN_DEVIATIONS.md` D-17).
 public struct UserID: Hashable, Codable, Sendable, RawRepresentable, CustomStringConvertible {
     public let rawValue: String
     public init(rawValue: String) { self.rawValue = rawValue }
     public init(_ rawValue: String) { self.rawValue = rawValue }
     public var description: String { rawValue }
 
-    public static let tomasz = UserID("user-tomasz")
-    public static let pawel = UserID("user-pawel")
-    public static let both: [UserID] = [.tomasz, .pawel]
+    public static let kancelaria = UserID("user-kancelaria")
 }
 
 public struct ClientID: Hashable, Codable, Sendable, RawRepresentable, CustomStringConvertible {

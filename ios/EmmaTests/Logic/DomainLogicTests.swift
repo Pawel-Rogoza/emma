@@ -81,7 +81,7 @@ final class ReadStateTests: XCTestCase {
 
     private func state(cursor: Int, manualUnread: Bool = false) -> ThreadUserState {
         ThreadUserState(
-            userID: .tomasz,
+            userID: .kancelaria,
             threadID: DemoFixtures.andriiThread,
             readCursorSequence: cursor,
             manualUnread: manualUnread
@@ -138,48 +138,48 @@ final class ReadStateTests: XCTestCase {
         XCTAssertEqual(first, MessageID("msg-andrii-1"))
     }
 
-    func testCursorsOfTwoLawyersAreIndependent() {
+    func testReadingThreadMovesOnlyItsOwnCursor() {
         var states = DemoFixtures.threadStates
-        // Punkt odniesienia bierzemy z danych, a nie z założenia, że obaj prawnicy
-        // mają identyczny stan — w demo mają różny (Paweł ma Andriia za sobą).
-        let pawelBefore = states
-            .first { $0.userID == .pawel && $0.threadID == DemoFixtures.andriiThread }?
+        // Konto jest jedno, ale kursor jest osobny dla każdego wątku — odczyt
+        // Andriia nie może zaznaczyć wiadomości w wątku Marii.
+        let andriiBefore = states
+            .first { $0.userID == .kancelaria && $0.threadID == DemoFixtures.andriiThread }?
             .readCursorSequence
-        let tomaszBefore = states
-            .first { $0.userID == .tomasz && $0.threadID == DemoFixtures.andriiThread }?
+        let mariaBefore = states
+            .first { $0.userID == .kancelaria && $0.threadID == DemoFixtures.mariaThread }?
             .readCursorSequence
 
         states = ReadStatePolicy.markRead(
             states: states,
-            userID: .tomasz,
+            userID: .kancelaria,
             threadID: DemoFixtures.andriiThread,
             snapshotSequence: 2
         )
 
-        let tomaszAfter = states
-            .first { $0.userID == .tomasz && $0.threadID == DemoFixtures.andriiThread }?
+        let andriiAfter = states
+            .first { $0.userID == .kancelaria && $0.threadID == DemoFixtures.andriiThread }?
             .readCursorSequence
-        let pawelAfter = states
-            .first { $0.userID == .pawel && $0.threadID == DemoFixtures.andriiThread }?
+        let mariaAfter = states
+            .first { $0.userID == .kancelaria && $0.threadID == DemoFixtures.mariaThread }?
             .readCursorSequence
 
-        XCTAssertEqual(tomaszAfter, 2)
-        XCTAssertNotEqual(tomaszBefore, tomaszAfter, "Odczyt Tomasza musi przesunąć jego kursor")
-        XCTAssertEqual(pawelAfter, pawelBefore, "Odczyt Tomasza nie zaznacza wiadomości Pawłowi")
+        XCTAssertEqual(andriiAfter, 2)
+        XCTAssertNotEqual(andriiBefore, andriiAfter, "Odczyt musi przesunąć kursor tego wątku")
+        XCTAssertEqual(mariaAfter, mariaBefore, "Odczyt Andriia nie zaznacza wiadomości Marii")
     }
 
     func testOpeningThreadClearsManualUnreadFlag() {
         var states = DemoFixtures.threadStates
-        if let index = states.firstIndex(where: { $0.userID == .tomasz && $0.threadID == DemoFixtures.mariaThread }) {
+        if let index = states.firstIndex(where: { $0.userID == .kancelaria && $0.threadID == DemoFixtures.mariaThread }) {
             states[index].manualUnread = true
         }
         states = ReadStatePolicy.markRead(
             states: states,
-            userID: .tomasz,
+            userID: .kancelaria,
             threadID: DemoFixtures.mariaThread,
             snapshotSequence: 1
         )
-        let state = states.first { $0.userID == .tomasz && $0.threadID == DemoFixtures.mariaThread }
+        let state = states.first { $0.userID == .kancelaria && $0.threadID == DemoFixtures.mariaThread }
         XCTAssertEqual(state?.manualUnread, false)
         XCTAssertEqual(state?.readCursorSequence, 1)
     }
@@ -231,12 +231,12 @@ final class MessageOrderingTests: XCTestCase {
     func testConversationSortPinsFirstThenLatestActivity() {
         let newer = MessageOrdering.conversationSortKey(
             lastMessage: DemoFixtures.messages[1],
-            state: ThreadUserState(userID: .tomasz, threadID: DemoFixtures.olenaThread),
+            state: ThreadUserState(userID: .kancelaria, threadID: DemoFixtures.olenaThread),
             threadID: DemoFixtures.olenaThread
         )
         let pinnedOld = MessageOrdering.conversationSortKey(
             lastMessage: DemoFixtures.messages[0],
-            state: ThreadUserState(userID: .tomasz, threadID: DemoFixtures.andriiThread, isPinned: true),
+            state: ThreadUserState(userID: .kancelaria, threadID: DemoFixtures.andriiThread, isPinned: true),
             threadID: DemoFixtures.andriiThread
         )
         XCTAssertTrue(pinnedOld < newer, "Przypięty wątek jest wyżej mimo starszej wiadomości")
@@ -245,12 +245,12 @@ final class MessageOrderingTests: XCTestCase {
     func testConversationSortIsDeterministicWithoutMessages() {
         let a = MessageOrdering.conversationSortKey(
             lastMessage: nil,
-            state: ThreadUserState(userID: .tomasz, threadID: DemoFixtures.mariaThread),
+            state: ThreadUserState(userID: .kancelaria, threadID: DemoFixtures.mariaThread),
             threadID: DemoFixtures.mariaThread
         )
         let b = MessageOrdering.conversationSortKey(
             lastMessage: nil,
-            state: ThreadUserState(userID: .tomasz, threadID: DemoFixtures.olenaThread),
+            state: ThreadUserState(userID: .kancelaria, threadID: DemoFixtures.olenaThread),
             threadID: DemoFixtures.olenaThread
         )
         XCTAssertNotEqual(a, b)

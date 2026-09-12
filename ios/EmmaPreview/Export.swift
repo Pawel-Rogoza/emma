@@ -66,7 +66,6 @@ struct EmmaPreviewExport {
     }
 
     struct TodaySummary: Encodable {
-        var greetingName: String
         var userInitials: String
         var briefing: String
         var leadCount: Int
@@ -80,8 +79,7 @@ struct EmmaPreviewExport {
 
     static func main() async throws {
         let fixture = DemoFixtureCatalog.defaultFixture
-        var dataset = DemoFixtures.dataset()
-        dataset.currentUserID = fixture.currentUserID
+        let dataset = DemoFixtures.dataset()
 
         let clock = DemoClock(
             referenceDate: fixture.referenceDay,
@@ -168,7 +166,6 @@ struct EmmaPreviewExport {
                 "eventTimes": events.map { formatter.timeAndDuration($0.time, minutes: $0.durationMinutes) }.joined(separator: " · ")
             ],
             todaySummary: TodaySummary(
-                greetingName: user.displayName,
                 userInitials: user.initials,
                 briefing: EmmaBriefing.briefing(
                     events: todayEvents,

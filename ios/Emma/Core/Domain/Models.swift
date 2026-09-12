@@ -25,15 +25,6 @@ public struct User: Identifiable, Hashable, Codable, Sendable {
         self.interfaceLanguage = interfaceLanguage
         self.assistantLanguage = assistantLanguage
     }
-
-    /// Imię w wołaczu użyte w powitaniu („Dzień dobry, Tomaszu”).
-    public var greetingName: String {
-        switch id {
-        case .tomasz: return "Tomaszu"
-        case .pawel: return "Pawle"
-        default: return displayName
-        }
-    }
 }
 
 // MARK: - Klient

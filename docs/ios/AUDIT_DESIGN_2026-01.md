@@ -166,41 +166,6 @@ w `AssignOwnerSheet`), dodać `SearchField` (istnieje) w wyborach kontrahenta/ko
   i brak tłumaczeń.
 - Rejestr odstępstw: nowe pozycje D-14 (tłumaczenia) i D-15 (ekran główny).
 
----
-
-## 9. Druga iteracja — poprawki z przeglądu aplikacji na urządzeniu
-
-Po uruchomieniu aplikacji na symulatorze właściciel zgłosił cztery rzeczy.
-Trzy pierwsze są wdrożone; czwarta to refaktor architektury w toku.
-
-### Z-4 · Znak zatrzymania nasłuchu — **zrobione**
-
-Przycisk kończący słuchanie w trybie głosowym Emmy pokazywał „checkmark”, który
-sugeruje zatwierdzenie, a naprawdę wycisza mikrofon. Teraz to wyraźny `stop.fill`
-z etykietą „Zatrzymaj nasłuch” i wartością stanu dla VoiceOver.
-
-### Z-5 · Pole wiadomości w rozmowie — **zrobione**
-
-`TextEditor` z minimalną wysokością 40 pt wyglądał jak pusty, wysoki prostokąt.
-Zastąpiony polem jednoliniowym, które rośnie razem z treścią (1–6 linii).
-
-### Z-6 · „Dzisiaj” z dzisiejszym terminarzem — **zrobione**
-
-Ekran był tylko wejściem do Emmy i faktycznie nic nie wnosił. Teraz pokazuje
-powitanie, zwięzły wiersz „Zapytaj Emmę o dzień” (orb + start rozmowy głosowej),
-sekcję **„Dziś w kalendarzu”** z dzisiejszymi terminami i **„Zadania na dziś”**
-z odhaczaniem oraz łączem do pełnej listy. Bez statystyk i sekcji o sprawach.
-
-### Z-7 · Koniec podziału na użytkowników + logowanie i Face ID — **w toku**
-
-Zespół ma te same zadania i sprawy, więc podział na Tomasza i Pawła był fikcją —
-podobnie jak przypisywanie opiekuna. Usuwane są `ownerID`, `OwnerName`,
-`assignOwner`, `switchUser` i arkusz opiekuna; wszystko należy do kancelarii.
-Zamiast tego dochodzą dwa ekrany dostępu: logowanie demo (raz na urządzenie)
-i odblokowanie Face ID / hasłem urządzenia przy każdym wejściu. Szczegóły decyzji
-i cofnięcia: `DESIGN_DEVIATIONS.md` D-16 i D-17.
-
----
 
 ## 8. Uwagi z komentarzy do podglądu (do doprecyzowania)
 
@@ -228,3 +193,45 @@ pod adresem `emma-kancelaria-ios.pawrogozas.chatgpt.site`, czy (c) inny podgląd
 Jeśli (a) — podeślij proszę zrzut ekranu lub nazwę ekranu, wtedy poprawię
 konkretny komponent.
 
+---
+
+## 9. Druga iteracja — poprawki z przeglądu aplikacji na urządzeniu
+
+Po uruchomieniu aplikacji na symulatorze właściciel zgłosił cztery rzeczy.
+Wszystkie cztery są wdrożone i zweryfikowane na symulatorze.
+
+### Z-4 · Znak zatrzymania nasłuchu — **zrobione**
+
+Przycisk kończący słuchanie w trybie głosowym Emmy pokazywał „checkmark”, który
+sugeruje zatwierdzenie, a naprawdę wycisza mikrofon. Teraz to wyraźny `stop.fill`
+z etykietą „Zatrzymaj nasłuch” i wartością stanu dla VoiceOver.
+
+### Z-5 · Pole wiadomości w rozmowie — **zrobione**
+
+`TextEditor` z minimalną wysokością 40 pt wyglądał jak pusty, wysoki prostokąt.
+Zastąpiony polem jednoliniowym, które rośnie razem z treścią (1–6 linii).
+
+### Z-6 · „Dzisiaj” z dzisiejszym terminarzem — **zrobione**
+
+Ekran był tylko wejściem do Emmy i faktycznie nic nie wnosił. Teraz pokazuje
+powitanie, zwięzły wiersz „Zapytaj Emmę o dzień” (orb + start rozmowy głosowej),
+sekcję **„Dziś w kalendarzu”** z dzisiejszymi terminami i **„Zadania na dziś”**
+z odhaczaniem oraz łączem do pełnej listy. Bez statystyk i sekcji o sprawach.
+
+### Z-7 · Koniec podziału na użytkowników + logowanie i Face ID — **zrobione**
+
+Zespół ma te same zadania i sprawy, więc podział na Tomasza i Pawła był fikcją —
+podobnie jak przypisywanie opiekuna. Usunięte zostały `ownerID`, `OwnerName`,
+`assignOwner`, `switchUser` i arkusz opiekuna, a dane demo mają **jedno wspólne
+konto kancelarii** (`user-kancelaria`, inicjały „KR”) zamiast dwóch prawników.
+Wszystko należy do kancelarii, a powitanie to po prostu „Dzień dobry”.
+
+Zamiast podziału dochodzą dwa ekrany dostępu: logowanie demo (raz na urządzenie)
+i odblokowanie Face ID / hasłem urządzenia przy każdym wejściu. Szczegóły decyzji
+i cofnięcia: `DESIGN_DEVIATIONS.md` D-16 i D-17.
+
+**Weryfikacja:** `swift test` 173/0; `xcodebuild test` 196/0 (w tym 11 XCUITest
+i 12 nowych testów logiki dostępu); build `Emma-Demo` SUCCEEDED; aplikacja
+zainstalowana i uruchomiona na iPhone 17 Pro (iOS 26.5).
+
+---

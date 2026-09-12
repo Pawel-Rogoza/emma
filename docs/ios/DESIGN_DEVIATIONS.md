@@ -201,23 +201,26 @@ pomocniczym. Preview (`build-preview.py`) i pomiar renderu zaktualizowane.
 
 ### D-15 · Ekran główny to Emma, nie kokpit — **decyzja właściciela**
 
-**Treść:** zakładka „Dzisiaj” nie odtwarza `home()` z referencji (powitanie,
-karta Emmy z briefingiem, statystyki, najbliższa konsultacja, zadania, sprawy).
-Zamiast tego: nagłówek z datą i powitaniem, duży orb Emmy z animacją obecności
-(`breathing`), krótka podpowiedź i dwa wejścia do rozmowy (głos / tekst),
-plus dyskretne łącze „Zadania na dziś”.
+**Treść:** zakładka „Dzisiaj” nie odtwarza `home()` z referencji (karta Emmy
+z briefingiem, statystyki, najbliższa konsultacja, sekcje o sprawach). Zamiast
+tego: nagłówek z datą i powitaniem, **zwięzły wiersz „Zapytaj Emmę o dzień”**
+(orb `.card` + mikrofon, start rozmowy głosowej), sekcja **„Dziś w kalendarzu”**
+z dzisiejszymi terminami oraz **„Zadania na dziś”** z odhaczaniem i łączem do
+pełnej listy zadań.
 
-**Powód:** polecenie właściciela: domyślny ekran ma być pusty wizualnie i
-skoncentrowany na rozmowie z Emmą, a nie na podsumowaniu dnia.
+**Powód:** polecenie właściciela: ekran główny nie ma być podsumowaniem
+z statystykami, a Emma ma być na nim obecna. W drugiej iteracji właściciel
+dodał, że „Dzisiaj” ma pokazywać **dzisiejsze zadania z terminarza**, a nie
+tylko przekierowywać do Emmy — stąd agenda dnia zamiast samego orba.
 
-**Wpływ:** statystyki i sprawy dostępne są wyłącznie na swoich zakładkach
-(„Klienci”, „Kalendarz”); briefing dnia jest dalej dostępny na ekranie Emmy
-(„Opowiedz mi o dzisiejszym dniu”). `TasksScreen` nie ma własnej zakładki,
-więc łącze „Zadania na dziś” jest jego jedynym wejściem (rozszerzenie stosu
-nawigacji zakładki „Dzisiaj”). Ekran nie ładuje repozytorium — brak stanu
-„Wczytuję…” na starcie.
+**Wpływ:** statystyki i sekcje o sprawach zniknęły z ekranu głównego
+(„Klienci” i „Kalendarz” mają je u siebie). Briefing dnia jest dalej dostępny
+na ekranie Emmy („Opowiedz mi o dzisiejszym dniu”). `TasksScreen` nie ma własnej
+zakładki, więc łącze „Wszystkie zadania” jest jego wejściem (rozszerzenie stosu
+nawigacji zakładki „Dzisiaj”). Ekran ładuje terminy i zadania, ale bez migotania:
+stan ładowania pokazuje się tylko przy pierwszym wczytaniu.
 
-**Cofnięcie:** przywrócenie `TodayStore` i sekcji z historii gita.
+**Cofnięcie:** przywrócenie poprzedniej wersji `TodayScreen` z historii gita.
 
 ### D-16 · Logowanie demo i blokada Face ID — **decyzja właściciela**
 
@@ -246,12 +249,21 @@ przeżywa restart, ale sam dostęp nadal wymaga odblokowania.
 oraz nazwiska „Tomasz”/„Paweł” w zadaniach, terminach, sprawach i briefingu.
 Repozytorium demo nie przypisuje już nikogo do niczego.
 
+Dodatkowo **dane demo mają jedno wspólne konto kancelarii** zamiast dwóch
+prawników: `UserID.kancelaria` (`user-kancelaria`), nazwa „Kancelaria Rogoża”,
+inicjały „KR”. Zniknęły: stałe `DemoFixtures.tomasz`/`.pawel`, wybór zalogowanego
+w `Dataset.currentUserID`, zestaw `second-lawyer` (zastąpiony przez
+`mixed-languages`) oraz odmiana imienia w powitaniu (`EmmaBriefing.vocative`,
+`User.greetingName`). Powitanie to teraz po prostu „Dzień dobry”.
+
 **Powód:** polecenie właściciela: zespół ma te same zadania i te same sprawy, więc
 dzielenie pracy per osoba jest fikcją — wszystko należy do kancelarii.
 
 **Wpływ:** aplikacja ma jedno wspólne konto (patrz D-16). Zadania i terminy pokazują
 klienta i status, bez prowadzącego. Profil nie ma przełącznika użytkownika.
-`UserID`/`User` zostają — nadal opisują sesję, nie własność danych.
+Stan odczytu wiadomości nadal jest przypisany do konta (`ThreadUserState.userID`) —
+to warunek działania liczników nieprzeczytanych, ale licznik jest jeden. `UserID`
+i `User` zostają wyłącznie jako opis sesji, nie własności danych.
 
 **Cofnięcie:** przywrócenie pól i arkusza z historii gita; dane demo trzeba by
 wtedy z powrotem przypisać do osób.

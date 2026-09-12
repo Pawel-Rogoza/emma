@@ -10,8 +10,8 @@ Bramki, które wcześniej były „niewykonane z braku macOS”, są **wykonane*
 | Bramka | Stan | Dowód |
 | --- | --- | --- |
 | Kompilacja projektu Xcode (scheme `Emma-Demo`) | **wykonana** | `** BUILD SUCCEEDED **` |
-| Testy logiki domenowej i głosu (`swift test`) | **wykonane** | `Executed 174 tests, with 0 failures` |
-| Testy jednostkowe w Xcode | **wykonane** | `Executed 186 tests, with 0 failures` (w tym 12 dla logowania i Face ID) |
+| Testy logiki domenowej i głosu (`swift test`) | **wykonane** | `Executed 173 tests, with 0 failures` |
+| Testy jednostkowe w Xcode | **wykonane** | `Executed 185 tests, with 0 failures` (w tym 12 dla logowania i Face ID) |
 | Testy interfejsu (XCUITest) | **wykonane** | `Executed 11 tests, with 0 failures` — 10 scenariuszy przepływu + bramka logowania |
 | Uruchomienie na symulatorze | **wykonane** | iPhone 17 Pro (iOS 26.5), `simctl install` + `launch` potwierdzone PID-em |
 | Zrzuty ekranu porównane z referencją | **niewykonane** | zrzuty są zbierane (`ScreenshotCaptureUITests`), ale **nie zostały obejrzane** przez autora zmian |

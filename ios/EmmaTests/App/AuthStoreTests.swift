@@ -56,7 +56,7 @@ final class AuthStoreTests: XCTestCase {
 
     func testSignInRejectsMalformedEmail() {
         let store = makeStore()
-        XCTAssertFalse(store.signIn(email: "pawel", password: "emma"))
+        XCTAssertFalse(store.signIn(email: "kancelaria", password: "emma"))
         XCTAssertEqual(store.state, .signedOut)
         XCTAssertFalse(defaults.bool(forKey: signedInKey))
         XCTAssertNotNil(store.notice)
@@ -64,13 +64,13 @@ final class AuthStoreTests: XCTestCase {
 
     func testSignInRejectsShortPassword() {
         let store = makeStore()
-        XCTAssertFalse(store.signIn(email: "pawel@kancelaria.pl", password: "emm"))
+        XCTAssertFalse(store.signIn(email: "kancelaria@emma.pl", password: "emm"))
         XCTAssertEqual(store.state, .signedOut)
     }
 
     func testSignInUnlocksAndRemembersSession() {
         let store = makeStore()
-        XCTAssertTrue(store.signIn(email: "  pawel@kancelaria.pl ", password: "emma"))
+        XCTAssertTrue(store.signIn(email: "  kancelaria@emma.pl ", password: "emma"))
         XCTAssertEqual(store.state, .unlocked)
         XCTAssertNil(store.notice)
         XCTAssertTrue(defaults.bool(forKey: signedInKey))
@@ -80,7 +80,7 @@ final class AuthStoreTests: XCTestCase {
 
     func testLockMovesUnlockedSessionToLocked() {
         let store = makeStore()
-        store.signIn(email: "pawel@kancelaria.pl", password: "emma")
+        store.signIn(email: "kancelaria@emma.pl", password: "emma")
         store.lock()
         XCTAssertEqual(store.state, .locked)
     }
@@ -93,7 +93,7 @@ final class AuthStoreTests: XCTestCase {
 
     func testSignOutClearsRememberedSession() {
         let store = makeStore()
-        store.signIn(email: "pawel@kancelaria.pl", password: "emma")
+        store.signIn(email: "kancelaria@emma.pl", password: "emma")
         store.signOut()
         XCTAssertEqual(store.state, .signedOut)
         XCTAssertFalse(defaults.bool(forKey: signedInKey))

@@ -18,7 +18,7 @@ final class ActionEngineTests: XCTestCase {
         PrepareActionRequest(
             actionID: ActionID(id),
             kind: kind,
-            actorUserID: .tomasz,
+            actorUserID: .kancelaria,
             clientID: clientID,
             caseID: DemoFixtures.caseOlenaID,
             threadID: DemoFixtures.olenaThread,
@@ -1076,7 +1076,7 @@ final class VoiceSessionCoordinatorTests: XCTestCase {
             caseID: DemoFixtures.caseOlenaID,
             threadID: DemoFixtures.olenaThread,
             text: "Treść szkicu",
-            actor: DemoFixtures.tomasz,
+            actor: DemoFixtures.kancelaria,
             presentationID: "presentation-1"
         )
         XCTAssertNotNil(proposal)
@@ -1107,7 +1107,7 @@ final class VoiceSessionCoordinatorTests: XCTestCase {
             caseID: DemoFixtures.caseOlenaID,
             threadID: DemoFixtures.olenaThread,
             text: "Treść",
-            actor: DemoFixtures.tomasz,
+            actor: DemoFixtures.kancelaria,
             presentationID: "presentation-1"
         )
         await coordinator.handleUserLoggedOut()
@@ -1126,7 +1126,7 @@ final class VoiceSessionCoordinatorTests: XCTestCase {
             caseID: DemoFixtures.caseOlenaID,
             threadID: DemoFixtures.olenaThread,
             text: "Treść",
-            actor: DemoFixtures.tomasz,
+            actor: DemoFixtures.kancelaria,
             presentationID: "presentation-1"
         )
         await coordinator.handleMicrophonePermissionRevoked()
@@ -1139,7 +1139,7 @@ final class VoiceSessionCoordinatorTests: XCTestCase {
             actionID: proposal!.id,
             presentationID: proposal!.presentationID,
             origin: .authenticatedVoiceTurn,
-            actor: DemoFixtures.tomasz
+            actor: DemoFixtures.kancelaria
         )
         XCTAssertNil(viaVoice)
         // Przycisk w UI nadal działa.
@@ -1147,7 +1147,7 @@ final class VoiceSessionCoordinatorTests: XCTestCase {
             actionID: proposal!.id,
             presentationID: proposal!.presentationID,
             origin: .directUIButton,
-            actor: DemoFixtures.tomasz
+            actor: DemoFixtures.kancelaria
         )
         XCTAssertEqual(viaButton?.state, .queued)
     }
@@ -1177,7 +1177,7 @@ final class VoiceSessionCoordinatorTests: XCTestCase {
             caseID: DemoFixtures.caseOlenaID,
             threadID: DemoFixtures.olenaThread,
             text: "Wiadomość przez voice",
-            actor: DemoFixtures.tomasz,
+            actor: DemoFixtures.kancelaria,
             presentationID: "presentation-1"
         )
         guard let proposal else { return XCTFail("brak propozycji") }
@@ -1187,7 +1187,7 @@ final class VoiceSessionCoordinatorTests: XCTestCase {
             actionID: proposal.id,
             presentationID: proposal.presentationID,
             origin: .directUIButton,
-            actor: DemoFixtures.tomasz
+            actor: DemoFixtures.kancelaria
         )
         XCTAssertEqual(execution?.state, .queued)
         // Powtórne potwierdzenie (np. głosem) nie tworzy drugiego wykonania:
@@ -1196,7 +1196,7 @@ final class VoiceSessionCoordinatorTests: XCTestCase {
             actionID: proposal.id,
             presentationID: proposal.presentationID,
             origin: .authenticatedVoiceTurn,
-            actor: DemoFixtures.tomasz
+            actor: DemoFixtures.kancelaria
         )
         XCTAssertEqual(second?.outboxID, execution?.outboxID)
         let status = try await repository.status(actionID: proposal.id)
@@ -1214,7 +1214,7 @@ final class VoiceSessionCoordinatorTests: XCTestCase {
             caseID: DemoFixtures.caseOlenaID,
             threadID: DemoFixtures.olenaThread,
             text: "Treść pierwsza",
-            actor: DemoFixtures.tomasz,
+            actor: DemoFixtures.kancelaria,
             presentationID: "presentation-1"
         )
         guard let proposal else { return XCTFail("brak propozycji") }
@@ -1228,7 +1228,7 @@ final class VoiceSessionCoordinatorTests: XCTestCase {
             actionID: proposal.id,
             presentationID: proposal.presentationID,
             origin: .directUIButton,
-            actor: DemoFixtures.tomasz
+            actor: DemoFixtures.kancelaria
         )
         XCTAssertNil(stale)
     }
@@ -1378,7 +1378,7 @@ final class MockRepositoryTests: XCTestCase {
         let draft = OutgoingMessageDraft(
             threadID: DemoFixtures.olenaThread,
             text: "Дякую, до зустрічі о 10:30.",
-            authorID: .tomasz,
+            authorID: .kancelaria,
             language: .uk,
             sentAt: Date(timeIntervalSince1970: 1_789_100_000),
             idempotencyKey: "key-1"
@@ -1447,18 +1447,19 @@ final class MockRepositoryTests: XCTestCase {
         XCTAssertEqual(older.last?.sequence, 50)
     }
 
-    func testReadStateIsPerUserAndOnlyMovesForward() async throws {
+    func testReadStateOnlyMovesForward() async throws {
         let repository = makeRepository()
-        // Kursor Pawła czytamy z **tego samego** repozytorium, przed operacją Tomasza:
-        // tylko wtedy porównanie „przed/po” cokolwiek dowodzi.
-        let pawelCursorBefore = try await repository.readStates(userID: .pawel)
-            .first { $0.threadID == DemoFixtures.andriiThread }?
-            .readCursorSequence
-
-        var states = try await repository.readStates(userID: .tomasz)
+        var states = try await repository.readStates(userID: .kancelaria)
         guard let state = states.first(where: { $0.threadID == DemoFixtures.andriiThread }) else {
             return XCTFail("brak stanu wątku")
         }
+
+        // Konto jest jedno, więc „niezależność” dotyczy wątków, nie osób:
+        // odczyt Andriia nie może ruszyć kursora wątku Oleny.
+        let otherThreadBefore = states
+            .first { $0.threadID == DemoFixtures.olenaThread }?
+            .readCursorSequence
+
         var opened = state
         opened.readCursorSequence = ReadStatePolicy.cursorAfterOpeningThread(
             current: state.readCursorSequence,
@@ -1471,30 +1472,26 @@ final class MockRepositoryTests: XCTestCase {
         backwards.readCursorSequence = 0
         _ = try await repository.saveReadState(backwards)
 
-        states = try await repository.readStates(userID: .tomasz)
-        let tomasz = states.first { $0.threadID == DemoFixtures.andriiThread }
-        XCTAssertEqual(tomasz?.readCursorSequence, 2)
-
-        // Kursor drugiego prawnika pozostaje nietknięty. Porównujemy stan sprzed
-        // operacji ze stanem po niej — obaj prawnicy mają w demo różne kursory,
-        // więc porównywanie z wartością Tomasza nie mówiłoby nic o niezależności.
-        let pawelStates = try await repository.readStates(userID: .pawel)
-        let pawelCursor = pawelStates.first { $0.threadID == DemoFixtures.andriiThread }?.readCursorSequence
+        states = try await repository.readStates(userID: .kancelaria)
         XCTAssertEqual(
-            pawelCursor,
-            pawelCursorBefore,
-            "Odczyt Tomasza nie może zmienić kursora Pawła"
+            states.first { $0.threadID == DemoFixtures.andriiThread }?.readCursorSequence,
+            2
+        )
+        XCTAssertEqual(
+            states.first { $0.threadID == DemoFixtures.olenaThread }?.readCursorSequence,
+            otherThreadBefore,
+            "Odczyt jednego wątku nie może zmienić kursora innego"
         )
     }
 
     func testUnreadCountFromRepositoryMatchesPolicy() async throws {
         let repository = makeRepository()
-        let states = try await repository.readStates(userID: .tomasz)
+        let states = try await repository.readStates(userID: .kancelaria)
         var total = 0
         for thread in try await repository.threads() {
             let messages = try await repository.latestMessages(threadID: thread.id, limit: 100)
             let state = states.first { $0.threadID == thread.id }
-                ?? ThreadUserState(userID: .tomasz, threadID: thread.id)
+                ?? ThreadUserState(userID: .kancelaria, threadID: thread.id)
             total += ReadStatePolicy.unreadCount(in: messages, state: state)
         }
         XCTAssertEqual(total, 3, "Andrii 2 + Maria 1, reszta przeczytana")
@@ -1513,7 +1510,7 @@ final class MockRepositoryTests: XCTestCase {
             )
         )
         try await repository.saveDraft(draft)
-        var states = try await repository.readStates(userID: .tomasz)
+        var states = try await repository.readStates(userID: .kancelaria)
         XCTAssertEqual(states.first { $0.threadID == DemoFixtures.olenaThread }?.draft?.text, "Szkic odpowiedzi")
         XCTAssertEqual(
             states.first { $0.threadID == DemoFixtures.olenaThread }?.draft?.quote?.authorLabel,
@@ -1524,13 +1521,13 @@ final class MockRepositoryTests: XCTestCase {
             OutgoingMessageDraft(
                 threadID: DemoFixtures.olenaThread,
                 text: "Szkic odpowiedzi",
-                authorID: .tomasz,
+                authorID: .kancelaria,
                 language: .uk,
                 sentAt: Date(),
                 idempotencyKey: "key-draft"
             )
         )
-        states = try await repository.readStates(userID: .tomasz)
+        states = try await repository.readStates(userID: .kancelaria)
         XCTAssertNil(states.first { $0.threadID == DemoFixtures.olenaThread }?.draft, "Wysłanie czyści szkic")
     }
 
@@ -1538,7 +1535,7 @@ final class MockRepositoryTests: XCTestCase {
         let repository = makeRepository()
         let configuration = try await repository.create(
             CreateVoiceSession(
-                userID: .tomasz,
+                userID: .kancelaria,
                 context: AssistantContext(scope: .firm),
                 assistantLanguage: .ru,
                 installationID: "device-1"
@@ -1574,7 +1571,7 @@ final class MockRepositoryTests: XCTestCase {
         let repository = makeRepository()
         let configuration = try await repository.create(
             CreateVoiceSession(
-                userID: .tomasz,
+                userID: .kancelaria,
                 context: AssistantContext(scope: .firm),
                 assistantLanguage: .ru,
                 installationID: "device-1"

@@ -16,7 +16,6 @@ final class TodayStore: ObservableObject {
 
     struct Model {
         var today: LocalDate
-        var greetingName: String
         var userInitials: String
         var events: [ScheduledEvent]
         var tasks: [TaskItem]
@@ -44,7 +43,6 @@ final class TodayStore: ObservableObject {
             phase = .loaded(
                 Model(
                     today: today,
-                    greetingName: EmmaBriefing.vocative(dependencies.currentUser.displayName),
                     userInitials: dependencies.currentUser.initials,
                     events: events.sorted { $0.time < $1.time },
                     tasks: tasks.sorted { $0.dueDate < $1.dueDate },
@@ -93,7 +91,7 @@ struct TodayScreen: View {
     private func loaded(_ model: TodayStore.Model) -> some View {
         ScreenHeader(
             kicker: dependencies.dateText.headline(for: model.today),
-            title: "Dzień dobry, \(model.greetingName)",
+            title: "Dzień dobry",
             userInitials: model.userInitials,
             onUserTap: { dependencies.present(.profile) }
         )
