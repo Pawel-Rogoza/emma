@@ -23,3 +23,9 @@ ios/.preview/
 
 # Cache Pythona ze skryptów kontrolnych
 __pycache__/
+
+# Stan pakietu Swift zapisany przez Xcode (lokalny, maszynowo-zależny)
+ios/.swiftpm/
+
+# Projekt Xcode jest generowany z ios/project.yml (XcodeGen), nie commitujemy go
+ios/Emma.xcodeproj/

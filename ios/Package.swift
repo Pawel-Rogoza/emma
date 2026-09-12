@@ -18,6 +18,7 @@ import PackageDescription
 let package = Package(
     name: "EmmaCore",
     platforms: [
+        .iOS(.v17),
         .macOS(.v13)
     ],
     products: [
