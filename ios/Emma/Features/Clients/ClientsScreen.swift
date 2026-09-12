@@ -59,8 +59,6 @@ struct ClientsScreen: View {
             ScreenHeader(
                 kicker: "BAZA KANCELARII",
                 title: "Klienci",
-                userInitials: dependencies.currentUser.initials,
-                onUserTap: { dependencies.present(.profile) }
             )
             IconButton(systemName: "plus", accessibilityLabel: "Dodaj leada") {
                 dependencies.present(.newLead)

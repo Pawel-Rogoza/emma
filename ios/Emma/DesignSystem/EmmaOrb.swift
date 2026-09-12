@@ -14,6 +14,10 @@ public struct EmmaOrb: View {
         case medium
         case card
         case hero
+        /// Duża scena na ekranie „Dzisiaj”: miejsce, w którym docelowo stanie
+        /// animacja 3D głowy Emmy. Świadomie większa niż `.hero`, żeby podmiana
+        /// orba na animację nie zmieniała układu.
+        case stage
 
         var diameter: CGFloat {
             switch self {
@@ -22,6 +26,7 @@ public struct EmmaOrb: View {
             case .medium: return 32
             case .card: return 37
             case .hero: return 100
+            case .stage: return 132
             }
         }
 
@@ -31,6 +36,7 @@ public struct EmmaOrb: View {
             case .medium: return 0.30
             case .card: return 0.35
             case .hero: return 1.0
+            case .stage: return 1.32
             }
         }
     }
@@ -66,7 +72,7 @@ public struct EmmaOrb: View {
 
     public var body: some View {
         Circle()
-            .fill(Self.gradient)
+            .fill(Self.gradient(diameter: size.diameter))
             .overlay {
                 Circle()
                     .fill(
@@ -119,12 +125,19 @@ public struct EmmaOrb: View {
         (1.00, 0x7896BB)
     ]
 
-    private static var gradient: RadialGradient {
+    /// Gradient promienisty z referencji: CSS podaje `radial-gradient(circle at 28% 24%, …)`
+    /// **bez rozmiaru**, więc przeglądarka rozciąga go na cały element
+    /// (farthest-corner). Dlatego promień musi rosnąć razem ze średnicą — inaczej
+    /// duży orb byłby płaskim krążkiem z małą plamką światła w środku.
+    ///
+    /// Odległość od punktu (28%, 24%) do najdalszego narożnika to
+    /// `√(0.72² + 0.76²) ≈ 1.0473` boku kwadratu, czyli `0.5236 × średnica`.
+    private static func gradient(diameter: CGFloat) -> RadialGradient {
         RadialGradient(
             stops: stops.map { Gradient.Stop(color: Color(hex: $0.1), location: $0.0) },
             center: UnitPoint(x: 0.28, y: 0.24),
             startRadius: 0,
-            endRadius: 26
+            endRadius: diameter * 0.5236
         )
     }
 }

@@ -10,9 +10,10 @@ Bramki, które wcześniej były „niewykonane z braku macOS”, są **wykonane*
 | Bramka | Stan | Dowód |
 | --- | --- | --- |
 | Kompilacja projektu Xcode (scheme `Emma-Demo`) | **wykonana** | `** BUILD SUCCEEDED **` |
-| Testy logiki domenowej i głosu (`swift test`) | **wykonane** | `Executed 173 tests, with 0 failures` |
-| Testy jednostkowe w Xcode | **wykonane** | `Executed 185 tests, with 0 failures` (w tym 12 dla logowania i Face ID) |
+| Testy logiki domenowej i głosu (`swift test`) | **wykonane** | `Executed 182 tests, with 0 failures` (w tym 9 dla osi dnia i usuwania terminu) |
+| Testy jednostkowe w Xcode | **wykonane** | `Executed 194 tests, with 0 failures` (w tym 12 dla logowania i Face ID) |
 | Testy interfejsu (XCUITest) | **wykonane** | `Executed 11 tests, with 0 failures` — 10 scenariuszy przepływu + bramka logowania |
+| Cały zestaw Xcode (`xcodebuild test`) | **wykonany** | `Executed 205 tests, with 0 failures` |
 | Uruchomienie na symulatorze | **wykonane** | iPhone 17 Pro (iOS 26.5), `simctl install` + `launch` potwierdzone PID-em |
 | Zrzuty ekranu porównane z referencją | **niewykonane** | zrzuty są zbierane (`ScreenshotCaptureUITests`), ale **nie zostały obejrzane** przez autora zmian |
 | Test na fizycznym iPhonie | **niewykonana** | wymaga urządzenia |
@@ -21,8 +22,11 @@ Bramki, które wcześniej były „niewykonane z braku macOS”, są **wykonane*
 
 Uwaga o zrzutach ekranu: scena `11-profil` pokazuje profil po usunięciu przełącznika
 użytkowników, a `testLoginScreenAcceptsDemoCredentials` przechodzi samą bramkę dostępu.
-Wygląd ekranów logowania i blokady **nie został oceniony wzrokowo** — to jedyna część
-tej zmiany, która wymaga oka człowieka.
+Wygląd ekranów logowania i blokady **nie został oceniony wzrokowo**.
+
+To samo dotyczy przeprojektowanej sekcji „Dzisiaj” (scena Emmy, oś dnia, pierścienie
+zadań). Zrzut jest zapisany w `screenshots/01-dzisiaj-po-zmianach.png`, ale **nie został
+obejrzany** przez autora zmian — agent nie analizuje obrazów.
 
 ## Środowisko, w którym powstał kod
 

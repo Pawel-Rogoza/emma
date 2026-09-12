@@ -400,6 +400,23 @@ public actor MockRepository:
         return updated
     }
 
+    public func deleteEvent(id: EventID, expectedVersion: Version) async throws {
+        await pause()
+        guard let index = dataset.events.firstIndex(where: { $0.id == id }) else {
+            throw DomainError.notFound(resource: "event", id: id.rawValue)
+        }
+        let removed = dataset.events[index]
+        guard removed.version == expectedVersion else {
+            throw DomainError.versionConflict(expected: expectedVersion, current: removed.version)
+        }
+        dataset.events.remove(at: index)
+        appendActivity(
+            "Usunięto termin: \(removed.title), \(removed.day.isoString) \(removed.time.hhmm)",
+            clientID: removed.clientID,
+            caseID: removed.caseID
+        )
+    }
+
     private func validateEventFields(title: String, place: String, durationMinutes: Int) throws {
         guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw DomainError.validationFailed("Uzupełnij nazwę wydarzenia.")

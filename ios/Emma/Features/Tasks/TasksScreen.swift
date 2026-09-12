@@ -64,8 +64,6 @@ struct TasksScreen: View {
                 ScreenHeader(
                     kicker: "WSPÓLNA LISTA",
                     title: "Zadania",
-                    userInitials: dependencies.currentUser.initials,
-                    onUserTap: nil
                 )
 
                 HStack {

@@ -124,8 +124,6 @@ struct MessagesScreen: View {
                 ScreenHeader(
                     kicker: "WHATSAPP",
                     title: "Rozmowy",
-                    userInitials: dependencies.currentUser.initials,
-                    onUserTap: nil
                 )
 
                 HStack {

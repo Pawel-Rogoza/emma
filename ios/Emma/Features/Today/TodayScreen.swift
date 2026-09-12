@@ -16,7 +16,6 @@ final class TodayStore: ObservableObject {
 
     struct Model {
         var today: LocalDate
-        var userInitials: String
         var events: [ScheduledEvent]
         var tasks: [TaskItem]
         var clientNames: [ClientID: String]
@@ -43,7 +42,6 @@ final class TodayStore: ObservableObject {
             phase = .loaded(
                 Model(
                     today: today,
-                    userInitials: dependencies.currentUser.initials,
                     events: events.sorted { $0.time < $1.time },
                     tasks: tasks.sorted { $0.dueDate < $1.dueDate },
                     clientNames: Dictionary(
@@ -63,6 +61,9 @@ struct TodayScreen: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.emmaLayout) private var layout: EmmaLayoutMetrics
     @StateObject private var store = TodayStore()
+    /// Termin czekający na potwierdzenie usunięcia. Usunięcie jest nieodwracalne
+    /// (demo nie ma kosza), więc pytamy — ale dopiero po wybraniu z menu.
+    @State private var eventPendingDeletion: ScheduledEvent?
 
     var body: some View {
         ScrollView {
@@ -85,6 +86,32 @@ struct TodayScreen: View {
         .background(EmmaTheme.bg)
         .scrollIndicators(.hidden)
         .task(id: dependencies.dataVersion) { await store.load(dependencies) }
+        .confirmationDialog(
+            "Usunąć termin?",
+            isPresented: Binding(
+                get: { eventPendingDeletion != nil },
+                set: { if !$0 { eventPendingDeletion = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: eventPendingDeletion
+        ) { event in
+            Button("Usuń termin", role: .destructive) {
+                Task { await deleteEvent(event) }
+            }
+            Button("Wróć", role: .cancel) { eventPendingDeletion = nil }
+        } message: { event in
+            Text("„\(event.title)” o \(event.time.hhmm) zniknie z kalendarza.")
+        }
+    }
+
+    private func deleteEvent(_ event: ScheduledEvent) async {
+        await dependencies.perform {
+            try await dependencies.repository.deleteEvent(
+                id: event.id,
+                expectedVersion: event.version
+            )
+        }
+        eventPendingDeletion = nil
     }
 
     @ViewBuilder
@@ -92,25 +119,15 @@ struct TodayScreen: View {
         ScreenHeader(
             kicker: dependencies.dateText.headline(for: model.today),
             title: "Dzień dobry",
-            userInitials: model.userInitials,
-            onUserTap: { dependencies.present(.profile) }
+            onProfileTap: { dependencies.present(.profile) }
         )
 
-        emmaPrompt
+        emmaStage(model)
 
         SectionHeader("Dziś w kalendarzu", actionTitle: "Kalendarz") {
             dependencies.go(to: .calendar)
         }
-        if model.events.isEmpty {
-            emptyCard("Nie masz dziś zaplanowanych terminów.")
-        } else {
-            ForEach(model.events) { event in
-                EventRow(event: event) {
-                    dependencies.present(.eventDetail(event.id))
-                }
-                .padding(.bottom, EmmaSpacing.cardGap)
-            }
-        }
+        calendarCard(model)
 
         SectionHeader("Zadania na dziś", actionTitle: "Wszystkie zadania") {
             dependencies.openTasks()
@@ -118,53 +135,95 @@ struct TodayScreen: View {
         taskGroup(model.tasks, clientNames: model.clientNames)
     }
 
-    // MARK: Skrót do rozmowy z Emmą
+    // MARK: Emma — scena
 
-    /// Zamiast osobnego ekranu-hero: jeden zwięzły wiersz z orbem, który
-    /// od razu startuje rozmowę głosową. Orb oddycha, gdy nic się nie dzieje,
-    /// i pulsuje mocniej, gdy Emma mówi.
-    private var emmaPrompt: some View {
-        Button {
-            dependencies.openEmma(clientID: nil, startVoice: true)
-        } label: {
-            HStack(spacing: 12) {
+    /// Emma dostaje na tym ekranie realną przestrzeń: duży orb, miękka poświata
+    /// i jedno wyraźne wejście w rozmowę. Układ jest przygotowany na podmianę
+    /// orba na animację 3D głowy — scena ma stałą wysokość, więc podmiana nie
+    /// przesunie terminarza pod nią.
+    private func emmaStage(_ model: TodayStore.Model) -> some View {
+        VStack(spacing: 0) {
+            ZStack {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [EmmaTheme.accentSoft, EmmaTheme.accentSoft.opacity(0)],
+                            center: .center,
+                            startRadius: 12,
+                            endRadius: 126
+                        )
+                    )
+                    .frame(width: 252, height: 252)
+
                 EmmaOrb(
-                    size: .card,
+                    size: .stage,
                     isActive: dependencies.voice.state.isPlaybackActive,
                     breathing: true
                 )
+            }
+            .frame(height: 186)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Zapytaj Emmę o dzień")
-                        .font(EmmaTypography.ui(14, .semibold))
-                        .foregroundStyle(EmmaTheme.ink)
-                    Text("Głosem albo na piśmie — terminy, sprawy, odpowiedzi")
-                        .font(EmmaTypography.ui(12))
-                        .foregroundStyle(EmmaTheme.muted)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            Text("Jestem Emma")
+                .font(EmmaTypography.heading(21))
+                .foregroundStyle(EmmaTheme.ink)
 
-                Spacer(minLength: 0)
+            Text("Zapytam o dzień, sprawdzę terminy i przygotuję odpowiedź.")
+                .font(EmmaTypography.ui(13))
+                .foregroundStyle(EmmaTheme.muted)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 5)
+                .padding(.horizontal, 16)
 
-                Image(systemName: "mic.fill")
-                    .font(.system(size: 15, weight: .semibold))
+            PrimaryButton("Porozmawiaj z Emmą", systemImage: "mic.fill") {
+                dependencies.openEmma(clientID: nil, startVoice: true)
+            }
+            .padding(.top, 16)
+
+            Button {
+                dependencies.openEmma(clientID: nil, startVoice: false)
+            } label: {
+                Text("albo napisz wiadomość")
+                    .font(EmmaTypography.ui(12, .medium))
                     .foregroundStyle(EmmaTheme.secondaryButtonText)
+                    .frame(minHeight: 40)
+                    .contentShape(Rectangle())
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(EmmaTheme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
-                    .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
-            }
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityLabel("Napisz wiadomość do Emmy")
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Zapytaj Emmę o dzień. Rozpoczyna rozmowę głosową")
+        .frame(maxWidth: .infinity)
         .padding(.top, EmmaSpacing.sectionTop)
+        .accessibilityElement(children: .contain)
+    }
+
+    // MARK: Terminarz dnia
+
+    /// Jeden wspólny pojemnik zamiast osobnej karty na każdy termin: widać
+    /// wtedy, że to **oś dnia**, a nie luźna lista. Minione terminy zostają,
+    /// ale są wygaszone, żeby wzrok szedł po tym, co jeszcze przed nami.
+    @ViewBuilder
+    private func calendarCard(_ model: TodayStore.Model) -> some View {
+        if model.events.isEmpty {
+            emptyCard("Nie masz dziś zaplanowanych terminów.")
+        } else {
+            SurfaceCard(padding: EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0)) {
+                VStack(spacing: 0) {
+                    let now = TimeOfDay.at(dependencies.clock.now())
+                    ForEach(Array(model.events.enumerated()), id: \.element.id) { index, event in
+                        TodayEventRow(
+                            event: event,
+                            now: now,
+                            onOpen: { dependencies.present(.eventDetail(event.id)) },
+                            onDelete: { eventPendingDeletion = event }
+                        )
+                        if index < model.events.count - 1 {
+                            Divider().overlay(EmmaTheme.rowSeparator).padding(.horizontal, 15)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // MARK: Zadania

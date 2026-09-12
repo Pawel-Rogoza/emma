@@ -193,7 +193,7 @@ final class DemoFlowUITests: XCTestCase {
     /// Profil otwiera się z nagłówka ekranu głównego (przycisk z inicjałami).
     func testProfileSheetOpens() {
         openTab("today")
-        let profile = application.buttons["Twój profil"]
+        let profile = application.buttons["Profil kancelarii"]
         guard profile.waitForExistence(timeout: 10) else {
             XCTFail("Brak wejścia do profilu na ekranie Dzisiaj")
             return

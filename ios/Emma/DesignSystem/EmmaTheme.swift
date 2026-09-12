@@ -82,8 +82,8 @@ public enum EmmaTheme {
     public static let pillUrgentText = Color(hex: 0xA47740)
 
     // Awatary
-    public static let avatarBackground = Color(hex: 0xE9E3D9)
-    public static let avatarText = Color(hex: 0x79664A)
+    // Tokeny awatara zalogowanego użytkownika (`avatarBackground`/`avatarText`)
+    // usunięte razem z plakietką „KR” w nagłówkach — konto jest jedno i wspólne.
     public static let personAvatarBackground = Color(hex: 0xEAF0F4)
     public static let personAvatarText = Color(hex: 0x62778A)
 

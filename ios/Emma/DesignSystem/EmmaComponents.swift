@@ -64,14 +64,19 @@ public struct SectionHeader: View {
 public struct ScreenHeader: View {
     private let kicker: String
     private let title: String
-    private let userInitials: String
-    private let onUserTap: (() -> Void)?
+    private let onProfileTap: (() -> Void)?
 
-    public init(kicker: String, title: String, userInitials: String, onUserTap: (() -> Void)? = nil) {
+    /// Nagłówek ekranu: podpis z datą i tytuł.
+    ///
+    /// Nie ma tu awatara z inicjałami użytkownika. Konto jest jedno i wspólne dla
+    /// kancelarii, więc plakietka „KR” nic nie wnosiła, a zabierała uwagę
+    /// (decyzja właściciela). Wejście do profilu jest opcjonalne i celowo ciche —
+    /// na ekranie „Dzisiaj” to jedyne miejsce, z którego można się wylogować
+    /// albo zablokować aplikację.
+    public init(kicker: String, title: String, onProfileTap: (() -> Void)? = nil) {
         self.kicker = kicker
         self.title = title
-        self.userInitials = userInitials
-        self.onUserTap = onUserTap
+        self.onProfileTap = onProfileTap
     }
 
     public var body: some View {
@@ -89,14 +94,17 @@ public struct ScreenHeader: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button {
-                onUserTap?()
-            } label: {
-                PersonAvatar(initials: userInitials, style: .user)
+            if let onProfileTap {
+                Button(action: onProfileTap) {
+                    Image(systemName: "person.crop.circle")
+                        .font(.system(size: 22, weight: .regular))
+                        .foregroundStyle(EmmaTheme.mutedSoft)
+                        .frame(width: 40, height: 40)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Profil kancelarii")
             }
-            .buttonStyle(.plain)
-            .disabled(onUserTap == nil)
-            .accessibilityLabel("Twój profil")
         }
         .padding(.bottom, 4)
     }
@@ -162,8 +170,6 @@ public struct PersonAvatar: View {
         case conversation(Client.AvatarTone)
         /// Karty osób, klientów i spraw.
         case person
-        /// Awatar zalogowanego użytkownika w nagłówku.
-        case user
     }
 
     private let initials: String
@@ -182,11 +188,6 @@ public struct PersonAvatar: View {
             .foregroundStyle(foreground)
             .frame(width: diameter, height: diameter)
             .background(background, in: Circle())
-            .overlay {
-                if case .user = style {
-                    Circle().strokeBorder(Color.white, lineWidth: 3)
-                }
-            }
             .accessibilityHidden(true)
     }
 
@@ -194,7 +195,6 @@ public struct PersonAvatar: View {
         switch style {
         case .conversation(let tone): return EmmaTheme.conversationAvatar(tone).background
         case .person: return EmmaTheme.personAvatarBackground
-        case .user: return EmmaTheme.avatarBackground
         }
     }
 
@@ -202,7 +202,6 @@ public struct PersonAvatar: View {
         switch style {
         case .conversation(let tone): return EmmaTheme.conversationAvatar(tone).foreground
         case .person: return EmmaTheme.personAvatarText
-        case .user: return EmmaTheme.avatarText
         }
     }
 }
@@ -959,19 +958,26 @@ public struct TaskRow: View {
         HStack(alignment: .top, spacing: 11) {
             Button(action: onToggle) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(task.isDone ? EmmaTheme.pillGreenBackground : EmmaTheme.surface)
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(task.isDone ? EmmaTheme.pillGreenText.opacity(0.5) : EmmaTheme.checkboxBorder, lineWidth: 1)
+                    // Świadomie nie „biały checkbox”: puste pole czytało się jak
+                    // formularz do wypełnienia, a nie jak zadanie do odhaczenia.
+                    // Pierścień pokazuje stan, a nie miejsce na treść.
+                    Circle()
+                        .fill(task.isDone ? EmmaTheme.accent : Color.clear)
+                    Circle()
+                        .strokeBorder(
+                            task.isDone ? EmmaTheme.accent : EmmaTheme.accent.opacity(0.38),
+                            lineWidth: task.isDone ? 0 : 1.6
+                        )
                     if task.isDone {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(EmmaTheme.pillGreenText)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(EmmaTheme.primaryButtonText)
                     }
                 }
                 .frame(width: EmmaMetrics.taskCheckSize, height: EmmaMetrics.taskCheckSize)
                 .frame(width: EmmaSpacing.hitTarget, height: EmmaSpacing.hitTarget, alignment: .topLeading)
                 .contentShape(Rectangle())
+                .animation(.easeInOut(duration: 0.18), value: task.isDone)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(task.isDone ? "Przywróć zadanie" : "Oznacz jako wykonane")

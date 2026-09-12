@@ -100,8 +100,6 @@ struct CalendarScreen: View {
                 ScreenHeader(
                     kicker: "WSPÓLNY PLAN",
                     title: dependencies.dateText.monthTitle(for: store.selectedDay),
-                    userInitials: dependencies.currentUser.initials,
-                    onUserTap: nil
                 )
 
                 HStack {

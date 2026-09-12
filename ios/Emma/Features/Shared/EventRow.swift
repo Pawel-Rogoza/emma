@@ -1,10 +1,140 @@
 import SwiftUI
 
-// MARK: - Wiersz terminu
+// MARK: - Wiersze terminu
 //
-// Odtworzenie `.event-row.card` z referencji: godzina z małą datą, tytuł,
-// status i chevron. Cały wiersz jest przyciskiem otwierającym
-// szczegół terminu (`eventDetail`).
+// Dwa warianty tego samego terminu:
+//   • `EventRow` — karta używana na kartach klienta i sprawy,
+//   • `TodayEventRow` — wiersz osi dnia na ekranie „Dzisiaj”: jeden wspólny
+//     pojemnik, pasek stanu, godzina i czas trwania, a obok menu z usunięciem.
+//
+// Oba odróżniają termin, który już minął: wygaszają go, żeby wzrok szedł po
+// tym, co jeszcze przed nami. Reguła „minęło” siedzi w rdzeniu
+// (`ScheduledEvent.hasPassed(at:)`), więc jest jedna dla całej aplikacji.
+
+// MARK: - Wspólne elementy
+
+/// Menu czynności terminu. Świadomie nie jest to sam chevron: strzałka
+/// obiecywała przejście dalej, a pod nią jest wybór czynności — między innymi
+/// usunięcie terminu.
+struct EventActionsMenu: View {
+    let onOpen: () -> Void
+    let onDelete: (() -> Void)?
+
+    var body: some View {
+        Menu {
+            Button("Otwórz szczegóły", systemImage: "arrow.up.forward.square") {
+                onOpen()
+            }
+            if let onDelete {
+                Button("Usuń termin", systemImage: "trash", role: .destructive) {
+                    onDelete()
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(EmmaTheme.mutedSoft)
+                .frame(width: 34, height: 34)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Więcej opcji terminu")
+    }
+}
+
+/// Kolor paska stanu przy wierszu osi dnia.
+private func eventBarColor(past: Bool, happening: Bool, status: EventStatus) -> Color {
+    if past { return EmmaTheme.mutedSoft.opacity(0.45) }
+    if happening { return EmmaTheme.accent }
+    if status == .toConfirm { return EmmaTheme.pillAmberText.opacity(0.7) }
+    return EmmaTheme.accent.opacity(0.35)
+}
+
+// MARK: - Wiersz osi dnia („Dzisiaj”)
+
+struct TodayEventRow: View {
+
+    let event: ScheduledEvent
+    /// Aktualna godzina dnia — przekazana z ekranu, żeby cała lista liczyła
+    /// „minęło” względem tego samego momentu.
+    let now: TimeOfDay
+    let onOpen: () -> Void
+    let onDelete: () -> Void
+
+    private var isPast: Bool { event.hasPassed(at: now) }
+    private var isHappening: Bool { event.isHappening(at: now) }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Capsule(style: .continuous)
+                .fill(eventBarColor(past: isPast, happening: isHappening, status: event.status))
+                .frame(width: 3)
+                .frame(maxHeight: .infinity)
+
+            Button(action: onOpen) {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        Text(event.time.hhmm)
+                            .font(EmmaTypography.ui(15, .semibold))
+                            .foregroundStyle(isPast ? EmmaTheme.muted : EmmaTheme.ink)
+                        if event.durationMinutes > 0 {
+                            Text("· \(event.durationMinutes) min")
+                                .font(EmmaTypography.ui(11))
+                                .foregroundStyle(EmmaTheme.mutedSoft)
+                        }
+                    }
+
+                    Text(event.title)
+                        .font(EmmaTypography.body(for: event.title, size: 13, weight: .medium))
+                        .foregroundStyle(isPast ? EmmaTheme.muted : EmmaTheme.ink)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 6) {
+                        if isHappening {
+                            StatusPill("Teraz", kind: .green)
+                        } else if isPast {
+                            Text("Minęło")
+                                .font(EmmaTypography.ui(11))
+                                .foregroundStyle(EmmaTheme.mutedSoft)
+                        } else {
+                            Text(event.status.rawValue)
+                                .font(EmmaTypography.ui(11))
+                                .foregroundStyle(EmmaTheme.muted)
+                        }
+                        if !event.place.isEmpty {
+                            Text("· \(event.place)")
+                                .font(EmmaTypography.ui(11))
+                                .foregroundStyle(EmmaTheme.mutedSoft)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            EventActionsMenu(onOpen: onOpen, onDelete: onDelete)
+        }
+        .padding(.vertical, 13)
+        .padding(.horizontal, 15)
+        // Miniony termin zostaje na liście (to wciąż zapis dnia), ale schodzi
+        // na drugi plan — zamiast znikać i mylić.
+        .opacity(isPast ? 0.66 : 1)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private var accessibilityText: String {
+        var parts = [event.time.hhmm, event.title]
+        if isHappening { parts.append("trwa teraz") }
+        else if isPast { parts.append("minęło") }
+        else { parts.append(event.status.rawValue) }
+        return parts.joined(separator: ", ")
+    }
+}
+
+// MARK: - Karta terminu (karty klienta i sprawy)
 
 struct EventRow: View {
 
@@ -15,48 +145,61 @@ struct EventRow: View {
 
     private let event: ScheduledEvent
     private let onOpen: () -> Void
+    private let onDelete: (() -> Void)?
 
-    init(event: ScheduledEvent, onOpen: @escaping () -> Void) {
+    init(event: ScheduledEvent, onOpen: @escaping () -> Void, onDelete: (() -> Void)? = nil) {
         self.event = event
         self.onOpen = onOpen
+        self.onDelete = onDelete
+    }
+
+    private var hasPassed: Bool {
+        event.hasPassed(at: TimeOfDay.at(dependencies.clock.now()))
     }
 
     var body: some View {
-        Button(action: onOpen) {
-            SurfaceCard(padding: EdgeInsets(top: 15, leading: 15, bottom: 15, trailing: 15)) {
-                HStack(alignment: .center, spacing: 13) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(event.time.hhmm)
-                            .font(EmmaTypography.ui(14, .semibold))
-                            .foregroundStyle(EmmaTheme.ink)
-                        Text(dependencies.dateText.dayLabel(event.day))
-                            .font(EmmaTypography.ui(10))
-                            .foregroundStyle(EmmaTheme.mutedSoft)
-                    }
-                    .frame(minWidth: 51, alignment: .leading)
+        HStack(alignment: .center, spacing: 10) {
+            Button(action: onOpen) {
+                SurfaceCard(padding: EdgeInsets(top: 15, leading: 15, bottom: 15, trailing: 15)) {
+                    HStack(alignment: .center, spacing: 13) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(event.time.hhmm)
+                                .font(EmmaTypography.ui(14, .semibold))
+                                .foregroundStyle(hasPassed ? EmmaTheme.muted : EmmaTheme.ink)
+                            Text(dependencies.dateText.dayLabel(event.day))
+                                .font(EmmaTypography.ui(10))
+                                .foregroundStyle(EmmaTheme.mutedSoft)
+                        }
+                        .frame(minWidth: 51, alignment: .leading)
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        // Tytuł terminu może zawierać cyrylicę — czcionka zależna od pisma.
-                        Text(event.title)
-                            .font(EmmaTypography.body(for: event.title, size: 13, weight: .medium))
-                            .foregroundStyle(EmmaTheme.ink)
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(event.status.rawValue)
-                            .font(EmmaTypography.ui(11))
-                            .foregroundStyle(EmmaTheme.mutedSoft)
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
+                        VStack(alignment: .leading, spacing: 4) {
+                            // Tytuł terminu może zawierać cyrylicę — czcionka zależna od pisma.
+                            Text(event.title)
+                                .font(EmmaTypography.body(for: event.title, size: 13, weight: .medium))
+                                .foregroundStyle(hasPassed ? EmmaTheme.muted : EmmaTheme.ink)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text(hasPassed ? "Minęło · \(event.status.rawValue)" : event.status.rawValue)
+                                .font(EmmaTypography.ui(11))
+                                .foregroundStyle(EmmaTheme.mutedSoft)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(EmmaTheme.mutedSoft)
                 }
             }
+            .buttonStyle(.plain)
+
+            if let onDelete {
+                EventActionsMenu(onOpen: onOpen, onDelete: onDelete)
+            } else {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(EmmaTheme.mutedSoft)
+            }
         }
-        .buttonStyle(.plain)
+        .opacity(hasPassed ? 0.72 : 1)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
         .accessibilityHint("Otwiera szczegóły terminu")
@@ -68,7 +211,7 @@ struct EventRow: View {
             event.time.hhmm,
             dependencies.dateText.dayLabel(event.day),
             event.title,
-            event.status.rawValue
+            hasPassed ? "minęło" : event.status.rawValue
         ]
         .joined(separator: ", ")
     }

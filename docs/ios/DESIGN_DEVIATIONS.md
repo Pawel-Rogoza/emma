@@ -268,6 +268,57 @@ i `User` zostają wyłącznie jako opis sesji, nie własności danych.
 **Cofnięcie:** przywrócenie pól i arkusza z historii gita; dane demo trzeba by
 wtedy z powrotem przypisać do osób.
 
+### D-18 · Plakietka z inicjałami „KR” — **usunięta**
+
+**Treść:** nagłówki ekranów nie mają już awatara z inicjałami zalogowanego konta.
+Zniknął wariant `PersonAvatar.Style.user` wraz z tokenami `avatarBackground`
+i `avatarText`.
+
+**Powód:** polecenie właściciela: ikonka „KR” w prawym górnym rogu jest
+niepotrzebna w żadnym miejscu. Konto jest jedno i wspólne dla kancelarii, więc
+plakietka nic nie wnosiła.
+
+**Wpływ:** wejście do profilu zostało w jednym miejscu — cicha ikona konturu osoby
+w nagłówku ekranu „Dzisiaj”. To nadal potrzebne, bo stamtąd wylogowuje się
+i blokuje aplikację (D-16); usunięcie całego wejścia odebrałoby dostęp do tych
+funkcji. Ikona nie pokazuje żadnych danych osobowych.
+
+**Cofnięcie:** przywrócenie wariantu w `PersonAvatar` i przekazanie inicjałów
+w `ScreenHeader`.
+
+### D-19 · Ekran „Dzisiaj”: scena Emmy, oś dnia i pierścienie zadań — **decyzja właściciela**
+
+**Treść:** trzy zmiany w jednej sekcji:
+
+1. **Emma ma więcej miejsca.** Zamiast zwięzłego wiersza z orbem `.card` jest
+   scena: orb w nowym rozmiarze `.stage` (132 pt) na miękkiej poświacie, pod nim
+   „Jestem Emma”, jedno zdanie wyjaśnienia i główne wejście w rozmowę głosową
+   oraz drugie, cichsze — na piśmie. Wysokość sceny jest stała, żeby późniejsza
+   podmiana orba na animację 3D głowy (psa) nie przesunęła terminarza.
+2. **Terminy to oś dnia.** Dzisiejsze terminy są w jednym pojemniku, z paskiem
+   stanu, godziną i czasem trwania. Termin, który minął, zostaje na liście, ale
+   jest wygaszony i opisany „Minęło”; trwający dostaje pill „Teraz”. Pod
+   wielokropkiem jest menu z „Usuń termin” (z potwierdzeniem) — wcześniej była
+   tam strzałka, która obiecywała przejście dalej.
+3. **Zadania odhacza się pierścieniem.** Biały kwadrat 24×24 z referencji
+   (`.task-check`) zastąpił pierścień, który wypełnia się kolorem akcentu
+   z haczykiem — puste pole czytało się jak formularz do wypełnienia.
+
+**Powód:** polecenie właściciela: sekcja „Dzisiaj” jest zbyt podstawowa, ma być
+bardziej dopracowana przy zachowaniu minimalizmu i czytelności; Emma ma dostać
+więcej przestrzeni, terminy trzeba odróżnić, a w zadaniach zmienić sposób
+odhaczania.
+
+**Wpływ:** wiersze terminu na kartach klienta i sprawy też wygaszają minione
+terminy (wspólna reguła w rdzeniu, `ScheduledEvent.hasPassed(at:)`). Doszła
+operacja `deleteEvent` w repozytorium agendy — wcześniej nie było sposobu
+usunięcia terminu z aplikacji. Poprawiony został też gradient orba: rósł ze
+stałym promieniem 26 pt, choć referencja rozciąga go na cały element, więc duże
+orby były płaskie.
+
+**Cofnięcie:** poprzednia wersja `TodayScreen`, `EventRow` i `TaskRow` z historii
+gita; usunięcie `deleteEvent` z protokołu agendy.
+
 ---
 
 ## Czego ten rejestr nie zawiera

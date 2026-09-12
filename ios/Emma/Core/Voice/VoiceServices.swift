@@ -82,6 +82,9 @@ public protocol AgendaRepository: Sendable {
     func event(id: EventID) async throws -> ScheduledEvent?
     func createEvent(_ draft: NewEventDraft) async throws -> ScheduledEvent
     func updateEvent(_ event: ScheduledEvent, expectedVersion: Version) async throws -> ScheduledEvent
+    /// Usuwa termin. `expectedVersion` chroni przed usunięciem terminu, który
+    /// w międzyczasie ktoś zmienił — tak samo jak przy edycji.
+    func deleteEvent(id: EventID, expectedVersion: Version) async throws
 }
 
 public protocol NoteRepository: Sendable {

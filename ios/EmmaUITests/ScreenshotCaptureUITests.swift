@@ -130,7 +130,13 @@ final class ScreenshotCaptureUITests: XCTestCase {
 
         capture("11-profil", description: "Profil kancelarii") {
             selectTab("today")
-            let profile = application.buttons["Twój profil"]
+            let profile = application.buttons["Profil kancelarii"]
+            if !profile.waitForExistence(timeout: 3) {
+                // Zakładka „Dzisiaj” pamięta wejście w listę zadań z wcześniejszej
+                // sceny, a to nie jest ekran główny z wejściem do profilu. Drugie
+                // dotknięcie aktywnej zakładki wraca na wierzch stosu.
+                selectTab("today")
+            }
             guard profile.waitForExistence(timeout: 10) else { return "brak wejścia do profilu" }
             profile.tap()
             return nil

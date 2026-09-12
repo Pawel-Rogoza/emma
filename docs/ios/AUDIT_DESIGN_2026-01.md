@@ -234,4 +234,33 @@ i cofnięcia: `DESIGN_DEVIATIONS.md` D-16 i D-17.
 i 12 nowych testów logiki dostępu); build `Emma-Demo` SUCCEEDED; aplikacja
 zainstalowana i uruchomiona na iPhone 17 Pro (iOS 26.5).
 
+### Z-8 · Sekcja „Dzisiaj” — mniej „basicowa”, Emma na pierwszym planie — **zrobione**
+
+Trzy rzeczy z jednego zgłoszenia właściciela:
+
+1. **Plakietka „KR” zniknęła** ze wszystkich nagłówków. Wejście do profilu
+   (wylogowanie, blokada, dane przykładowe) zostało w jednym miejscu — cicha
+   ikona konturu osoby w nagłówku „Dzisiaj”. Zniknął wariant
+   `PersonAvatar.Style.user` i tokeny awatara użytkownika.
+2. **Emma dostała scenę**: orb w nowym rozmiarze `.stage` (132 pt) na miękkiej
+   poświacie, pod nim krótkie zdanie i główne wejście w rozmowę głosową oraz
+   cichsze „albo napisz wiadomość”. Scena ma stałą wysokość, więc przyszła
+   animacja 3D głowy nie przesunie terminarza. Przy okazji naprawiony gradient
+   orba — rósł ze stałym promieniem 26 pt, więc duże orby były płaskie
+   (referencja rozciąga gradient na cały element).
+3. **Terminy i zadania**: dzisiejsze terminy są jednym pojemnikiem z paskiem
+   stanu, godziną i czasem trwania; minione są wygaszone i opisane „Minęło”,
+   trwający dostaje pill „Teraz”, a pod wielokropkiem jest menu z „Usuń termin”
+   (z potwierdzeniem). Biały kwadratowy checkbox zastąpił pierścień wypełniający
+   się kolorem akcentu.
+
+Reguła „minęło / trwa” siedzi w rdzeniu (`ScheduledEvent.hasPassed(at:)`,
+`isHappening(at:)`), więc działa też na kartach klienta i sprawy. Repozytorium
+agendy ma nową operację `deleteEvent` — wcześniej nie dało się usunąć terminu.
+
+**Weryfikacja:** `swift test` 182/0 (9 nowych testów: `AgendaTimelineTests`);
+`xcodebuild test` 205/0 (w tym 11 XCUITest); build `Emma-Demo` SUCCEEDED.
+Zrzut „Dzisiaj” zapisany w `screenshots/01-dzisiaj-po-zmianach.png` — **do
+oceny wzrokowej przez właściciela** (agent nie analizuje obrazów).
+
 ---

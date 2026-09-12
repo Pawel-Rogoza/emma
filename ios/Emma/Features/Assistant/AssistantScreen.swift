@@ -86,8 +86,6 @@ struct AssistantScreen: View {
             ScreenHeader(
                 kicker: "TWÓJ ASYSTENT",
                 title: "Emma",
-                userInitials: dependencies.currentUser.initials,
-                onUserTap: { dependencies.present(.profile) }
             )
             IconButton(
                 systemName: store.speaksReplies ? "speaker.wave.2" : "speaker.slash",
