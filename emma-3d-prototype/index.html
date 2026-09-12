@@ -1,0 +1,17 @@
+<!doctype html><html lang="pl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#f5f6f8"><title>Emma — Twój asystent</title></head><body>
+<svg class="icon-defs" xmlns="http://www.w3.org/2000/svg"><defs>
+<symbol id="mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></symbol>
+<symbol id="keyboard" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M5 9h1m2 0h1m2 0h1m2 0h1m2 0h1M5 12h1m2 0h1m2 0h1m2 0h1m2 0h1M6 15h12"/></symbol>
+<symbol id="tasks" viewBox="0 0 24 24"><circle cx="5" cy="6" r="3"/><circle cx="5" cy="18" r="3"/><path d="m3.5 6 1 1 2-2M12 6h10M12 18h10"/></symbol>
+<symbol id="home" viewBox="0 0 24 24"><path d="m2 10 10-8 10 8M5 8v13h5v-7h4v7h5V8M17 3h3v6"/></symbol>
+<symbol id="people" viewBox="0 0 24 24"><circle cx="8" cy="7" r="4"/><path d="M1 22v-3a7 7 0 0 1 14 0v3H1M17 3a4 4 0 0 1 0 8M18 15a6 6 0 0 1 5 6"/></symbol>
+<symbol id="spark" viewBox="0 0 24 24"><path d="M12 3c0 6-2 8-8 8 6 0 8 2 8 8 0-6 2-8 8-8-6 0-8-2-8-8ZM4 2v5M1.5 4.5h5M20 17v6M17 20h6"/></symbol>
+<symbol id="chat" viewBox="0 0 24 24"><path d="M14 15H8l-5 4v-5H2V3h14v5M10 10h12v11h-2v2l-4-2h-6Z"/></symbol>
+<symbol id="calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="3"/><path d="M7 2v5M17 2v5M3 9h18M7 13h1m3 0h1m3 0h1M7 17h1m3 0h1m3 0h1"/></symbol>
+</defs></svg>
+<main class="phone"><header><h1>Dzień dobry, Tomaszu</h1><span class="user">TR</span></header>
+<section class="welcome"><div class="portrait"><img id="fallback" src="/emma-avatar-refined.png" alt="Emma, rosyjski toy terrier"><canvas aria-label="Delikatnie animowany portret Emmy" role="img"></canvas></div><h2 id="heading">Jestem Emma.</h2><p id="description">Pytaj o sprawy, wiadomości i terminy —<br>głosem albo na piśmie.</p></section>
+<section class="actions"><button id="voice" class="primary"><svg><use href="#mic"/></svg><span>Porozmawiaj głosem</span></button><button id="write" class="secondary"><svg><use href="#keyboard"/></svg>Napisz do Emmy</button><button id="today" class="text-button"><svg><use href="#tasks"/></svg>Zadania na dziś</button></section>
+<nav aria-label="Nawigacja aplikacji"><button aria-current="page"><svg><use href="#home"/></svg>Dzisiaj</button><button><svg><use href="#people"/></svg>Klienci</button><button><span class="emma-tab"><svg><use href="#spark"/></svg></span>Emma</button><button><span class="chat-icon"><svg><use href="#chat"/></svg><b>3</b></span>Rozmowy</button><button><svg><use href="#calendar"/></svg>Kalendarz</button></nav></main>
+<dialog><form method="dialog"><button class="close" aria-label="Zamknij">×</button><h3 id="dialog-title"></h3><p id="dialog-copy"></p><button class="primary">Rozumiem</button></form></dialog>
+<script type="module" src="/src/main.js"></script></body></html>

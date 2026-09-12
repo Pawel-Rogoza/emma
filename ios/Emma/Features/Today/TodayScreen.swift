@@ -158,7 +158,8 @@ struct TodayScreen: View {
                 EmmaOrb(
                     size: .stage,
                     isActive: dependencies.voice.state.isPlaybackActive,
-                    breathing: true
+                    breathing: true,
+                    state: dependencies.voice.state.turn
                 )
             }
             .frame(height: 186)

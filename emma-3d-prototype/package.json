@@ -1,0 +1,19 @@
+{
+  "name": "emma-3d-prototype",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "gltf-validator": "^2.0.0-dev.3.10",
+    "pngjs": "^7.0.0",
+    "vite": "^7.1.5"
+  }
+}

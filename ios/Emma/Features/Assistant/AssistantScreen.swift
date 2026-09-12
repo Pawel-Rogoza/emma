@@ -135,7 +135,12 @@ struct AssistantScreen: View {
 
     private var intro: some View {
         VStack(spacing: 0) {
-            EmmaOrb(size: .hero, isActive: store.voiceState.orbIsActive)
+            EmmaOrb(
+                size: .hero,
+                isActive: store.voiceState.orbIsActive,
+                breathing: true,
+                state: store.voiceState.turn
+            )
                 .padding(.top, 32)
                 .padding(.bottom, 23)
 
