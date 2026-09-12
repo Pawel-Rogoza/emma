@@ -123,11 +123,13 @@ public struct DetailHeader: View {
 
     public var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            Button(action: onBack) {
+            Button {
+                onBack()
+            } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(EmmaTheme.ink)
-                    .frame(width: EmmaMetrics.hitTarget, height: EmmaMetrics.hitTarget)
+                    .frame(width: EmmaSpacing.hitTarget, height: EmmaSpacing.hitTarget)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

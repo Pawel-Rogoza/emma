@@ -159,6 +159,9 @@ public enum CaseStatus: String, Codable, Sendable, CaseIterable, Identifiable {
 
     public var id: String { rawValue }
     public var isActive: Bool { self != .closed }
+    /// Nazwa do pokazania. Wartości surowe są zarazem etykietami referencji (tak samo
+    /// koduje je model danych), więc nie tworzymy drugiego zestawu napisów.
+    public var displayName: String { rawValue }
 }
 
 public struct LegalCase: Identifiable, Hashable, Codable, Sendable {

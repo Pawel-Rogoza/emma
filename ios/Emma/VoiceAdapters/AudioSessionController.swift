@@ -21,8 +21,11 @@ public final class AudioSessionController {
     }
 
     public private(set) var mode: Mode = .idle
-    private var interruptionObserver: NSObjectProtocol?
-    private var routeObserver: NSObjectProtocol?
+    /// Obserwatory NotificationCenter. `nonisolated(unsafe)`, bo w Swift 6 `deinit`
+    /// jest nieizolowany, a jedynym miejscem, które je czyta poza `@MainActor`,
+    /// jest sam `deinit` (obiekt nie ma wtedy żadnych innych referencji).
+    nonisolated(unsafe) private var interruptionObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var routeObserver: NSObjectProtocol?
 
     /// Zgłoszenie przerwania systemowego lub zmiany trasy — koordynator decyduje,
     /// co z tym zrobić, a nie warstwa audio.

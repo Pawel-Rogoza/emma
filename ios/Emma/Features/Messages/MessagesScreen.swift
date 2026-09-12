@@ -153,7 +153,7 @@ struct MessagesScreen: View {
                     LoadingState("Wczytuję rozmowy…")
                 case .failed(let failure):
                     LoadFailureView(failure) {
-                        Task { await load() }
+                        Task { await store.load(dependencies) }
                     }
                 case .loaded(let model):
                     if model.rows.isEmpty {

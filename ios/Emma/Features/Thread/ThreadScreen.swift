@@ -79,7 +79,7 @@ final class ThreadStore: ObservableObject {
                 )
             )
         } catch {
-            phase = .failed(ScreenLoad.message(for: error, fallback: "Nie udało się wczytać rozmowy."))
+            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać rozmowy."))
         }
     }
 
@@ -151,11 +151,11 @@ final class ThreadStore: ObservableObject {
                 OutgoingMessageDraft(
                     threadID: model.thread.id,
                     text: text,
+                    quote: draft.quote,
                     authorID: dependencies.currentUser.id,
                     language: client.language,
                     sentAt: dependencies.clock.now(),
-                    idempotencyKey: key,
-                    quote: draft.quote
+                    idempotencyKey: key
                 )
             )
             // Repozytorium samo czyści szkic nadawcy przy przyjęciu wiadomości.

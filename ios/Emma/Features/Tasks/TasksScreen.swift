@@ -107,7 +107,7 @@ struct TasksScreen: View {
                     LoadingState("Wczytuję zadania…")
                 case .failed(let failure):
                     LoadFailureView(failure) {
-                        Task { await load() }
+                        Task { await store.load(dependencies) }
                     }
                 case .loaded(let model):
                     list(model)

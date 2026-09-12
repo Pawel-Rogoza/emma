@@ -1,4 +1,5 @@
 #if canImport(ElevenLabs)
+import Combine
 import ElevenLabs
 import Foundation
 
@@ -38,7 +39,9 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
     private var generation: Int = 0
     private var observedTasks: [Task<Void, Never>] = []
 
-    public init(tokenProvider: BackendConversationTokenProvider, accessToken: String?) {
+    /// Inicjalizacja jest wewnętrzna, bo dostawca tokenu (`BackendConversationTokenProvider`)
+    /// nie jest typem publicznym — transport powstaje wyłącznie przez `VoiceServicesFactory`.
+    init(tokenProvider: BackendConversationTokenProvider, accessToken: String?) {
         self.tokenProvider = tokenProvider
         self.accessToken = accessToken
     }
@@ -51,8 +54,8 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
 
         // Token rozmowy pochodzi z backendu; aplikacja nigdy nie wysyła klucza API.
         let token: String
-        if let provided = session.conversationToken, !provided.isEmpty {
-            token = provided
+        if !session.conversationToken.isEmpty {
+            token = session.conversationToken
         } else {
             let issued = try await tokenProvider.fetchToken(
                 sessionID: session.sessionID,
@@ -80,16 +83,13 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
             onError: { [weak self] error in
                 Task { @MainActor in self?.emit(.fatalError(Self.fatalKind(for: error))) }
             },
+            onAgentResponse: { [weak self] text, _ in
+                Task { @MainActor in self?.emit(.agentTextFinal(text)) }
+            },
             onUserTranscript: { [weak self] text, _ in
                 Task { @MainActor in
                     self?.emit(.userTranscriptFinal(text))
                 }
-            },
-            onAgentResponse: { [weak self] text, _ in
-                Task { @MainActor in self?.emit(.agentTextFinal(text)) }
-            },
-            onAgentStateChange: { [weak self] state in
-                Task { @MainActor in self?.handle(agentState: state) }
             },
             onInterruption: { [weak self] _ in
                 Task { @MainActor in self?.emit(.interruption(.agentTurnCancelled)) }
@@ -112,14 +112,26 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
         emit(.connectionChanged(.connecting))
     }
 
-    /// SDK jest obserwowalny (`ObservableObject`), więc stan połączenia czytamy
-    /// z publikowanych wartości zamiast zgadywać go z wywołań zwrotnych.
+    /// SDK jest obserwowalny (`ObservableObject`), więc stan połączenia i stan agenta
+    /// czytamy z publikowanych wartości zamiast zgadywać go z wywołań zwrotnych.
+    ///
+    /// Uwaga: `onAgentStateChange` w `ConversationConfig` działa **wyłącznie** w trybie
+    /// opartym na zdarzeniach (wymaga `agentStateConfiguration`). Obserwacja
+    /// `agentState` działa w obu trybach i nie zmienia zachowania SDK.
     private func observe(_ conversation: Conversation) {
         observedTasks.append(
             Task { [weak self] in
                 for await state in conversation.$state.values {
                     guard let self else { return }
                     self.handle(state: state)
+                }
+            }
+        )
+        observedTasks.append(
+            Task { [weak self] in
+                for await agentState in conversation.$agentState.values {
+                    guard let self else { return }
+                    self.handle(agentState: agentState)
                 }
             }
         )
@@ -142,7 +154,7 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
         }
     }
 
-    private func handle(agentState: AgentState) {
+    private func handle(agentState: ElevenLabs.AgentState) {
         switch agentState {
         case .listening:
             // SDK nie raportuje osobno końca odtwarzania, dopóki agent nie wróci
@@ -177,7 +189,7 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
         let event = VoiceEvent(
             eventID: UUID().uuidString,
             sessionID: configuration.sessionID,
-            connectionGeneration: ConnectionGeneration(generation),
+            connectionGeneration: ConnectionGeneration(UInt64(generation)),
             receivedAt: Date(),
             source: .providerTransport,
             payload: payload
@@ -201,11 +213,17 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
 
     public func updateContext(_ context: AssistantContext) async throws {
         guard let conversation else { return }
-        // Kontekst przekazujemy jako dane dynamiczne; backend i tak waliduje
-        // spójność (klient + sprawa) przed wykonaniem jakiegokolwiek zapisu.
-        try await conversation.updateContext(
-            ["scope": context.scope.rawValue, "client_id": context.clientID?.rawValue ?? ""]
-        )
+        // `updateContext` w SDK 3.3.1 przyjmuje tekst aktualizacji kontekstu, nie
+        // słownik. Wysyłamy zwięzły, stabilny zapis tych samych pól; backend i tak
+        // waliduje spójność (klient + sprawa) przed wykonaniem jakiegokolwiek zapisu.
+        let fields: [String: String] = [
+            "scope": context.scope.rawValue,
+            "client_id": context.clientID?.rawValue ?? "",
+            "case_id": context.caseID?.rawValue ?? "",
+            "version": String(context.version.value)
+        ]
+        let payload = String(decoding: try JSONEncoder().encode(fields), as: UTF8.self)
+        try await conversation.updateContext(payload)
         // Potwierdzenie kontekstu przychodzi od backendu; dopóki go nie ma,
         // lokalny stan kontekstu nie jest uznawany za obowiązujący.
     }
@@ -228,22 +246,26 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
 
     // MARK: Mapowanie błędów
 
+    /// Mapowanie błędów SDK 3.3.1 na nasze rodzaje błędów krytycznych.
+    ///
+    /// SDK nie ma osobnego przypadku „odmowa dostępu do mikrofonu” ani
+    /// „połączenie zamknięte” — te stany rozpoznajemy po dostępnych przypadkach,
+    /// a wszystko nieznane zostaje `.unknown` (bez twierdzenia, że sesja żyje).
     private static func fatalKind(for error: ConversationError) -> FatalErrorKind {
         switch error {
-        case .microphonePermissionDenied:
-            return .microphonePermissionDenied
         case .authenticationFailed:
             return .authenticationFailed
-        case .connectionClosed, .connectionFailed:
+        case .notConnected, .connectionFailed, .agentTimeout,
+             .localNetworkPermissionRequired, .serverError:
             return .providerUnavailable
-        default:
-            // Nieznany błąd dostawcy nie jest podstawą do twierdzenia, że sesja
-            // jest nadal ważna — koordynator zamknie sesję i pokaże stan.
+        case .microphoneToggleFailed:
+            return .audioSessionFailed
+        case .alreadyActive, .noSoftwareMuteHandlerConfigured:
             return .unknown
         }
     }
 
-    private static func fatalKind(for error: Error) -> FatalErrorKind {
+    private static func fatalKind(for error: any Error) -> FatalErrorKind {
         if let conversationError = error as? ConversationError {
             return fatalKind(for: conversationError)
         }

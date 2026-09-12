@@ -251,12 +251,6 @@ struct CaseCard: View {
 
 // MARK: Pomocnicze
 
-extension Client {
-    /// Etykieta opiekuna z uwzględnieniem braku przypisania.
-    /// Repozytorium używa `nil` na „Nieprzypisany”, nie magicznego użytkownika.
-    var ownerLabel: String { ownerID.map(OwnerName.of) ?? OwnerName.unassigned }
-}
-
 extension LegalCase {
     /// Etykieta prowadzącego sprawę.
     var ownerLabel: String { OwnerName.of(ownerID) }

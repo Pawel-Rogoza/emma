@@ -54,7 +54,7 @@ struct ClientCardScreen: View {
                 onBack: dependencies.back,
                 trailing: {
                     IconButton(systemName: "person.2", accessibilityLabel: "Zmień opiekuna") {
-                        dependencies.present(.assignOwner(clientID: client.id))
+                        dependencies.present(.assignOwner(client.id))
                     }
                 }
             )
@@ -192,7 +192,7 @@ struct ClientCardScreen: View {
     /// nakładamy przezroczysty cel dotyku ≥ 44 pt (§2.2); wygląd listy się nie zmienia.
     private func ownerTapTarget(_ client: Client) -> some View {
         Button {
-            dependencies.present(.assignOwner(clientID: client.id))
+            dependencies.present(.assignOwner(client.id))
         } label: {
             Color.clear
                 .frame(maxWidth: .infinity)
@@ -213,7 +213,7 @@ struct ClientCardScreen: View {
                 .padding(.vertical, 18)
         } else {
             PrimaryButton("Rozpocznij prowadzenie sprawy", systemImage: "folder") {
-                dependencies.present(.startCase(clientID: model.client.id))
+                dependencies.present(.startCase(model.client.id))
             }
         }
     }

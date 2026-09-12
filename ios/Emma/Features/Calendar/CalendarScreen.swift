@@ -135,7 +135,7 @@ struct CalendarScreen: View {
                     LoadingState("Wczytuję plan…")
                 case .failed(let failure):
                     LoadFailureView(failure) {
-                        Task { await load() }
+                        Task { await store.load(dependencies) }
                     }
                 case .loaded(let model):
                     dayStrip(model)
