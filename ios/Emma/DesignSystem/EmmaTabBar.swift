@@ -9,6 +9,7 @@ import SwiftUI
 // a natywny pasek iOS nie pozwala odtworzyć tego wyglądu bez utraty zgodności.
 
 public struct EmmaTabBar: View {
+    @EnvironmentObject private var dependencies: AppDependencies
     @Binding private var selection: AppTab
     private let unreadCount: Int
 
@@ -36,7 +37,13 @@ public struct EmmaTabBar: View {
     private func tabButton(_ tab: AppTab) -> some View {
         let isSelected = tab == selection
         Button {
-            selection = tab
+            // Ponowne dotknięcie aktywnej zakładki wraca do jej ekranu głównego —
+            // zachowanie standardowe dla pasków zakładek (popToRoot).
+            if isSelected {
+                dependencies.go(to: tab, resetStack: true)
+            } else {
+                selection = tab
+            }
         } label: {
             VStack(spacing: 3) {
                 if tab.isEmmaChip {

@@ -37,18 +37,32 @@ public struct EmmaOrb: View {
 
     private let size: Size
     private let isActive: Bool
+    private let breathing: Bool
 
     /// - Parameters:
     ///   - size: rozmiar z referencji.
     ///   - isActive: pulsowanie wyłącznie w stanie aktywnym (listening/speaking/thinking).
     ///     Przy włączonym „Ograniczeniu ruchu” pulsowanie jest wyłączone, a stan
     ///     pozostaje czytelny dzięki etykiecie tekstowej.
-    public init(size: Size = .card, isActive: Bool = false) {
+    ///   - breathing: spokojna animacja obecności (delikatne oddychanie i poświata),
+    ///     dla ekranu głównego, gdzie orb ma „żyć” także bez rozmowy. Pusta
+    ///     animacja nigdy nie oznacza stanu sesji — do tego służy `isActive`.
+    public init(size: Size = .card, isActive: Bool = false, breathing: Bool = false) {
         self.size = size
         self.isActive = isActive
+        self.breathing = breathing
     }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Napędza pętlę oddychania — sama zmiana stanu w `onAppear`, pętla jest
+    /// w animacji, więc widok nie przebija się klatką po klatce.
+    @State private var isBreathing = false
+
+    private var orbScale: CGFloat {
+        if isActive && !reduceMotion { return 1.06 }
+        if breathing && !reduceMotion && isBreathing { return 1.035 }
+        return 1.0
+    }
 
     public var body: some View {
         Circle()
@@ -67,15 +81,30 @@ public struct EmmaOrb: View {
             .overlay {
                 Circle().strokeBorder(Color.white.opacity(0.35), lineWidth: max(0.5, size.diameter * 0.02))
             }
+            .background {
+                if breathing && !reduceMotion {
+                    Circle()
+                        .strokeBorder(Color(hex: 0x9CBFDD, opacity: 0.5), lineWidth: 1)
+                        .scaleEffect(isBreathing ? 1.32 : 1.08)
+                        .opacity(isBreathing ? 0 : 0.55)
+                }
+            }
             .frame(width: size.diameter, height: size.diameter)
             .shadow(color: Color(hex: 0x9CBFDD, opacity: 0.18), radius: size.diameter * 0.18, x: 0, y: size.diameter * 0.08)
-            .scaleEffect(isActive && !reduceMotion ? 1.06 : 1.0)
+            .scaleEffect(orbScale)
             .animation(
                 isActive && !reduceMotion
                     ? .easeInOut(duration: 1.6).repeatForever(autoreverses: true)
                     : .default,
                 value: isActive
             )
+            .animation(
+                .easeInOut(duration: 3.6).repeatForever(autoreverses: true),
+                value: isBreathing
+            )
+            .onAppear {
+                isBreathing = breathing && !reduceMotion
+            }
             .accessibilityHidden(true)
     }
 
@@ -100,10 +129,6 @@ public struct EmmaOrb: View {
     }
 }
 
-// MARK: - Orb z etykietą stanu
-
-/// Orb z nazwą stanu obok. Używany w kartach i na ekranie asystenta.
-
 #Preview("Orb Emmy — rozmiary") {
     VStack(spacing: 24) {
         HStack(spacing: 16) {
@@ -114,6 +139,7 @@ public struct EmmaOrb: View {
         }
         EmmaOrb(size: .hero)
         EmmaOrb(size: .hero, isActive: true)
+        EmmaOrb(size: .hero, breathing: true)
     }
     .padding(30)
     .background(EmmaTheme.bg)

@@ -76,14 +76,15 @@ final class DemoFlowUITests: XCTestCase {
     }
 
     /// Lista klientów pokazuje dane przykładowe, a karta klienta otwiera się i zamyka.
+    /// Tryb „Leady” pokazuje zgłoszenia (np. Andriia Melnyka) — klientka ze statusem
+    /// „Klient” (Olena) leży w trybie „Sprawy”, nie na liście leadów.
     func testClientListOpensClientCard() {
         openTab("clients")
-        let client = application.staticTexts["Olena Kovalenko"]
-        XCTAssertTrue(client.waitForExistence(timeout: 10), "Brak klientki z danych przykładowych")
+        let client = application.staticTexts["Andrii Melnyk"]
+        XCTAssertTrue(client.waitForExistence(timeout: 10), "Brak klienta z danych przykładowych")
         client.tap()
         XCTAssertTrue(
-            application.staticTexts["Karta klienta"].waitForExistence(timeout: 5)
-                || application.staticTexts["Olena Kovalenko"].waitForExistence(timeout: 5),
+            application.staticTexts["Andrii Melnyk"].waitForExistence(timeout: 5),
             "Karta klienta nie otworzyła się"
         )
     }
@@ -124,20 +125,20 @@ final class DemoFlowUITests: XCTestCase {
         }
     }
 
-    /// Zakładka Emmy pokazuje orb i umie rozpocząć rozmowę na mocku.
+    /// Zakładka Emmy pokazuje intro z orbem i umie uruchomić przykład na mocku.
+    // Wejście w rozmowę to sugestia „Opowiedz mi o dzisiejszym dniu” — mock Emmy
+    // odpowiada deterministycznie turą z briefingiem i przyciskiem odsłuchu.
     func testEmmaTabStartsMockConversation() {
         openTab("emma")
-        let start = application.buttons["Rozpocznij rozmowę"]
-        if start.waitForExistence(timeout: 10) {
-            start.tap()
-            // Mock odpowiada deterministycznie: interfejs musi pokazać stan sesji.
-            let status = application.staticTexts.containing(
-                NSPredicate(format: "label CONTAINS[c] 'Połączona' OR label CONTAINS[c] 'Łączę'")
-            ).firstMatch
-            XCTAssertTrue(status.waitForExistence(timeout: 10), "Brak stanu połączenia po starcie")
-        } else {
-            XCTFail("Brak przycisku rozpoczęcia rozmowy w zakładce Emma")
-        }
+        let suggestion = application.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH[c] 'Opowiedz mi o dzisiejszym dniu'")
+        ).firstMatch
+        XCTAssertTrue(suggestion.waitForExistence(timeout: 10), "Brak sugestii na ekranie Emmy")
+        suggestion.tap()
+        let listen = application.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH[c] 'Odsłuchaj'")
+        ).firstMatch
+        XCTAssertTrue(listen.waitForExistence(timeout: 10), "Brak odpowiedzi Emmy po sugestii")
     }
 
     /// Wątek rozmowy: wejście z listy i widoczne pole wiadomości.
@@ -150,15 +151,15 @@ final class DemoFlowUITests: XCTestCase {
         XCTAssertTrue(composer.waitForExistence(timeout: 10), "Brak pola wiadomości w wątku")
     }
 
-    /// Przełączenie użytkownika w profilu nie może zostawić stanu poprzedniej osoby.
+    /// Profil otwiera się z nagłówka ekranu głównego (przycisk z inicjałami).
     func testProfileSheetOpens() {
         openTab("today")
-        let profile = application.buttons["Profil"]
+        let profile = application.buttons["Twój profil"]
         guard profile.waitForExistence(timeout: 10) else {
             XCTFail("Brak wejścia do profilu na ekranie Dzisiaj")
             return
         }
         profile.tap()
-        XCTAssertTrue(application.staticTexts["Profil"].waitForExistence(timeout: 5))
+        XCTAssertTrue(application.staticTexts["Twój obszar pracy"].waitForExistence(timeout: 5))
     }
 }

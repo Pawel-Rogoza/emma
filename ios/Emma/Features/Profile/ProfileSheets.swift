@@ -26,7 +26,7 @@ struct ProfileSheet: View {
             }
             .padding(.bottom, 16)
 
-            Text("AI i integracja WhatsApp są symulowane. Głos korzysta z funkcji przeglądarki. Data przykładowego dnia: 11 września 2026.")
+            Text("AI i integracja WhatsApp są symulowane. Głos działa w trybie demonstracyjnym. Data przykładowego dnia: 11 września 2026.")
                 .font(EmmaTypography.ui(11))
                 .foregroundStyle(EmmaTheme.mutedSoft)
                 .fixedSize(horizontal: false, vertical: true)

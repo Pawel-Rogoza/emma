@@ -184,6 +184,43 @@ przy kategorii dostępności XXXL. To pozycja pierwszego testu na symulatorze.
 
 ---
 
+### D-14 · Tłumaczenia usunięte z rozmów — **decyzja właściciela**
+
+**Treść:** dymki wiadomości nie pokazują sekcji „Tłumaczenie” (odpowiednik
+`<details class="bubble-translation">` z referencji). Pole `Message.translation`
+zostaje w modelu i danych — mogłoby wrócić jako opcja — ale nie jest wyświetlane.
+Tokeny `bubbleTranslation*` usunięte z `EmmaTheme`.
+
+**Powód:** polecenie właściciela podczas audytu designu: zespół rozumie języki
+ukraiński i rosyjski, więc tłumaczenia zaburzają czytelność rozmowy.
+
+**Wpływ:** krótsze, czystsze dymki; interfejs rozmowy mniej obleczony tekstem
+pomocniczym. Preview (`build-preview.py`) i pomiar renderu zaktualizowane.
+
+**Cofnięcie:** jedno `if let translation` w `MessageBubble` + przywrócenie tokenów.
+
+### D-15 · Ekran główny to Emma, nie kokpit — **decyzja właściciela**
+
+**Treść:** zakładka „Dzisiaj” nie odtwarza `home()` z referencji (powitanie,
+karta Emmy z briefingiem, statystyki, najbliższa konsultacja, zadania, sprawy).
+Zamiast tego: nagłówek z datą i powitaniem, duży orb Emmy z animacją obecności
+(`breathing`), krótka podpowiedź i dwa wejścia do rozmowy (głos / tekst),
+plus dyskretne łącze „Zadania na dziś”.
+
+**Powód:** polecenie właściciela: domyślny ekran ma być pusty wizualnie i
+skoncentrowany na rozmowie z Emmą, a nie na podsumowaniu dnia.
+
+**Wpływ:** statystyki i sprawy dostępne są wyłącznie na swoich zakładkach
+(„Klienci”, „Kalendarz”); briefing dnia jest dalej dostępny na ekranie Emmy
+(„Opowiedz mi o dzisiejszym dniu”). `TasksScreen` nie ma własnej zakładki,
+więc łącze „Zadania na dziś” jest jego jedynym wejściem (rozszerzenie stosu
+nawigacji zakładki „Dzisiaj”). Ekran nie ładuje repozytorium — brak stanu
+„Wczytuję…” na starcie.
+
+**Cofnięcie:** przywrócenie `TodayStore` i sekcji z historii gita.
+
+---
+
 ## Czego ten rejestr nie zawiera
 
 Nie zawiera porównania zrzutów ekranu, bo **nie zostały wykonane** — brak macOS

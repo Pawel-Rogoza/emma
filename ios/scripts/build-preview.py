@@ -260,56 +260,25 @@ class Renderer:
         )
 
     def screen_today(self) -> str:
-        summary = self.data["todaySummary"]
-        tasks = ""
-        for task in summary["tasksDueToday"]:
-            tasks += self.task_row(self.task_row_data(task))
-
-        cases = ""
-        for legal_case in self.data["cases"]:
-            client = next((c for c in self.data["clients"] if c["id"] == legal_case["clientID"]), None)
-            cases += f'''
-            <article class="case-card">
-              <div class="case-card-head"><span>{escaped(legal_case["number"])}</span>
-                <span class="pill">{escaped(legal_case["status"])}</span></div>
-              <h3>{escaped(legal_case["title"])}</h3>
-              <p>{escaped(client["displayName"] if client else "")} · {escaped(legal_case.get("owner", ""))}</p>
-            </article>'''
-
-        next_consultation = summary["nextConsultation"]
-        consultation = ""
-        if next_consultation:
-            client = next((c for c in self.data["clients"] if c["id"] == next_consultation["clientID"]), None)
-            consultation = f'''
-            <article class="meeting">
-              <div class="meeting-top"><span>{escaped(summary["nextConsultationLabel"])}</span>
-                <span>{escaped(next_consultation["kind"])}</span></div>
-              <h3>{escaped(next_consultation["title"])}</h3>
-              <p>{escaped(client["displayName"] if client else "")}</p>
-            </article>'''
-
+        # Decyzja właściciela: czysty start z Emmą zamiast kokpitu
+        # (docs/ios/DESIGN_DEVIATIONS.md — wpis o ekranie głównym).
         return f'''
         <section class="phone" id="dzisiaj">
           <div class="phone-head"><h3>Dzisiaj <span class="src">dane: eksport · układ: rekonstrukcja</span></h3></div>
-          <div class="screen">
-            <p class="kicker">{escaped(self.labels["kicker"])}</p>
-            <h1 class="welcome">Dzień dobry, {escaped(self.labels["owner"] + "u")}</h1>
-            <div class="emma-card">
-              <div class="emma-top"><div style="{self.orb_css("37px")}"></div>
-                <b>Briefing Emmy</b><button class="text-button">Odsłuchaj</button></div>
-              <p class="briefing">{escaped(summary["briefing"]).replace(chr(10), "<br>")}</p>
+          <div class="screen home-clean">
+            <div class="home-head">
+              <div>
+                <p class="kicker">{escaped(self.labels["kicker"])}</p>
+                <h1 class="welcome">Dzień dobry, {escaped(self.labels["owner"] + "u")}</h1>
+              </div>
+              <span class="avatar"></span>
             </div>
-            <div class="stats">
-              <div><b>{summary["leadCount"]}</b><span>w kontakcie</span></div>
-              <div><b>{summary["activeCaseCount"]}</b><span>prowadzone sprawy</span></div>
-              <div><b>{len(summary["tasksDueToday"])}</b><span>zadania na dziś</span></div>
-            </div>
-            <div class="section-head"><h2>Najbliższa konsultacja</h2></div>
-            {consultation or '<p class="empty">Brak zaplanowanej konsultacji.</p>'}
-            <div class="section-head"><h2>Zadania na dziś</h2><span class="count">{escaped(summary["tasksDueTodayLabel"])}</span></div>
-            {tasks or '<p class="empty">Wszystkie zadania wykonane.</p>'}
-            <div class="section-head"><h2>Prowadzone sprawy</h2></div>
-            {cases}
+            <div class="home-orb"><span class="home-orb-dot" style="{self.orb_css("100px")}"></span></div>
+            <h2 class="home-title">Jestem Emma.</h2>
+            <p class="home-sub">Pytaj o sprawy, wiadomości i terminy —<br>głosem albo na piśmie.</p>
+            <button class="primary-button home-cta">Porozmawiaj głosem</button>
+            <button class="secondary-button home-cta">Napisz do Emmy</button>
+            <p class="home-link">Zadania na dziś</p>
           </div>
           {self.tab_bar("dzisiaj", self.data["unreadTotal"])}
         </section>'''
@@ -433,13 +402,9 @@ class Renderer:
             if message.get("quote"):
                 quote = f'''<div class="quoted-message"><b>{escaped(message["quote"].get("author", ""))}</b>
                   <span>{escaped(message["quote"].get("text", ""))}</span></div>'''
-            translation = ""
-            if message.get("translation"):
-                translation = f'''<details class="bubble-translation"><summary>Tłumaczenie</summary>
-                  <p>{escaped(message["translation"])}</p></details>'''
             bubbles += f'''
             <article class="chat-message {'outgoing' if outgoing else 'incoming'}">
-              {quote}<p>{escaped(message["text"])}</p>{translation}
+              {quote}<p>{escaped(message["text"])}</p>
               <div class="bubble-meta"><time>{escaped(message.get("time", ""))}</time></div>
             </article>'''
         return f'''
@@ -742,6 +707,15 @@ main > section:not(.phone) { grid-column: 1 / -1; }
 .screen { width: %%(screenW)px; max-width: 100%%%%; padding: 18px 20px 0; }
 .kicker { font-size: 11px; letter-spacing: 1.5px; font-weight: 600; color: %(mutedSoft)s; margin: 0 0 6px; }
 .welcome { font-family: 'Manrope'; font-weight: 800; font-size: 25px; letter-spacing: -0.9px; margin: 0 0 16px; }
+.home-clean { min-height: 620px; display: flex; flex-direction: column; align-items: stretch; text-align: center; }
+.home-head { display: flex; justify-content: space-between; align-items: flex-start; text-align: left; }
+.home-head .welcome { margin: 0; }
+.home-orb { display: flex; justify-content: center; margin: 56px 0 22px; }
+.home-orb-dot { display: block; }
+.home-title { font-family: 'Manrope'; font-size: 24px; font-weight: 800; letter-spacing: -0.7px; margin: 0 0 10px; }
+.home-sub { color: %(muted)s; font-size: 14px; line-height: 1.55; margin: 0 0 44px; }
+.home-cta { width: 100%%%%; margin-bottom: 10px; }
+.home-link { color: %(muted)s; font-size: 13px; font-weight: 500; margin: 16px 0 26px; }
 .emma-card { background: %(emmaCard)s; color: #fff; border-radius: %(radiusEmmaCard)spt; padding: 18px 20px; }
 .emma-card .emma-top { display: flex; align-items: center; gap: 10px; font-size: 15px; }
 .emma-card p, .briefing { color: %(emmaCardText)s; font-size: 15px; margin: 12px 0 15px; }
@@ -835,10 +809,6 @@ main > section:not(.phone) { grid-column: 1 / -1; }
 .chat-message.outgoing { background: %(bubbleOut)s; margin-left: auto; border-bottom-left-radius: %(radiusBubble)spt;
   border-bottom-right-radius: %(radiusBubbleTail)spt; }
 .chat-message > p { font-size: 16px; margin: 0 0 6px; }
-.bubble-translation { margin-top: 9px; border-top: 1px solid #E1E7EE; padding-top: 8px;
-  font-size: 13px; color: #627790; }
-.bubble-translation summary { cursor: pointer; padding: 3px 0 5px; min-height: 28px; }
-.bubble-translation p { font-size: 14px; line-height: 1.5; margin: 5px 0; color: #4E6178; white-space: pre-wrap; }
 .bubble-meta { display: flex; gap: 5px; color: %(bubbleMeta)s; font-size: 11px; min-height: 25px; align-items: center; }
 .quoted-message { background: %(quoteBg)s; border-left: 3px solid %(quoteRule)s; border-radius: %(radiusBubbleTail)spt;
   padding: 8px 10px; margin-bottom: 8px; font-size: 13px; }

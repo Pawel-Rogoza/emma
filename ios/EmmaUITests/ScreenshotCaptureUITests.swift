@@ -56,10 +56,11 @@ final class ScreenshotCaptureUITests: XCTestCase {
             return nil
         }
 
-        capture("03-karta-klienta", description: "Karta klienta Oleny Kovalenko") {
+        capture("03-karta-klienta", description: "Karta klienta Andriia Melnyka") {
             selectTab("clients")
-            let row = application.staticTexts["Olena Kovalenko"]
-            guard row.waitForExistence(timeout: 10) else { return "brak klientki w liście" }
+            // Tryb „Leady” pokazuje zgłoszenia; Olena ma status „Klient” i jest w „Sprawach”.
+            let row = application.staticTexts["Andrii Melnyk"]
+            guard row.waitForExistence(timeout: 10) else { return "brak klienta w liście" }
             row.tap()
             return nil
         }
@@ -74,7 +75,7 @@ final class ScreenshotCaptureUITests: XCTestCase {
                 return "brak przełącznika trybu „Sprawy”"
             }
             let firstCase = application.staticTexts.matching(
-                NSPredicate(format: "label CONTAINS[c] 'Sprawa' OR label CONTAINS[c] 'case-'")
+                NSPredicate(format: "label CONTAINS[c] 'KR / 2026'")
             ).firstMatch
             guard firstCase.waitForExistence(timeout: 10) else { return "brak sprawy na liście" }
             firstCase.tap()
@@ -83,7 +84,7 @@ final class ScreenshotCaptureUITests: XCTestCase {
 
         capture("05-zadania", description: "Wspólna lista zadań") {
             selectTab("today")
-            let tasks = application.buttons["Zadania"]
+            let tasks = application.buttons["Otwórz listę zadań na dziś"]
             guard tasks.waitForExistence(timeout: 10) else { return "brak wejścia do zadań na ekranie Dzisiaj" }
             tasks.tap()
             return nil
@@ -99,7 +100,7 @@ final class ScreenshotCaptureUITests: XCTestCase {
             return nil
         }
 
-        capture("08-watek", description: "Wątek z tłumaczeniami i separatorem nowych") {
+        capture("08-watek", description: "Wątek z separatorem nowych wiadomości") {
             selectTab("messages")
             let row = application.staticTexts["Olena Kovalenko"]
             guard row.waitForExistence(timeout: 10) else { return "brak wątku w liście rozmów" }
@@ -112,16 +113,18 @@ final class ScreenshotCaptureUITests: XCTestCase {
             return nil
         }
 
-        capture("10-emma-rozmowa", description: "Emma — rozmowa po rozpoczęciu sesji na mocku") {
+        capture("10-emma-rozmowa", description: "Emma — odpowiedź mocka po wybraniu sugestii") {
             selectTab("emma")
-            let start = application.buttons["Rozpocznij rozmowę"]
-            guard start.waitForExistence(timeout: 10) else { return "brak przycisku rozpoczęcia rozmowy" }
-            start.tap()
-            // Mock odpowiada deterministycznie; czekamy na stan połączenia.
-            let connected = application.staticTexts.matching(
-                NSPredicate(format: "label CONTAINS[c] 'Połączona' OR label CONTAINS[c] 'Słucham'")
+            let suggestion = application.buttons.matching(
+                NSPredicate(format: "label BEGINSWITH[c] 'Opowiedz mi o dzisiejszym dniu'")
+            ).firstMatch
+            guard suggestion.waitForExistence(timeout: 10) else { return "brak sugestii na ekranie Emmy" }
+            suggestion.tap()
+            // Mock odpowiada deterministycznie; czekamy na turę z briefingiem.
+            let answered = application.buttons.matching(
+                NSPredicate(format: "label BEGINSWITH[c] 'Odsłuchaj'")
             ).firstMatch.waitForExistence(timeout: 15)
-            if !connected { return "sesja nie pokazała stanu połączenia w 15 s" }
+            if !answered { return "Emma nie odpowiedziała w 15 s" }
             return nil
         }
 

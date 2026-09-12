@@ -65,12 +65,9 @@ public enum EmmaTheme {
     public static let chatDayChip = Color(hex: 0xE5EAF0)
     public static let chatDayChipText = Color(hex: 0x788697)
     public static let dictationAccent = Color(hex: 0x9A622C)
-    /// `.bubble-translation` — linia nad tłumaczeniem
-    public static let bubbleTranslationRule = Color(hex: 0xE1E7EE)
-    /// `.bubble-translation summary` — etykieta „Tłumaczenie”
-    public static let bubbleTranslationLabel = Color(hex: 0x627790)
-    /// `.bubble-translation p` — treść tłumaczenia
-    public static let bubbleTranslationText = Color(hex: 0x4E6178)
+    // Tłumaczenia wiadomości usunięte z interfejsu na życzenie właściciela
+    // (zespół rozumie uk/ru) — tokeny `.bubble-translation` świadomie bez
+    // odpowiedników. Rejestr: docs/ios/DESIGN_DEVIATIONS.md.
 
     // Status i komunikaty
     public static let danger = Color(hex: 0xA1533E)

@@ -68,9 +68,8 @@ MEASURE_SCRIPT = r"""
     overflowing: [],
     emptyCards: [],
     overlaps: [],
-    translations: [...document.querySelectorAll("details.bubble-translation")].map(d => ({
-      open: d.open, summary: text(d.querySelector("summary") || d)
-    })),
+    // Tłumaczenia wiadomości zostały usunięte z interfejsu (decyzja właściciela) —
+    // brak elementów details.bubble-translation w podglądzie jest zgodny z aplikacją.
     transparentBackgrounds: [],
     unreadBadges: document.querySelectorAll(".tabbar .badge, .thread-row .badge").length,
     counts: {
@@ -264,11 +263,6 @@ def main() -> int:
     print(f"\nZawartość: {report['counts']['cards']} kart, {report['counts']['stateRows']} wierszy stanów, "
           f"{report['counts']['swatches']} próbek kolorów, {report['counts']['tableRows']} wierszy tabel, "
           f"{report['unreadBadges']} plakietek nieprzeczytanych")
-
-    print(f"\nTłumaczenia (details): {report['translations']}")
-    for translation in report["translations"]:
-        if translation["open"]:
-            problems.append("tłumaczenie jest rozwinięte, a referencja trzyma je zwinięte")
 
     for key, label in (("overflowing", "Wystaje poza szerokość"),
                        ("clipped", "Tekst ucięty"),
