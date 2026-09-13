@@ -27,14 +27,23 @@ final class CalendarStore: ObservableObject {
     @Published private(set) var selectedDay: LocalDate = LocalDate(year: 2026, month: 9, day: 11)
     @Published private(set) var weekStart: LocalDate = LocalDate(year: 2026, month: 9, day: 7)
 
+    /// Jednorazowa inicjalizacja odświeżania (F01). Wcześniej `configure` sprawdzał
+    /// `phase.hasLoaded`, ale `load` ustawiał `.loading` **przed** wywołaniem
+    /// `configure` — warunek był zawsze fałszywy, więc każde odświeżenie cofało
+    /// wybrany dzień i przesunięcie tygodnia do „dzisiaj”.
+    private var didConfigure = false
+
     func configure(today: LocalDate) {
-        if phase.hasLoaded { return }
+        guard !didConfigure else { return }
+        didConfigure = true
         selectedDay = today
         weekStart = today.startOfWeekMonday
     }
 
     func load(_ dependencies: AppDependencies) async {
-        phase = .loading
+        // Odświeżenie nie chowa już wczytanej listy: pasek tygodnia i wydarzenia
+        // zostają na ekranie, a wybór dnia nie jest resetowany (F01).
+        if !phase.hasLoaded { phase = .loading }
         let today = dependencies.today
         configure(today: today)
         do {
@@ -105,7 +114,7 @@ struct CalendarScreen: View {
                 HStack {
                     Spacer(minLength: 0)
                     IconButton(systemName: "plus", accessibilityLabel: "Dodaj termin") {
-                        dependencies.present(.eventForm(editing: nil, clientID: nil, caseID: nil))
+                        dependencies.present(.eventForm(editing: nil, clientID: nil, caseID: nil, initialDay: nil))
                     }
                 }
                 .padding(.bottom, 12)
@@ -150,9 +159,14 @@ struct CalendarScreen: View {
                     }
 
                     SecondaryButton("Dodaj termin na ten dzień", systemImage: "plus") {
-                        // Formularz startuje z dniem bieżącym aplikacji; wybrany dzień
-                        // w pasku tygodnia jest dniem przeglądania, nie dniem edycji.
-                        dependencies.present(.eventForm(editing: nil, clientID: nil, caseID: nil))
+                        // Wybrany dzień paska tygodnia jest dniem, na który naprawdę
+                        // dodajemy termin — formularz dziedziczy go jawnie (F10).
+                        dependencies.present(.eventForm(
+                            editing: nil,
+                            clientID: nil,
+                            caseID: nil,
+                            initialDay: store.selectedDay
+                        ))
                     }
                     .padding(.top, 6)
                 }

@@ -12,43 +12,100 @@ import SwiftUI
 // MARK: Wspólne pola
 
 /// Pole daty w formacie `yyyy-MM-dd` z zachowaniem typu `LocalDate`.
+///
+/// Niepoprawny tekst jest widoczny jako błąd i **blokuje zapis** (`isValid`).
+/// Wcześniej literówka po cichu zostawiała poprzednią datę, więc na ekranie było
+/// co innego, niż trafiało do repozytorium (F10).
 private struct DateField: View {
     let label: String
     @Binding var day: LocalDate
+    @Binding var isValid: Bool
 
     @State private var text: String = ""
+    @State private var showsFormatError = false
 
     var body: some View {
         LabeledField(label) {
-            TextField("2026-09-11", text: $text)
-                .keyboardType(.numbersAndPunctuation)
-                .emmaFieldStyle()
-                .onAppear { text = day.isoString }
-                .onChange(of: text) { _, newValue in
-                    if let parsed = LocalDate(iso: newValue) { day = parsed }
+            VStack(alignment: .leading, spacing: 6) {
+                TextField("2026-09-11", text: $text)
+                    .keyboardType(.numbersAndPunctuation)
+                    .emmaFieldStyle()
+                    .onAppear {
+                        text = day.isoString
+                        isValid = true
+                    }
+                    .onChange(of: text) { _, newValue in
+                        if let parsed = LocalDate(iso: newValue) {
+                            day = parsed
+                            isValid = true
+                            showsFormatError = false
+                        } else {
+                            isValid = false
+                            showsFormatError = true
+                        }
+                    }
+                    .onChange(of: day) { _, newValue in
+                        // Zmiana daty spoza pola (np. wczytanie istniejącego rekordu).
+                        guard LocalDate(iso: text) != newValue else { return }
+                        text = newValue.isoString
+                        isValid = true
+                        showsFormatError = false
+                    }
+                    .accessibilityLabel(label)
+                if showsFormatError {
+                    Text("Podaj datę w zapisie RRRR-MM-DD, np. 2026-09-11.")
+                        .font(EmmaTypography.ui(12))
+                        .foregroundStyle(EmmaTheme.danger)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .accessibilityLabel(label)
+            }
         }
     }
 }
 
-/// Pole godziny w zapisie `HH:mm`.
+/// Pole godziny w zapisie `HH:mm`. Ma tę samą jawną walidację co `DateField` (F10).
 private struct TimeField: View {
     let label: String
     @Binding var time: TimeOfDay
+    @Binding var isValid: Bool
 
     @State private var text: String = ""
+    @State private var showsFormatError = false
 
     var body: some View {
         LabeledField(label) {
-            TextField("10:30", text: $text)
-                .keyboardType(.numbersAndPunctuation)
-                .emmaFieldStyle()
-                .onAppear { text = time.hhmm }
-                .onChange(of: text) { _, newValue in
-                    if let parsed = TimeOfDay(hhmm: newValue) { time = parsed }
+            VStack(alignment: .leading, spacing: 6) {
+                TextField("10:30", text: $text)
+                    .keyboardType(.numbersAndPunctuation)
+                    .emmaFieldStyle()
+                    .onAppear {
+                        text = time.hhmm
+                        isValid = true
+                    }
+                    .onChange(of: text) { _, newValue in
+                        if let parsed = TimeOfDay(hhmm: newValue) {
+                            time = parsed
+                            isValid = true
+                            showsFormatError = false
+                        } else {
+                            isValid = false
+                            showsFormatError = true
+                        }
+                    }
+                    .onChange(of: time) { _, newValue in
+                        guard TimeOfDay(hhmm: text) != newValue else { return }
+                        text = newValue.hhmm
+                        isValid = true
+                        showsFormatError = false
+                    }
+                    .accessibilityLabel(label)
+                if showsFormatError {
+                    Text("Podaj godzinę w zapisie GG:MM, np. 15:00.")
+                        .font(EmmaTypography.ui(12))
+                        .foregroundStyle(EmmaTheme.danger)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .accessibilityLabel(label)
+            }
         }
     }
 }
@@ -190,6 +247,7 @@ struct TaskFormSheet: View {
     @State private var title = ""
     @State private var selectedClient: ClientID?
     @State private var dueDate = LocalDate(year: 2026, month: 9, day: 11)
+    @State private var dueDateValid = true
     @State private var priority: TaskPriority = .normal
     @State private var error: String?
     @State private var clients: [Client] = []
@@ -232,7 +290,7 @@ struct TaskFormSheet: View {
                 .accessibilityLabel("Powiązany klient")
             }
 
-            DateField(label: "Termin", day: $dueDate)
+            DateField(label: "Termin", day: $dueDate, isValid: $dueDateValid)
 
             LabeledField("Priorytet") {
                 HStack(spacing: 6) {
@@ -288,6 +346,10 @@ struct TaskFormSheet: View {
             error = "Uzupełnij nazwę i prawidłową datę."
             return
         }
+        guard dueDateValid else {
+            error = "Popraw termin: data musi być w zapisie RRRR-MM-DD."
+            return
+        }
         error = nil
 
         let result: TaskItem?
@@ -325,6 +387,9 @@ struct EventFormSheet: View {
     let eventID: EventID?
     let clientID: ClientID?
     let caseID: CaseID?
+    /// Dzień, na który otwarto formularz (np. wybrany w pasku tygodnia). `nil`
+    /// znaczy „weź dzień bieżący aplikacji”; widoczna data jest zawsze tą zapisywaną.
+    let initialDay: LocalDate?
 
     @EnvironmentObject private var dependencies: AppDependencies
 
@@ -332,7 +397,9 @@ struct EventFormSheet: View {
     @State private var title = "Konsultacja"
     @State private var kind: EventKind = .consultation
     @State private var day = LocalDate(year: 2026, month: 9, day: 11)
+    @State private var dateValid = true
     @State private var time = TimeOfDay(hhmm: "15:00") ?? TimeOfDay(minutes: 900)!
+    @State private var timeValid = true
     @State private var duration = 30
     @State private var status: EventStatus = .toConfirm
     @State private var place = ""
@@ -383,8 +450,8 @@ struct EventFormSheet: View {
                 .pickerStyle(.segmented)
             }
 
-            DateField(label: "Data", day: $day)
-            TimeField(label: "Godzina", time: $time)
+            DateField(label: "Data", day: $day, isValid: $dateValid)
+            TimeField(label: "Godzina", time: $time, isValid: $timeValid)
 
             LabeledField("Czas trwania") {
                 Picker("Czas trwania", selection: $duration) {
@@ -420,7 +487,8 @@ struct EventFormSheet: View {
         loaded = true
         clients = (try? await dependencies.repository.clients(matching: "", stage: nil)) ?? []
         selectedClient = clientID ?? clients.first?.id
-        day = dependencies.today
+        // Dzień z trasy (np. wybrany w kalendarzu) ma pierwszeństwo nad dniem bieżącym.
+        day = initialDay ?? dependencies.today
         if let eventID, let existing = try? await dependencies.repository.event(id: eventID) {
             original = existing
             selectedClient = existing.clientID
@@ -443,6 +511,10 @@ struct EventFormSheet: View {
         let trimmedPlace = place.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty, !trimmedPlace.isEmpty else {
             error = "Uzupełnij klienta, nazwę, miejsce i prawidłowy termin."
+            return
+        }
+        guard dateValid, timeValid else {
+            error = "Popraw termin: data w zapisie RRRR-MM-DD, godzina w zapisie GG:MM."
             return
         }
         error = nil
@@ -489,51 +561,69 @@ struct TaskDetailSheet: View {
     let taskID: TaskID
 
     @EnvironmentObject private var dependencies: AppDependencies
-    @State private var task: TaskItem?
+    @State private var phase: LoadPhase<TaskItem> = .idle
     @State private var error: String?
 
     var body: some View {
         SheetScaffold(title: "Zadanie", onClose: { dependencies.dismissSheet() }) {
-            if let task {
-                Text(task.title)
-                    .font(EmmaTypography.body(for: task.title, size: 17))
-                    .foregroundStyle(EmmaTheme.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.bottom, 14)
-
-                InfoList([
-                    .init("Termin", dependencies.dateText.dayLabel(task.dueDate)),
-                    .init("Status", task.isDone ? "Wykonane" : "Do zrobienia")
-                ])
-                .padding(.bottom, 16)
-
-                if let error { InlineError(error) }
-
-                PrimaryButton(
-                    task.isDone ? "Przywróć zadanie" : "Oznacz jako wykonane",
-                    systemImage: "checkmark"
-                ) {
-                    Task { await toggle(task) }
-                }
-                .padding(.bottom, 10)
-
-                HStack(spacing: 10) {
-                    SecondaryButton("Edytuj") {
-                        dependencies.present(.taskForm(editing: task.id, clientID: task.clientID, caseID: task.caseID))
-                    }
-                    if let clientID = task.clientID {
-                        SecondaryButton("Karta klienta") {
-                            dependencies.dismissSheet()
-                            dependencies.openPerson(clientID)
-                        }
-                    }
-                }
-            } else {
+            switch phase {
+            case .idle, .loading:
                 LoadingState("Wczytuję zadanie…")
+            case .failed(let failure):
+                LoadFailureView(failure) {
+                    Task { await load() }
+                }
+            case .loaded(let task):
+                content(task)
             }
         }
-        .task {
-            task = try? await dependencies.repository.task(id: taskID)
+        .task { await load() }
+    }
+
+    @ViewBuilder
+    private func content(_ task: TaskItem) -> some View {
+        Text(task.title)
+            .font(EmmaTypography.body(for: task.title, size: 17))
+            .foregroundStyle(EmmaTheme.ink)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.bottom, 14)
+
+        InfoList([
+            .init("Termin", dependencies.dateText.dayLabel(task.dueDate)),
+            .init("Status", task.isDone ? "Wykonane" : "Do zrobienia")
+        ])
+        .padding(.bottom, 16)
+
+        if let error { InlineError(error) }
+
+        PrimaryButton(
+            task.isDone ? "Przywróć zadanie" : "Oznacz jako wykonane",
+            systemImage: "checkmark"
+        ) {
+            Task { await toggle(task) }
+        }
+        .padding(.bottom, 10)
+
+        HStack(spacing: 10) {
+            SecondaryButton("Edytuj") {
+                dependencies.present(.taskForm(editing: task.id, clientID: task.clientID, caseID: task.caseID))
+            }
+            if let clientID = task.clientID {
+                SecondaryButton("Karta klienta") {
+                    dependencies.dismissSheet()
+                    dependencies.openPerson(clientID)
+                }
+            }
+        }
+    }
+
+    private func load() async {
+        if !phase.hasLoaded { phase = .loading }
+        phase = await RecordLoading.phase(
+            missingMessage: "Nie znaleziono tego zadania. Mogło zostać usunięte.",
+            fallback: "Nie udało się wczytać zadania."
+        ) {
+            try await dependencies.repository.task(id: taskID)
         }
     }
 
@@ -546,8 +636,11 @@ struct TaskDetailSheet: View {
                 expectedVersion: task.version
             )
         }
-        if updated == nil { error = "Nie udało się zmienić stanu zadania." }
-        self.task = updated ?? self.task
+        if let updated {
+            phase = .loaded(updated)
+        } else {
+            error = "Nie udało się zmienić stanu zadania."
+        }
     }
 }
 
@@ -558,36 +651,62 @@ struct EventDetailSheet: View {
     let eventID: EventID
 
     @EnvironmentObject private var dependencies: AppDependencies
-    @State private var event: ScheduledEvent?
+    @State private var phase: LoadPhase<ScheduledEvent> = .idle
     @State private var client: Client?
     @State private var error: String?
 
     var body: some View {
-        SheetScaffold(title: event?.kind.rawValue ?? "Termin", onClose: { dependencies.dismissSheet() }) {
-            if let event {
-                if let client {
-                    PersonRow(client: client, subtitle: event.title, showsChevron: false, onOpen: nil)
-                        .padding(.bottom, 14)
-                }
-
-                InfoList([
-                    .init("Kiedy", "\(dependencies.dateText.dayLabel(event.day)), \(event.time.hhmm)"),
-                    .init("Czas", "\(event.durationMinutes) min"),
-                    .init("Miejsce", event.place),
-                    .init("Status", event.status.rawValue)
-                ])
-                .padding(.bottom, 16)
-
-                if let error { InlineError(error) }
-
-                actions(event)
-            } else {
+        SheetScaffold(title: sheetTitle, onClose: { dependencies.dismissSheet() }) {
+            switch phase {
+            case .idle, .loading:
                 LoadingState("Wczytuję termin…")
+            case .failed(let failure):
+                LoadFailureView(failure) {
+                    Task { await load() }
+                }
+            case .loaded(let event):
+                content(event)
             }
         }
-        .task {
-            event = try? await dependencies.repository.event(id: eventID)
-            if let event { client = try? await dependencies.repository.client(id: event.clientID) }
+        .task { await load() }
+    }
+
+    private var sheetTitle: String {
+        if case .loaded(let event) = phase { return event.kind.rawValue }
+        return "Termin"
+    }
+
+    @ViewBuilder
+    private func content(_ event: ScheduledEvent) -> some View {
+        if let client {
+            PersonRow(client: client, subtitle: event.title, showsChevron: false, onOpen: nil)
+                .padding(.bottom, 14)
+        }
+
+        InfoList([
+            .init("Kiedy", "\(dependencies.dateText.dayLabel(event.day)), \(event.time.hhmm)"),
+            .init("Czas", "\(event.durationMinutes) min"),
+            .init("Miejsce", event.place),
+            .init("Status", event.status.rawValue)
+        ])
+        .padding(.bottom, 16)
+
+        if let error { InlineError(error) }
+
+        actions(event)
+    }
+
+    private func load() async {
+        if !phase.hasLoaded { phase = .loading }
+        let result = await RecordLoading.phase(
+            missingMessage: "Nie znaleziono tego terminu. Mógł zostać usunięty.",
+            fallback: "Nie udało się wczytać terminu."
+        ) {
+            try await dependencies.repository.event(id: eventID)
+        }
+        phase = result
+        if case .loaded(let event) = result {
+            client = try? await dependencies.repository.client(id: event.clientID)
         }
     }
 
@@ -617,7 +736,7 @@ struct EventDetailSheet: View {
             }
             .padding(.bottom, 10)
             SecondaryButton("Edytuj termin") {
-                dependencies.present(.eventForm(editing: event.id, clientID: event.clientID, caseID: event.caseID))
+                dependencies.present(.eventForm(editing: event.id, clientID: event.clientID, caseID: event.caseID, initialDay: nil))
             }
         case .confirmed:
             PrimaryButton("Zakończ spotkanie", systemImage: "checkmark") {
@@ -625,7 +744,7 @@ struct EventDetailSheet: View {
             }
             .padding(.bottom, 10)
             SecondaryButton("Edytuj termin") {
-                dependencies.present(.eventForm(editing: event.id, clientID: event.clientID, caseID: event.caseID))
+                dependencies.present(.eventForm(editing: event.id, clientID: event.clientID, caseID: event.caseID, initialDay: nil))
             }
         }
     }
@@ -640,7 +759,7 @@ struct EventDetailSheet: View {
             try await dependencies.repository.updateEvent(updated, expectedVersion: event.version)
         }
         if let saved {
-            self.event = saved
+            phase = .loaded(saved)
         } else {
             error = "Nie udało się zmienić statusu terminu."
         }

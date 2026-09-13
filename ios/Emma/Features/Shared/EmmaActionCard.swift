@@ -40,10 +40,12 @@ struct EmmaActionCard: View {
     /// Termin zadania sformatowany przez ekran (karta nie zna „dzisiaj” aplikacji).
     private let dueDateText: String?
     private let onEdit: (String) -> Void
-    private let onConfirm: () -> Void
+    /// Potwierdzenie dostaje **bieżącą** treść szkicu, a nie wersję sprzed chwili.
+    /// Bez tego szybkie „Zatwierdź” po edycji wykonywało poprzednią treść (F03).
+    private let onConfirm: (String) -> Void
     private let onCancel: () -> Void
-    /// Odsłuch treści (`speakAction`). Opcjonalny, aby zachować zamrożoną sygnaturę.
-    private let onSpeak: (() -> Void)?
+    /// Odsłuch treści (`speakAction`). Czyta bieżący szkic, nie wersję sprzed edycji (F03).
+    private let onSpeak: ((String) -> Void)?
 
     @State private var draft: String
     /// Ostatnia treść wysłana do rewizji — chroni przed pętlą korekt.
@@ -55,10 +57,10 @@ struct EmmaActionCard: View {
         execution: ActionExecution?,
         isArmedForVoice: Bool,
         onEdit: @escaping (String) -> Void,
-        onConfirm: @escaping () -> Void,
+        onConfirm: @escaping (String) -> Void,
         onCancel: @escaping () -> Void,
         dueDateText: String? = nil,
-        onSpeak: (() -> Void)? = nil
+        onSpeak: ((String) -> Void)? = nil
     ) {
         self.proposal = proposal
         self.clientName = clientName
@@ -202,7 +204,7 @@ struct EmmaActionCard: View {
                     systemImage: "speaker.wave.2",
                     isEnabled: onSpeak != nil
                 ) {
-                    onSpeak?()
+                    onSpeak?(draft)
                 }
                 .accessibilityLabel("Odsłuchaj treść działania")
                 SecondaryButton("Anuluj") {
@@ -216,7 +218,11 @@ struct EmmaActionCard: View {
                 systemImage: "checkmark",
                 isEnabled: !draft.emmaTrimmed.isEmpty
             ) {
-                onConfirm()
+                // Bieżący szkic jest wysyłany razem ze zgodą i od razu uznany za
+                // wysłany do rewizji, żeby odroczona korekta nie zdążyła nadpisać
+                // treści tuż po zatwierdzeniu (F03).
+                revisionSent = draft
+                onConfirm(draft)
             }
             .accessibilityLabel(proposal.kind.confirmLabel)
 

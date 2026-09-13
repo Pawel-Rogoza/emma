@@ -434,9 +434,26 @@ final class AssistantStore: ObservableObject {
 
     /// Potwierdzenie z karty na ekranie — jedyna droga wykonania, gdy prezentacja
     /// nie jest uzbrojona dla głosu.
-    func confirm(actionID: ActionID) async {
-        guard let index = actionIndex(actionID), case .action(let action) = turns[index] else { return }
+    ///
+    /// `text` to treść **widoczna** w karcie w chwili dotknięcia. Jeśli różni się od
+    /// ostatniej wersji znanej koordynatorowi (np. użytkownik pisał i od razu
+    /// zatwierdził, przed odroczoną korektą), najpierw wysyłamy rewizję i zatwierdzamy
+    /// dokładnie ją. Dzięki temu wykonana treść zawsze równa się widocznej (F03).
+    func confirm(actionID: ActionID, text: String) async {
+        guard let index = actionIndex(actionID), case .action(var action) = turns[index] else { return }
         guard action.proposal.state == .proposed else { return }
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        if trimmed != action.proposal.text {
+            guard let revised = await dependencies?.voice.reviseAction(actionID: actionID, newText: trimmed) else {
+                await answer("Nie udało się zapisać poprawki treści. Spróbuj ponownie.")
+                return
+            }
+            action.proposal = revised
+            turns[index] = .action(action)
+        }
         await performConfirmation(action.proposal, origin: .directUIButton)
     }
 
@@ -623,14 +640,15 @@ final class AssistantStore: ObservableObject {
     }
 
     /// `speakAction` z referencji: wiadomość czytamy w języku klienta, resztę po polsku.
-    func speakAction(actionID: ActionID) async {
+    /// Odsłuch czyta **bieżący szkic** przekazany z karty, nie wersję sprzed edycji (F03).
+    func speakAction(actionID: ActionID, text: String) async {
         guard let index = actionIndex(actionID), case .action(let action) = turns[index] else { return }
-        let text = action.proposal.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        let spoken = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !spoken.isEmpty else { return }
         let clientLanguage = action.proposal.clientID
             .flatMap { clientID in clients.first { $0.id == clientID }?.language }
         await speak(
-            text,
+            spoken,
             language: action.proposal.kind == .reply ? (clientLanguage ?? .pl) : .pl,
             isSummary: false,
             sourceID: nextSourceID("emma-action")
@@ -669,31 +687,19 @@ final class AssistantStore: ObservableObject {
     func briefing() async -> String {
         guard let dependencies else { return "" }
         let today = dependencies.today
-        let events = ((try? await dependencies.repository.events(in: .day(today))) ?? [])
-            .filter { $0.status != .finished }
-        let tasks = ((try? await dependencies.repository.tasks(
+        // Brak odpisu błędu na pustą kolekcję: `nil` jedzie do `EmmaBriefing` i znaczy
+        // „nie udało się sprawdzić”, a `[]` znaczy „sprawdzone, nic nie ma” (F02).
+        let events = try? await dependencies.repository.events(in: .day(today))
+        let tasks = try? await dependencies.repository.tasks(
             filter: TaskFilter(scope: .open, dueOnOrBefore: today)
-        )) ?? [])
-        let waiting = clients.filter { $0.needsReply }
-
-        var lines: [String] = []
-        let schedule = events.map { event -> String in
-            let name = clientName(for: event.clientID) ?? Client.unknownDisplayName
-            let pending = event.status == .toConfirm ? " Termin czeka na potwierdzenie." : ""
-            return "\(event.time.hhmm): \(name), \(event.title).\(pending)"
-        }.joined(separator: "\n")
-        lines.append("Dzisiaj w zespole: \(EmmaPlural.label(events.count, "wydarzenie", "wydarzenia", "wydarzeń")). \(schedule)")
-        lines.append("")
-        let tasksLine = tasks.isEmpty
-            ? "brak otwartych zadań na dziś"
-            : tasks.map(\.title).joined(separator: "; ")
-        lines.append("Do załatwienia: \(tasksLine).")
-        lines.append(
-            waiting.isEmpty
-                ? "Wszystkie rozmowy zaopiekowane."
-                : "Na odpowiedź czekają: \(waiting.map(\.displayName).joined(separator: ", "))."
         )
-        return lines.joined(separator: "\n")
+        let names = Dictionary(uniqueKeysWithValues: clients.map { ($0.id, $0.displayName) })
+        return EmmaBriefing.briefing(
+            events: events,
+            tasks: tasks,
+            waitingForReply: clients.filter { $0.needsReply },
+            clientNames: names
+        )
     }
 
     func caseSummary(_ clientID: ClientID) async -> String {

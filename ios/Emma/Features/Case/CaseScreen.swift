@@ -238,7 +238,7 @@ struct CaseScreen: View {
         .padding(.bottom, 4)
 
         SectionHeader("Kolejny termin", actionTitle: "Dodaj") {
-            dependencies.present(.eventForm(editing: nil, clientID: model.client.id, caseID: model.legalCase.id))
+            dependencies.present(.eventForm(editing: nil, clientID: model.client.id, caseID: model.legalCase.id, initialDay: nil))
         }
         if model.upcomingEvents.isEmpty {
             emptyCard("Brak kolejnego terminu", "Dodaj konsultację lub termin dotyczący sprawy.")

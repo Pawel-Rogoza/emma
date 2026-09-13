@@ -100,8 +100,13 @@ struct SheetHost: View {
                     NoteSheet(clientID: clientID, caseID: caseID)
                 case .taskForm(let taskID, let clientID, let caseID):
                     TaskFormSheet(taskID: taskID, clientID: clientID, caseID: caseID)
-                case .eventForm(let eventID, let clientID, let caseID):
-                    EventFormSheet(eventID: eventID, clientID: clientID, caseID: caseID)
+                case .eventForm(let eventID, let clientID, let caseID, let initialDay):
+                    EventFormSheet(
+                        eventID: eventID,
+                        clientID: clientID,
+                        caseID: caseID,
+                        initialDay: initialDay
+                    )
                 case .eventDetail(let eventID):
                     EventDetailSheet(eventID: eventID)
                 case .taskDetail(let taskID):

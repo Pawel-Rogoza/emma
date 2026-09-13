@@ -339,15 +339,15 @@ struct AssistantScreen: View {
             onEdit: { text in
                 Task { await store.edit(actionID: action.proposal.id, text: text) }
             },
-            onConfirm: {
-                Task { await store.confirm(actionID: action.proposal.id) }
+            onConfirm: { text in
+                Task { await store.confirm(actionID: action.proposal.id, text: text) }
             },
             onCancel: {
                 Task { await store.cancel(actionID: action.proposal.id) }
             },
             dueDateText: store.dueDateLabel(for: action.proposal),
-            onSpeak: {
-                Task { await store.speakAction(actionID: action.proposal.id) }
+            onSpeak: { text in
+                Task { await store.speakAction(actionID: action.proposal.id, text: text) }
             }
         )
     }
