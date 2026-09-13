@@ -89,6 +89,15 @@ final class CalendarStore: ObservableObject {
         await load(dependencies)
     }
 
+    /// Trasa formularza nowego terminu. **Zawsze** dziedziczy wybrany dzień (F10):
+    /// przycisk w nagłówku i przycisk w sekcji dnia muszą prowadzić do tego samego
+    /// dnia, który użytkownik widzi na pasku tygodnia. Wcześniej nagłówek otwierał
+    /// formularz z `initialDay: nil`, więc formularz pokazywał „dzisiaj”, ignorując
+    /// wybór dnia — mimo że data na ekranie była inna (§8, wiersz 1).
+    var newEventRoute: AppSheet {
+        .eventForm(editing: nil, clientID: nil, caseID: nil, initialDay: selectedDay)
+    }
+
     func backToToday(_ dependencies: AppDependencies) async {
         let today = dependencies.today
         weekStart = today.startOfWeekMonday
@@ -114,7 +123,7 @@ struct CalendarScreen: View {
                 HStack {
                     Spacer(minLength: 0)
                     IconButton(systemName: "plus", accessibilityLabel: "Dodaj termin") {
-                        dependencies.present(.eventForm(editing: nil, clientID: nil, caseID: nil, initialDay: nil))
+                        dependencies.present(store.newEventRoute)
                     }
                 }
                 .padding(.bottom, 12)
@@ -161,12 +170,7 @@ struct CalendarScreen: View {
                     SecondaryButton("Dodaj termin na ten dzień", systemImage: "plus") {
                         // Wybrany dzień paska tygodnia jest dniem, na który naprawdę
                         // dodajemy termin — formularz dziedziczy go jawnie (F10).
-                        dependencies.present(.eventForm(
-                            editing: nil,
-                            clientID: nil,
-                            caseID: nil,
-                            initialDay: store.selectedDay
-                        ))
+                        dependencies.present(store.newEventRoute)
                     }
                     .padding(.top, 6)
                 }

@@ -637,11 +637,12 @@ w Demo, pojedynczy `VoiceSessionCoordinator`, wersjonowanie i idempotencja.
 | --- | --- | --- |
 | `EmmaTests/App/Stage6ContractTests` | zależność od kontraktu, osobna zdolność demo, jawność ścieżki mocka | **4/0** |
 | `EmmaTests/App/Stage6PlaybackTests` | realny odsłuch: start i koniec z delegata, przerwanie, mock w Demo | **3/0** |
+| `EmmaTests/App/Stage6AcceptanceTests` | luki z tabeli §8: dzień w formularzu, edycja wiadomości, zgoda po przerwaniu, powrót do szkicu, tło, uzgodnienie | **6/0** |
 | `EmmaUITests/Stage6BoundaryUITests` | zrzut jawej granicy mocka | **1/0** |
-| `xcodebuild test -only-testing:EmmaTests` | jednostkowe + aplikacyjne | **288/0** |
+| `xcodebuild test -only-testing:EmmaTests` | jednostkowe + aplikacyjne | **294/0** |
 | `swift test` (EmmaCore) | logika bez zmian względem etapu 5 | **242/0** |
 | `verify-linux-logic.sh` | kroki 1–7 i 9 czyste; krok 8 wskazuje `handleAccountSwitched` | jak w etapach 2–5 |
-| `EmmaUITests` | etapy 1–5 + zrzut granicy mocka | **33/0** |
+| `EmmaUITests` | etapy 1–5 + granica mocka i dzień w formularzu | **34/0** |
 
 Sprawdzone w `Stage6ContractTests`:
 
@@ -670,6 +671,31 @@ dostawców, więc nie ma integracji z ElevenLabs ani z WhatsApp, a wysyłka wiad
 symulowana. Odsłuch w demo jest scenariuszowy (bez dźwięku); poza demo czyta go syntezator
 systemu, nie głos Emmy.” Zrzut jest dowodem, że brak integracji jest **nazwany**, a nie
 przemilczany — nie jest dowodem realnego głosu ani wysyłki.
+
+### Macierz akceptacji §8 i zamknięte luki
+
+Powstał `docs/ios/UX_VOICE_ACCEPTANCE.md`: tabela dwunastu scenariuszy z §8 przypisana
+do konkretnych testów i zrzutów, ze statusem (POKRYTE / CZĘŚCIOWO / NIEWERYFIKOWALNE).
+Przy jej układaniu sprawdzono kod i domknięto sześć luk, które nie miały dowodu:
+
+- **Wiersz 1 ujawnił prawdziwy błąd**: przycisk „Dodaj termin” w nagłówku kalendarza
+  otwierał formularz z `initialDay: nil`, więc formularz pokazywał „dzisiaj”, mimo że
+  zaznaczony był inny dzień. Teraz oba wejścia korzystają z `CalendarStore.newEventRoute`
+  (zawsze `selectedDay`). Dowód: `Stage6AcceptanceTests::testFormInheritsTheSelectedDayFromTheWeekStrip`
+  oraz zrzut `36-termin-dziedziczy-dzien.png` (`Data · 2026-09-18` po przesunięciu tygodnia).
+- **Wiersz 4** — wariant wiadomości: `testEditedReplySendsTheLatestVersionOnly`
+  (wykonanie wskazuje nowszą wersję, drugie „wyślij” bez drugiego outboxa).
+- **Wiersz 6** — `testInterruptDisarmsVoiceConsentAndKeepsProposal`: przerwanie odczytu
+  rozbraja zgodę głosową, „tak” nie wykonuje, przycisk nadal działa.
+- **Wiersz 7** — `testReturnToDraftAfterReadOnlyQuestionSendsOnce`: odpowiedź odczytowa
+  zachowuje szkic, a powrót kończy się jednym wykonaniem tej samej propozycji.
+- **Wiersz 9** — `testBackgroundingRevokesVoiceWritesAndKeepsDraft`: tło kończy zapisy
+  głosem i zachowuje szkic.
+- **Wiersz 11** — `testUnknownOutcomeIsReconciledInsteadOfResent`: niepewny wynik prowadzi
+  do sprawdzenia stanu, nie do ponowienia; to samo wykonanie i ten sam outbox.
+
+Pozostaje jedna luka wykonalna w symulatorze (wiersz 12: układ z długim nazwiskiem
+w cyrylicy i test `CGRect.intersects` przy `AccessibilityXXXL`) — zapisana w macierzy.
 
 ### Czego etap 6 **nie** zamyka — `blocked_external`
 

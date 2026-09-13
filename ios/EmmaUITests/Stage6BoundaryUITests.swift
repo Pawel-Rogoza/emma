@@ -57,6 +57,44 @@ final class Stage6BoundaryUITests: XCTestCase {
         }
     }
 
+    /// Formularz nowego terminu ma dziedziczyć **wybrany** dzień, a nie „dzisiaj”.
+    /// Wcześniej przycisk w nagłówku przekazywał `initialDay: nil` (błąd z wiersza 1
+    /// macierzy §8). Przesuwamy tydzień, żeby wybrany dzień nie był dniem dzisiejszym.
+    func testCaptureStage6EventFormInheritsSelectedDay() {
+        capture("36-termin-dziedziczy-dzien", description: "Formularz terminu z dniem wybranym na pasku tygodnia") {
+            let calendarTab = self.application.buttons["tab.calendar"]
+            guard calendarTab.waitForExistence(timeout: 15) else { return "brak zakładki kalendarza" }
+            calendarTab.tap()
+
+            let nextWeek = self.application.buttons["Następny tydzień"]
+            guard nextWeek.waitForExistence(timeout: 10) else { return "brak paska tygodnia" }
+            nextWeek.tap()
+            // Po przesunięciu tygodnia wybrany dzień to 2026-09-18 (piątek +7).
+            // Etykieta dnia w interfejsie to „18 wrz” (skrót miesiąca z `dayLabel`).
+            guard self.application.descendants(matching: .any).matching(
+                NSPredicate(format: "label CONTAINS %@", "18 wrz")
+            ).firstMatch.waitForExistence(timeout: 10) else {
+                return "brak wybranego dnia 18 wrz po przesunięciu tygodnia"
+            }
+
+            let add = self.application.buttons["Dodaj termin"]
+            guard add.waitForExistence(timeout: 10) else { return "brak przycisku „Dodaj termin” na nagłówku" }
+            add.tap()
+
+            // Formularz jest arkuszem: pole „Data” ma pokazać wybrany dzień, nie „Dzisiaj”.
+            let formDay = self.application.descendants(matching: .any).matching(
+                NSPredicate(format: "label CONTAINS %@", "18 wrz")
+            ).firstMatch
+            guard formDay.waitForExistence(timeout: 15) else {
+                let todayVisible = self.application.descendants(matching: .any).matching(
+                    NSPredicate(format: "label CONTAINS %@", "Dzisiaj")
+                ).firstMatch.exists
+                return "formularz nie dziedziczy wybranego dnia (18 wrz); Dzisiaj widoczne: \(todayVisible)"
+            }
+            return nil
+        }
+    }
+
     private func makeOutputDirectory() -> URL {
         let base = ProcessInfo.processInfo.environment["EMMA_SHOT_DIR"] ?? NSTemporaryDirectory()
         let directory = URL(fileURLWithPath: base, isDirectory: true)
