@@ -28,6 +28,8 @@ public struct DemoFixture: Sendable, Equatable {
     public let voiceScenarioName: String
     /// Jednozdaniowy opis: co ten zestaw pokazuje.
     public let summary: String
+    /// Czy zestaw dokłada klientkę o długim nazwisku w cyrylicy (układ, §8 wiersz 12).
+    public var usesLongNames: Bool = false
 }
 
 public enum DemoFixtureCatalog {
@@ -66,6 +68,15 @@ public enum DemoFixtureCatalog {
             referenceMinute: 41,
             voiceScenarioName: "permission-denied",
             summary: "Odmowa dostępu do mikrofonu: interfejs działa dalej, tekst pozostaje dostępny."
+        ),
+        DemoFixture(
+            name: "dlugie-nazwy",
+            referenceDay: LocalDate(year: 2026, month: 9, day: 11),
+            referenceHour: 9,
+            referenceMinute: 41,
+            voiceScenarioName: "standard-proposal-flow",
+            summary: "Dzień z klientką o długim nazwisku w cyrylicy — układ przy największym tekście.",
+            usesLongNames: true
         ),
         DemoFixture(
             name: "voice-barge-in",

@@ -637,12 +637,13 @@ w Demo, pojedynczy `VoiceSessionCoordinator`, wersjonowanie i idempotencja.
 | --- | --- | --- |
 | `EmmaTests/App/Stage6ContractTests` | zależność od kontraktu, osobna zdolność demo, jawność ścieżki mocka | **4/0** |
 | `EmmaTests/App/Stage6PlaybackTests` | realny odsłuch: start i koniec z delegata, przerwanie, mock w Demo | **3/0** |
-| `EmmaTests/App/Stage6AcceptanceTests` | luki z tabeli §8: dzień w formularzu, edycja wiadomości, zgoda po przerwaniu, powrót do szkicu, tło, uzgodnienie | **6/0** |
+| `EmmaTests/App/Stage6AcceptanceTests` | luki z tabeli §8: dzień w formularzu, edycja wiadomości, zgoda po przerwaniu, powrót do szkicu, tło, uzgodnienie, dane dla długiego nazwiska | **7/0** |
+| `EmmaUITests/Stage6LayoutUITests` | długie nazwisko w cyrylicy przy `AccessibilityXXXL`: okno, awatar, decyzje | **1/0** |
 | `EmmaUITests/Stage6BoundaryUITests` | zrzut jawej granicy mocka | **1/0** |
-| `xcodebuild test -only-testing:EmmaTests` | jednostkowe + aplikacyjne | **294/0** |
+| `xcodebuild test -only-testing:EmmaTests` | jednostkowe + aplikacyjne | **295/0** |
 | `swift test` (EmmaCore) | logika bez zmian względem etapu 5 | **242/0** |
 | `verify-linux-logic.sh` | kroki 1–7 i 9 czyste; krok 8 wskazuje `handleAccountSwitched` | jak w etapach 2–5 |
-| `EmmaUITests` | etapy 1–5 + granica mocka i dzień w formularzu | **34/0** |
+| `EmmaUITests` | etapy 1–5 + granica mocka, dzień w formularzu, długie nazwisko | **35/0** |
 
 Sprawdzone w `Stage6ContractTests`:
 
@@ -694,8 +695,13 @@ Przy jej układaniu sprawdzono kod i domknięto sześć luk, które nie miały d
 - **Wiersz 11** — `testUnknownOutcomeIsReconciledInsteadOfResent`: niepewny wynik prowadzi
   do sprawdzenia stanu, nie do ponowienia; to samo wykonanie i ten sam outbox.
 
-Pozostaje jedna luka wykonalna w symulatorze (wiersz 12: układ z długim nazwiskiem
-w cyrylicy i test `CGRect.intersects` przy `AccessibilityXXXL`) — zapisana w macierzy.
+Wiersz 12 (duży tekst, długie nazwisko, cyrylica) też został domknięty: nowy zestaw demo
+`dlugie-nazwy` dokłada klientkę `Олександра Ковальчук-Шевченко` z **osobnym**
+`ClientID` (tylko w tym zestawie — zwykłe demo się nie zmienia), a
+`EmmaUITests/Stage6LayoutUITests` sprawdza przy `AccessibilityXXXL`, że nazwisko mieści
+się w oknie, nie nachodzi na awatar i że każda decyzja karty jest osiągalna po
+przewinięciu. Zrzuty: `37-dlugie-nazwy-cyrylica.png`, `38-dlugie-nazwy-decyzje.png`.
+VoiceOver i Reduce Motion pozostają do sprawdzenia na urządzeniu (macierz §8).
 
 ### Czego etap 6 **nie** zamyka — `blocked_external`
 

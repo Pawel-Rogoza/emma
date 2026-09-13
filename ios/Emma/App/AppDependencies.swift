@@ -114,7 +114,9 @@ public final class AppDependencies: ObservableObject {
         self.clock = resolvedClock
         self.referenceDay = AppDependencies.localDate(from: resolvedClock.now())
 
-        let dataset = DemoFixtures.dataset()
+        let dataset = resolution.fixture.usesLongNames
+            ? DemoFixtures.datasetWithLongNames()
+            : DemoFixtures.dataset()
         self.repository = repository ?? MockRepository(
             dataset: dataset,
             clock: resolvedClock,

@@ -21,7 +21,7 @@ lub usług, których w tym środowisku nie ma (patrz koniec dokumentu).
 | 9 | Telefon, odłączenie słuchawek, tło, Face ID | CZĘŚCIOWO | `Stage6AcceptanceTests.swift::testBackgroundingRevokesVoiceWritesAndKeepsDraft` (tło kończy zapisy głosem, szkic zostaje), `VoiceAndActionTests.swift::testRouteChangeFromHeadphonesToSpeakerPausesSensitivePlayback`, `EmmaTests/App/AuthStoreTests.swift::testUnlockSucceedsWithBiometrics`, `::testUnlockFailureKeepsAppLockedAndExplains`. Połączenie telefoniczne, realne wypięcie słuchawek i prawdziwe Face ID — nieweryfikowalne |
 | 10 | Powtórzone zdarzenie końcowe / „wyślij” dwa razy | POKRYTE | `Stage5DialogTests.swift::testRunAConfirmationExecutesOnce`, `::testRepeatedTranscriptDoesNotDuplicateTurns`, `VoiceAndActionTests.swift::testDoubleConfirmWithSameVersionIsIdempotent`, `::testUIConfirmAndVoiceConfirmProduceSingleExecution` |
 | 11 | Timeout po wysłaniu | POKRYTE | `Stage6AcceptanceTests.swift::testUnknownOutcomeIsReconciledInsteadOfResent` (niepewny wynik → `needsReview`, to samo wykonanie i outbox, brak automatycznego ponowienia), `VoiceAndActionTests.swift::testUnknownOutcomeIsNotRetried`, `::testFailedExecutionMayBeRetriedExplicitly` |
-| 12 | Duży tekst, długie nazwisko i cyrylica | CZĘŚCIOWO | Duży tekst: `EmmaUITests/Stage2ScreenshotUITests.swift::testCaptureStage2LargeTextScreens`, `Stage3ScreenshotUITests.swift::testCaptureStage3LargeTextScreens`, `Stage4ScreenshotUITests.swift::testCaptureStage4LargeTextScreens` (+ zrzuty `18-duzy-tekst-rozmowy.png`, `30-duzy-tekst-mini-panel.png`). Cyrylica: `DomainLogicTests.swift::testMatchesCyrillic`. **Brak testu układu z długim nazwiskiem i cyrylicą** — patrz „Luki” |
+| 12 | Duży tekst, długie nazwisko i cyrylica | POKRYTE (bez VoiceOver/Reduce Motion) | `EmmaUITests/Stage6LayoutUITests.swift::testLongCyrillicNameKeepsLayoutAndControlsUsable` na zestawie `dlugie-nazwy` przy `AccessibilityXXXL`: nazwisko wewnątrz okna, brak przecięcia z awatarem, każda decyzja karty osiągalna po przewinięciu; zrzuty `37-dlugie-nazwy-cyrylica.png`, `38-dlugie-nazwy-decyzje.png`. Dane: `EmmaTests/App/Stage6AcceptanceTests.swift::testLongNameFixtureAddsSearchableClientWithDistinctIdentity` (osobny `ClientID`, wyszukiwanie po cyrylicy, brak przecieku do zwykłego demo). Duży tekst: `Stage2/3/4ScreenshotUITests`; normalizacja: `DomainLogicTests.swift::testMatchesCyrillic` |
 
 ## Zmiana w kodzie wynikająca z tej macierzy
 
@@ -44,19 +44,17 @@ tygodnia (dzień wybrany, nie 11 września). Zrzut i test są dowodem naprawy, n
   `MockVoiceTransport`, więc zrozumiałość mowy i akustyczne wejście w słowo nie są
   sprawdzane. Wysyłka kończy się na `MockRepository` — **mock nie jest dowodem
   wysłania WhatsApp** ani doręczenia.
-- **Wiersz 12**: VoiceOver i Reduce Motion wymagają urządzenia; testy pokrywają duży tekst
-  na symulatorze.
+- **Wiersz 12**: VoiceOver i Reduce Motion wymagają urządzenia. Test pokrywa duży tekst,
+  długie nazwisko w cyrylicy i osiągalność decyzji na symulatorze; czytanie ekranu przez
+  VoiceOver i zachowanie przy Reduce Motion pozostają do sprawdzenia na iPhonie.
 
 ## Luki
 
-1. **Wiersz 12 — układ z długim nazwiskiem i cyrylicą.** Brak fixture z długim nazwiskiem
-   w cyrylicy i brak testu, że ramki kluczowych kontrolek się nie przecinają
-   (`CGRect.intersects`) oraz że wszystkie decyzje są osiągalne przy `AccessibilityXXXL`.
-   Wykonalne w symulatorze; wymaga nowej fixture demo i testu UI.
-1b. **Wiersz 9 — realne zdarzenia systemowe pozostają poza zasięgiem** (połączenie,
-słuchawki, Face ID): symulator ich nie generuje, więc dowodem jest logika na wstrzykiwanych
-zdarzeniach.
-
-2. **Realne usługi (etap 6).** Prawdziwy głos dostawcy, faktycznie odebrana wiadomość
+1. **Wiersz 9 — realne zdarzenia systemowe pozostają poza zasięgiem** (połączenie,
+   słuchawki, Face ID): symulator ich nie generuje, więc dowodem jest logika na
+   wstrzykiwanych zdarzeniach.
+2. **Wiersz 12 — VoiceOver i Reduce Motion** wymagają urządzenia; układ, duży tekst i dane
+   w cyrylicy są pokryte testem na symulatorze.
+3. **Realne usługi (etap 6).** Prawdziwy głos dostawcy, faktycznie odebrana wiadomość
    testowa i prawdziwe stany wysłania/dostarczenia — wymagają kont, backendu i urządzenia;
    opis w `UX_VOICE_STAGES.md` (§ „Czego etap 6 nie zamyka”).

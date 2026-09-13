@@ -107,6 +107,30 @@ final class Stage6AcceptanceTests: XCTestCase {
         XCTAssertEqual(actions(store).count, 1, "Jedna karta akcji przez cały przebieg")
     }
 
+    // MARK: Wiersz 12 — dane do układu z długim nazwiskiem w cyrylicy
+
+    /// Zestaw `dlugie-nazwy` musi naprawdę dokładać klientkę (inaczej test układu
+    /// sprawdzałby nieistniejący wiersz), mieć **osobny** identyfikator i dać się
+    /// znaleźć wyszukiwaniem po cyrylicy.
+    func testLongNameFixtureAddsSearchableClientWithDistinctIdentity() async throws {
+        let dependencies = AppDependencies.demo(fixtureName: "dlugie-nazwy")
+        keptDependencies.append(dependencies)
+
+        let clients = try await dependencies.repository.clients(matching: "", stage: nil)
+        let longName = try XCTUnwrap(clients.first { $0.displayName == "Олександра Ковальчук-Шевченко" })
+        XCTAssertEqual(longName.initials, "ОК")
+        XCTAssertEqual(Set(clients.map(\.id)).count, clients.count, "Brak duplikatów identyfikatorów")
+
+        let found = try await dependencies.repository.clients(matching: "Олександра", stage: nil)
+        XCTAssertEqual(found.map(\.id), [longName.id], "Wyszukiwanie po cyrylicy znajduje klientkę")
+
+        // Zwykłe demo zostaje bez zmian — zestaw układu nie przecieka do codziennych danych.
+        let regular = AppDependencies.demo()
+        keptDependencies.append(regular)
+        let regularClients = try await regular.repository.clients(matching: "", stage: nil)
+        XCTAssertFalse(regularClients.contains { $0.id == DemoFixtures.oleksandraID })
+    }
+
     // MARK: Wiersze 6, 9, 11 — koordynator: zgoda, tło, uzgodnienie
 
     private func makeConnectedCoordinator() async throws -> (VoiceSessionCoordinator, MockRepository) {

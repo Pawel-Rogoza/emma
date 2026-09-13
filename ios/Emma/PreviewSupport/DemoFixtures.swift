@@ -572,6 +572,38 @@ public enum DemoFixtures {
 
     public static func dataset() -> Dataset { Dataset() }
 
+    // MARK: Długie nazwisko w cyrylicy (§8, wiersz 12)
+
+    /// Osobny `ClientID` jest konieczny: dwie osoby z tym samym identyfikatorem
+    /// rozjechałyby `client(id:)` i listę rozmów. Ta klientka istnieje wyłącznie
+    /// w zestawie `dlugie-nazwy`, żeby dało się sprawdzić układ przy największym
+    /// tekście dostępności — nie zmienia danych zwykłego demo.
+    public static let oleksandraID = ClientID("client-oleksandra")
+
+    public static let oleksandra = Client(
+        id: oleksandraID,
+        displayName: "Олександра Ковальчук-Шевченко",
+        initials: "ОК",
+        language: .uk,
+        topic: "Projekt umowy najmu lokalu usługowego na czas nieoznaczony",
+        // Leady są widoczne na liście „Klienci / Leady”; `stage: .client` pojawia się
+        // tylko w sprawach, więc do sprawdzenia układu listy potrzebny jest lead.
+        stage: .new,
+        source: .webForm,
+        createdAt: LocalDate(year: 2026, month: 9, day: 10),
+        briefing: "Klientka czeka na uwagi do projektu umowy najmu; nazwisko dwuczłonowe w cyrylicy.",
+        incomingMessage: "Доброго дня! Надсилаю зауваження до проєкту договору оренди.",
+        incomingTranslation: "Dzień dobry! Przesyłam uwagi do projektu umowy najmu.",
+        incomingTime: TimeOfDay(hhmm: "08:50")
+    )
+
+    /// Zestaw demo z jedną dodatkową klientką o długim nazwisku w cyrylicy.
+    public static func datasetWithLongNames() -> Dataset {
+        var dataset = Dataset()
+        dataset.clients.append(oleksandra)
+        return dataset
+    }
+
     /// Zwiększony zestaw wiadomości do testu paginacji (etap 05: 50–100 wiadomości).
     public static func longThreadMessageCount(_ count: Int = 80) -> [Message] {
         var result: [Message] = []
