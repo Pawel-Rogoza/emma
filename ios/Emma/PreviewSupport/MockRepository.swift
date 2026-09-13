@@ -7,16 +7,8 @@ import Foundation
 // wersji i idempotencję, więc M1 sprawdza te same kontrakty, których użyje live.
 
 public actor MockRepository:
-    ClientRepository,
-    CaseRepository,
-    TaskRepository,
-    AgendaRepository,
-    NoteRepository,
-    ActivityRepository,
-    MessagingRepository,
-    UserRepository,
-    VoiceSessionRepository,
-    AssistantActionRepository
+    EmmaRepository,
+    DemoFixtureRepository
 {
 
     private var dataset: DemoFixtures.Dataset

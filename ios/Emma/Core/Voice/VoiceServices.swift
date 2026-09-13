@@ -73,6 +73,8 @@ public protocol CaseRepository: Sendable {
 }
 
 public protocol TaskRepository: Sendable {
+    /// Pojedyncze zadanie po identyfikatorze (szczegół otwarty z listy lub karty).
+    func task(id: TaskID) async throws -> TaskItem?
     func tasks(filter: TaskFilter) async throws -> [TaskItem]
     func createTask(_ draft: NewTaskDraft) async throws -> TaskItem
     func updateTask(_ task: TaskItem, expectedVersion: Version) async throws -> TaskItem
@@ -118,6 +120,9 @@ public protocol MessagingRepository: Sendable {
         status: MessageTransport,
         at date: Date
     ) async throws -> Message?
+    /// Suma nieprzeczytanych wiadomości dla plakietki zakładki.
+    func unreadTotal(userID: UserID) async throws -> Int
+
 }
 
 public protocol UserRepository: Sendable {

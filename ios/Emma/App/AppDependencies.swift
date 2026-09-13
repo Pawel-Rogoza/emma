@@ -30,7 +30,8 @@ public final class AppDependencies: ObservableObject {
 
     public let configuration: AppConfiguration
     public let clock: Clock
-    public let repository: MockRepository
+    /// Kontrakt danych, nie klasa: patrz `EmmaRepository` (F05).
+    public let repository: any EmmaRepository
     public let voice: VoiceSessionCoordinator
     /// Nazwa zestawu danych demo wybrana na starcie (`--fixture`).
     public let fixtureName: String?
@@ -94,7 +95,7 @@ public final class AppDependencies: ObservableObject {
     public init(
         configuration: AppConfiguration = .current,
         clock: Clock? = nil,
-        repository: MockRepository? = nil,
+        repository: (any EmmaRepository)? = nil,
         fixtureName: String? = nil
     ) {
         self.configuration = configuration
@@ -370,7 +371,9 @@ public final class AppDependencies: ObservableObject {
     /// Przywrócenie danych przykładowych (odpowiada `resetDemo()` z referencji).
     public func resetDemoData() async {
         await voice.handleUserLoggedOut()
-        await repository.reset()
+        // Reset danych przykładowych jest zdolnością demo, nie częścią kontraktu
+        // produkcyjnego — pytamy o nią wprost (F05).
+        await (repository as? any DemoFixtureRepository)?.reset()
         let dataset = DemoFixtures.dataset()
         currentUser = dataset.user
         navigation = Dictionary(uniqueKeysWithValues: AppTab.allCases.map { ($0, TabNavigation()) })

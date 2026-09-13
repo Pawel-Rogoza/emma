@@ -566,3 +566,95 @@ rozmowę. Bez tego kroku na zrzucie był sam przycisk zgody — opisane w D-29.
   bez zmian względem etapów 2–4 (jedno wspólne konto, D-17).
 - Bez zmian: VoiceOver na urządzeniu, dark mode (P2), prawdziwy głos i WhatsApp —
   etap 6 / `blocked_external`.
+
+## Etap 6 — Prawdziwe usługi: kontrakt danych i granica mocka (F05)
+
+### Potwierdzenie ustaleń w kodzie (przed zmianą)
+
+Sprawdzone w kodzie z commita `78fa232` (koniec etapu 5), nie z opisów:
+
+- **`AppDependencies.repository` miał konkretny typ `MockRepository`** i tak był
+  podawany do koordynatora głosu (`sessionRepository:`, `actionRepository:`) oraz do
+  wszystkich ekranów — 66 wywołań `dependencies.repository.…`. Wąskie kontrakty
+  (`ClientRepository`, `MessagingRepository`, `VoiceSessionRepository`,
+  `AssistantActionRepository` i inne) **istniały** w `Core/Voice/VoiceServices.swift`,
+  ale nie były zebrane w jeden kontrakt, więc podmiana na prawdziwe usługi oznaczała
+  zmianę typu w każdym ekranie.
+- Dwie metody były **tylko** w mocku, choć aplikacja ich używała: `TaskRepository.task(id:)`
+  i `unreadTotal(userID:)` (plakietka zakładki). Kontrakt był więc niepełny.
+- `resetDemoData()` wołał `repository.reset()` — metodę-fixture, której prawdziwe dane
+  nie mają.
+- **Transport dostawcy istnieje naprawdę.** `project.yml` dodaje oficjalne SDK
+  `ElevenLabs`, a `VoiceAdapters/ElevenLabsVoiceTransport.swift` (275 linii) prowadzi
+  rozmowę przez `Conversation` z tego SDK; `VoiceServicesFactory` wybiera go, gdy jest
+  `apiBaseURL` (token wydaje `BackendConversationTokenProvider`). To nie jest zaślepka.
+- **Odsłuch dostawcy nie istnieje.** `VoiceServicesFactory.makePlaybackService()`
+  zwraca `MockSpeechPlaybackService()` w obu wariantach — i mówi to wprost w komentarzu.
+- **Wysyłka WhatsApp to nadal symulacja.** `MockRepository.confirm` tworzy wyłącznie
+  `ActionExecution` z `outboxID` (`outbox-<klucz idempotencji>`); nie woła
+  `appendOutgoing`, nie ma żadnego żądania sieciowego do WhatsApp, a stany dostarczenia
+  pochodzą z `applyProviderStatus`/`simulateProviderAccepted`. Komunikat „Zapis jest
+  symulowany” w stopce demo zostaje.
+
+### Zmiany (część niezależna od usług)
+
+- **`ios/Emma/Core/Domain/EmmaRepository.swift`** (nowy): `EmmaRepository` jako suma
+  istniejących, wąskich kontraktów domenowych — ekrany dalej wołają swoje protokoły,
+  a zależności przyjmują cokolwiek, co spełnia całość. Dodatkowo `DemoFixtureRepository`
+  z jednym `reset()`: zdolność **tylko demo**, świadomie poza kontraktem produkcyjnym.
+- **`ios/Emma/Core/Voice/VoiceServices.swift`**: `TaskRepository.task(id:)`
+  i `MessagingRepository.unreadTotal(userID:)` dopisane do kontraktów, bo aplikacja ich
+  używa — nie mogą żyć wyłącznie w mocku.
+- **`ios/Emma/App/AppDependencies.swift`**: `public let repository: any EmmaRepository`
+  i parametr `repository: (any EmmaRepository)?`; `resetDemoData()` pyta o
+  `any DemoFixtureRepository`, więc brak tej zdolności nie udaje resetu.
+- **`ios/Emma/PreviewSupport/MockRepository.swift`**: deklaracja zgodności skrócona do
+  `EmmaRepository, DemoFixtureRepository` — jedno miejsce mówi, co repozytorium demo
+  spełnia.
+
+Zachowane bez zmian: oznaczenia demo w stopce, `fixtureNotice`, jawny mock transportu
+w Demo, pojedynczy `VoiceSessionCoordinator`, wersjonowanie i idempotencja.
+
+### Testy i wyniki
+
+| Warstwa | Zakres | Wynik |
+| --- | --- | --- |
+| `EmmaTests/App/Stage6ContractTests` | zależność od kontraktu, osobna zdolność demo, jawność ścieżki mocka | **4/0** |
+| `xcodebuild test -only-testing:EmmaTests` | jednostkowe + aplikacyjne | **285/0** |
+| `swift test` (EmmaCore) | logika bez zmian względem etapu 5 | **242/0** |
+| `verify-linux-logic.sh` | kroki 1–7 i 9 czyste; krok 8 wskazuje `handleAccountSwitched` | jak w etapach 2–5 |
+| `EmmaUITests` | etapy 1–5 | **32/0** (wynik etapu 5, UI nie zmienione w tym etapie) |
+
+Sprawdzone w `Stage6ContractTests`:
+
+- **Zależność od kontraktu** — `AppDependencies` powstaje z wartości typu
+  `any EmmaRepository`, bez nazwy `MockRepository` w miejscu tworzenia aplikacji,
+  a ekran Emmy wczytuje przez nią dane.
+- **Zdolność demo osobno** — repozytorium demo spełnia `DemoFixtureRepository`; po
+  utworzeniu zadania `resetDemoData()` przywraca dane przykładowe, więc reset idzie
+  osobną zdolnością, a nie metodą kontraktu.
+- **Jawność mocka** — w Demo `usesMockServices == true` i `providerIsAvailable == false`,
+  transport to `MockVoiceTransport`, a odsłuch to `MockSpeechPlaybackService`.
+- **Ścieżka dostawcy** — z `apiBaseURL` i dostępnym SDK `VoiceServicesFactory` wybiera
+  `ElevenLabsVoiceTransport` (nie mocka po cichu); odsłuch pozostaje mockiem, bo adaptera
+  odsłuchu nie ma.
+
+### Czego etap 6 **nie** zamyka — `blocked_external`
+
+Warunek zakończenia z §7 to „test na iPhonie z realnym głosem oraz faktycznie odebraną
+wiadomością testową; prawdziwe stany wysłania i dostarczenia. **Mock nie jest
+zaliczeniem tego etapu**.” Tego warunku w tym środowisku wykonać nie można i nie został
+on przedstawiony jako spełniony:
+
+| Wymagane | Stan w repozytorium | Czego brakuje |
+| --- | --- | --- |
+| Rozmowa speech-to-speech z dostawcą | adapter `ElevenLabsVoiceTransport` + SDK w `project.yml` | konto/agent u dostawcy, backend wydający `conversationToken`, urządzenie z mikrofonem |
+| Prawdziwy odsłuch | brak adaptera; `makePlaybackService()` zwraca mock | implementacja `SpeechPlaybackService` na kontrolerze sesji audio |
+| Wysłanie i odbiór WhatsApp | `MockRepository.confirm` tworzy `outboxID`, nic nie wysyła | konto WhatsApp Business / zgoda odbiorcy, endpoint backendu, webhook stanów |
+| Prawdziwe stany wysłania i dostarczenia | `ExecutionState` + `applyProviderStatus`, ale wyłącznie lokalnie | źródło prawdy po stronie backendu |
+| Test na urządzeniu | brak — wszystkie testy w symulatorze | iPhone, konto testowe, odbiorca testowy |
+
+Dlatego w kodzie **nie usunięto żadnego oznaczenia demo** i nie zmieniono żadnego
+komunikatu na sukces: ekran nadal mówi „Głos jest demonstracyjny… wysyłka wiadomości
+jest symulowana”. Etap 6 pozostaje otwarty do czasu, gdy dostępne będą konta i usługi;
+dowodem będzie wiadomość odebrana przez prawdziwego odbiorcę testowego, nie wynik mocka.
