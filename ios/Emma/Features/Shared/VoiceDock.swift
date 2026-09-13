@@ -35,7 +35,7 @@ struct VoiceDock: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Text(stateLabel)
-                    .font(EmmaTypography.ui(10))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.dockStatusText)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel("Stan rozmowy: \(stateLabel)")
@@ -58,7 +58,7 @@ struct VoiceDock: View {
 
             // Połączenie i mikrofon mówimy wprost — nigdy wyłącznie kolorem (§5.5).
             Text("Połączenie: \(state.connection.displayName) · Mikrofon: \(state.microphone.displayName) · Tryb: \(state.mode.displayName)")
-                .font(EmmaTypography.ui(10))
+                .font(EmmaTypography.caption())
                 .foregroundStyle(EmmaTheme.dockStatusText)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -100,7 +100,7 @@ struct VoiceDock: View {
                 Image(systemName: systemImage)
                     .font(.system(size: 12, weight: .medium))
                 Text(title)
-                    .font(EmmaTypography.ui(10))
+                    .font(EmmaTypography.caption())
             }
             .foregroundStyle(EmmaTheme.dockActionText)
             .frame(minHeight: EmmaSpacing.hitTarget)

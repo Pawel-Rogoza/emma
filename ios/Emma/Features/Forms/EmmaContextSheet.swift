@@ -50,7 +50,7 @@ struct EmmaContextSheet: View {
             }
 
             Text("Emma pracuje na danych przykładowych. Rozmowa głosowa w tej wersji jest demonstracyjna — bez kont dostawców.")
-                .font(EmmaTypography.ui(11))
+                .font(EmmaTypography.caption())
                 .foregroundStyle(EmmaTheme.mutedSoft)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 14)

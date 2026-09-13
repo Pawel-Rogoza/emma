@@ -103,6 +103,7 @@ struct CaseScreen: View {
         .background(EmmaTheme.bg)
         .scrollIndicators(.hidden)
         .navigationBarBackButtonHidden(true)
+        .emmaPreservesSwipeBack()
         .task(id: dependencies.dataVersion) { await store.load(dependencies, caseID: caseID) }
     }
 
@@ -193,7 +194,7 @@ struct CaseScreen: View {
                         .font(EmmaTypography.ui(13, .medium))
                         .foregroundStyle(EmmaTheme.ink)
                     Text("Emma · notatki, terminy, kolejne kroki")
-                        .font(EmmaTypography.ui(10))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.caseEmmaSubtitle)
                 }
                 Spacer(minLength: 0)
@@ -302,7 +303,7 @@ struct CaseScreen: View {
             VStack(spacing: 0) {
                 if model.activity.isEmpty {
                     Text("Brak zdarzeń w historii.")
-                        .font(EmmaTypography.ui(12))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.muted)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
@@ -326,7 +327,7 @@ struct CaseScreen: View {
             VStack(spacing: 0) {
                 if tasks.isEmpty {
                     Text(empty)
-                        .font(EmmaTypography.ui(12))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.muted)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 15)

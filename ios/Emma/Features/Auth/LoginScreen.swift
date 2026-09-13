@@ -52,7 +52,7 @@ struct LoginScreen: View {
 
                 if let notice = auth.notice {
                     Text(notice)
-                        .font(EmmaTypography.ui(12))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.danger)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -65,7 +65,7 @@ struct LoginScreen: View {
             }
         } footer: {
             Text("Wersja demonstracyjna: dane konta nie są nigdzie wysyłane, wystarczy dowolny e-mail i hasło.")
-                .font(EmmaTypography.ui(11))
+                .font(EmmaTypography.caption())
                 .foregroundStyle(EmmaTheme.mutedSoft)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -103,7 +103,7 @@ struct LockScreen: View {
 
                 if let notice = auth.notice {
                     Text(notice)
-                        .font(EmmaTypography.ui(12))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.danger)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -116,13 +116,13 @@ struct LockScreen: View {
         } footer: {
             if let unavailable = auth.availabilityNotice {
                 Text("\(unavailable) W wersji demonstracyjnej dostęp odblokowuje przycisk powyżej.")
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.mutedSoft)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("Dane kancelarii zostają na urządzeniu — blokada chroni tylko dostęp do aplikacji.")
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.mutedSoft)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)

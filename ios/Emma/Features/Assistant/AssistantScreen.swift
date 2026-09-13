@@ -230,11 +230,11 @@ struct AssistantScreen: View {
                     .foregroundStyle(EmmaTheme.emmaSuggestionIcon)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title)
-                        .font(EmmaTypography.ui(12))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.ink)
                         .multilineTextAlignment(.leading)
                     Text(subtitle)
-                        .font(EmmaTypography.ui(10))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.emmaSuggestionSubtitle)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -273,7 +273,7 @@ struct AssistantScreen: View {
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Text(isUser ? "Ty" : "Emma")
-                    .font(EmmaTypography.ui(10, .semibold))
+                    .font(EmmaTypography.caption(.semibold))
                     .foregroundStyle(EmmaTheme.emmaTurnLabel)
                 if message.isSummary {
                     StatusPill("Streszczenie", kind: .neutral)
@@ -294,7 +294,7 @@ struct AssistantScreen: View {
                         Image(systemName: "speaker.wave.2")
                             .font(.system(size: 14))
                         Text(message.isSummary ? "Odsłuchaj streszczenie" : "Odsłuchaj")
-                            .font(EmmaTypography.ui(11))
+                            .font(EmmaTypography.caption())
                     }
                     .foregroundStyle(EmmaTheme.emmaListenText)
                     .frame(minHeight: EmmaSpacing.hitTarget, alignment: .leading)
@@ -357,7 +357,7 @@ struct AssistantScreen: View {
     private var statusBlock: some View {
         VStack(spacing: 4) {
             Text(store.statusText)
-                .font(EmmaTypography.ui(11))
+                .font(EmmaTypography.caption())
                 .foregroundStyle(EmmaTheme.emmaStatusText)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -365,7 +365,7 @@ struct AssistantScreen: View {
 
             if let error = store.voiceState.lastError {
                 Text(error)
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.danger)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -390,13 +390,13 @@ struct AssistantScreen: View {
 
             if store.voiceState.isPlaybackActive, store.isPlayingSummary {
                 Text("Odsłuch: streszczenie.")
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.muted)
             }
 
             if store.voiceState.mode == .dictation {
                 Text("Dyktowanie zapisuje tekst do pola. Nie wykonuje polecenia.")
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.muted)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -431,7 +431,7 @@ struct AssistantScreen: View {
                 Image(systemName: systemImage)
                     .font(.system(size: 14))
                 Text(title)
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
             }
             .foregroundStyle(EmmaTheme.emmaSmallSuggestionText)
             .padding(.horizontal, 10)
@@ -456,7 +456,7 @@ struct AssistantScreen: View {
                 + "nie ma kont dostawców, więc nie ma integracji z ElevenLabs ani z WhatsApp, "
                 + "a wysyłka wiadomości jest symulowana."
         )
-        .font(EmmaTypography.ui(10))
+        .font(EmmaTypography.caption())
         .foregroundStyle(EmmaTheme.emmaDemoFootText)
         .multilineTextAlignment(.center)
         .lineSpacing(4)

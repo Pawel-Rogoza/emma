@@ -185,7 +185,7 @@ struct TodayScreen: View {
                 dependencies.openEmma(clientID: nil, startVoice: false)
             } label: {
                 Text("albo napisz wiadomość")
-                    .font(EmmaTypography.ui(12, .medium))
+                    .font(EmmaTypography.caption(.medium))
                     .foregroundStyle(EmmaTheme.secondaryButtonText)
                     .frame(minHeight: 40)
                     .contentShape(Rectangle())
@@ -235,7 +235,7 @@ struct TodayScreen: View {
             VStack(spacing: 0) {
                 if tasks.isEmpty {
                     Text("Wszystkie zadania na dziś wykonane.")
-                        .font(EmmaTypography.ui(12))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.muted)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 15)
@@ -274,7 +274,7 @@ struct TodayScreen: View {
     private func emptyCard(_ text: String) -> some View {
         SurfaceCard {
             Text(text)
-                .font(EmmaTypography.ui(12))
+                .font(EmmaTypography.caption())
                 .foregroundStyle(EmmaTheme.muted)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }

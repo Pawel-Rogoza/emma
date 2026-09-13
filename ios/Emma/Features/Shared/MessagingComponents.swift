@@ -24,8 +24,13 @@ struct ConversationRow: View {
 
     @EnvironmentObject private var dependencies: AppDependencies
 
+    // F13 audytu: licznik nieprzeczytanych był nakładką wyśrodkowaną w pionie, więc
+    // nachodził na dwuliniowy podgląd (najgorzej w pierwszym wierszu i przy długiej
+    // cyrylicy). Teraz czas, licznik, pinezka i menu tworzą **osobną kolumnę**
+    // w układzie, a nie warstwę nad tekstem. Podgląd nie może wejść w jej prostokąt,
+    // bo kolumna zajmuje własną szerokość — także przy największym Dynamic Type.
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(alignment: .top, spacing: 6) {
             Button(action: onOpen) {
                 HStack(alignment: .top, spacing: 12) {
                     PersonAvatar(
@@ -35,16 +40,15 @@ struct ConversationRow: View {
                     )
 
                     VStack(alignment: .leading, spacing: 4) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(client.displayName)
-                                .font(EmmaTypography.threadName)
-                                .foregroundStyle(EmmaTheme.ink)
-                                .lineLimit(1)
-                            Spacer(minLength: 0)
-                            Text(previewLabel)
-                                .font(EmmaTypography.threadTime)
-                                .foregroundStyle(EmmaTheme.mutedSoft)
-                        }
+                        Text(client.displayName)
+                            .font(EmmaTypography.threadName)
+                            .foregroundStyle(EmmaTheme.ink)
+                            // Bez `lineLimit(1)`: przy największym Dynamic Type długie
+                            // nazwisko („Maria Sokołowa”) ucinało się do „Maria…”.
+                            // Zawinięcie do dwóch linii jest czytelniejsze niż wielokropek.
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.75)
+                            .fixedSize(horizontal: false, vertical: true)
 
                         HStack(alignment: .top, spacing: 6) {
                             if hasDraft {
@@ -63,10 +67,10 @@ struct ConversationRow: View {
                             Spacer(minLength: 0)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(.vertical, 13)
                 .padding(.leading, 15)
-                .padding(.trailing, 4)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -74,32 +78,40 @@ struct ConversationRow: View {
             .accessibilityLabel(accessibilityLabel)
             .accessibilityAddTraits(.isButton)
 
-            Button(action: onOptions) {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(EmmaTheme.mutedSoft)
-                    .frame(width: EmmaSpacing.hitTarget, height: EmmaSpacing.hitTarget)
-                    .contentShape(Rectangle())
+            // Kolumna znaczników: czas u góry, pod nim licznik i pinezka, menu na dole.
+            VStack(alignment: .trailing, spacing: 5) {
+                Text(previewLabel)
+                    .font(EmmaTypography.threadTime)
+                    .foregroundStyle(unreadCount > 0 ? EmmaTheme.unreadBadge : EmmaTheme.mutedSoft)
+                    .fixedSize()
+
+                if unreadCount > 0 {
+                    UnreadBadge(count: unreadCount, compact: true)
+                }
+
+                if isPinned {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(EmmaTheme.mutedSoft)
+                        .accessibilityLabel("Rozmowa przypięta")
+                }
+
+                Spacer(minLength: 0)
+
+                Button(action: onOptions) {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(EmmaTheme.mutedSoft)
+                        .frame(width: EmmaSpacing.hitTarget, height: EmmaSpacing.hitTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Opcje rozmowy z \(client.displayName)")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Opcje rozmowy z \(client.displayName)")
+            .padding(.vertical, 13)
+            .padding(.trailing, 8)
         }
         .background(unreadCount > 0 ? EmmaTheme.accentSoft.opacity(0.55) : Color.clear)
-        .overlay(alignment: .trailing) {
-            if unreadCount > 0 {
-                UnreadBadge(count: unreadCount, compact: true)
-                    .padding(.trailing, 54)
-            }
-        }
-        .overlay(alignment: .trailing) {
-            if isPinned {
-                Image(systemName: "pin.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(EmmaTheme.mutedSoft)
-                    .padding(.trailing, 16)
-                    .offset(y: 14)
-            }
-        }
     }
 
     private var previewText: String {
@@ -255,7 +267,7 @@ struct MessageBubble: View {
                 .frame(width: 2)
             VStack(alignment: .leading, spacing: 2) {
                 Text(quote.authorLabel)
-                    .font(EmmaTypography.ui(11, .semibold))
+                    .font(EmmaTypography.caption(.semibold))
                     .foregroundStyle(EmmaTheme.quoteRule)
                 Text(quote.isAvailable ? quote.text : "Wiadomość niedostępna")
                     .font(EmmaTypography.quotedText(quote.text))

@@ -28,7 +28,7 @@ rozjeżdżała się między maszynami). Instrukcja uruchomienia: `ios/README-XCO
 | Martwe publiczne API rdzenia | 0 z 520 składowych |
 | Wierność wyglądu | pomiar renderu podglądu w przeglądarce (czcionki, szerokości, ucinanie, nakładanie) |
 
-Wszystko powyżej odtwarza jedno polecenie: `bash ios/scripts/verify-linux-logic.sh` (8 kroków).
+Wszystko powyżej odtwarza jedno polecenie: `bash ios/scripts/verify-linux-logic.sh` (9 kroków).
 
 **Czego jeszcze nie ma**
 

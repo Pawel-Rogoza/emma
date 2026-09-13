@@ -76,3 +76,92 @@ i kontrastu pozostaje dla człowieka albo modelu z obsługą obrazu.
   repozytorium na urządzeniu; pokrywa je test reguły `RecordLoading`, nie test UI awarii.
 - Bez zmian: prawdziwe speech-to-speech, WhatsApp, backend, fizyczny iPhone, VoiceOver,
   największy Dynamic Type. Te bramki należą do etapów 5–6 i pozostają `blocked_external`.
+
+---
+
+## Etap 2 — Czytelność: jedna skala, kontrast, jeden powrót, kolumna licznika
+
+Zakres z §7: F09, F12, F13.
+
+### Potwierdzenie ustaleń w kodzie (przed zmianą)
+
+| ID | Potwierdzenie w kodzie bazowym |
+| --- | --- |
+| F09 | 20 tokenów tekstowych miało kontrast poniżej 4,5:1 wobec swojego tła; pomiar sRGB dał m.in. `dockStatusText` 2,68:1, `dockActionText` 2,83:1, `emmaStatusText` 2,84:1, `taskDateText` 3,00:1, `contextStripText` 3,37:1. Osiem stylów nazwanych miało 10–11 pt, a w widokach było **73** miejsca z własnym `ui(10…)`/`ui(11…)`/`ui(12…)`. |
+| F12 | `ClientCardScreen` pokazywał systemowy powrót **i** własny w `DetailHeader` (dwa powroty). `TasksScreen` łączył systemowy powrót z własnym `ScreenHeader` i osobnym wierszem „+”, co dawało podwójną, pustą strefę u góry. Tylko `CaseScreen` i `ThreadScreen` chowały systemowy powrót. |
+| F13 | `ConversationRow` rysował `UnreadBadge` jako nakładkę `overlay(alignment: .trailing)` z `padding(.trailing, 54)` i bez wyrównania w pionie — licznik lądował na dwuliniowym podglądzie wiadomości. |
+
+### Zmiany
+
+- **F09 — kontrast.** 20 tokenów tekstowych w `EmmaTheme` ma ciemniejsze wartości
+  (np. `mutedSoft` `#7A8492` → `#5F6D7D` = 4,89:1, `taskDateText` → `#66768B` = 4,64:1,
+  `contextStripText` → `#526F91`, `dockStatusText` → `#5F6D7D`). Każda nowa wartość
+  **występuje już w regułach referencji**, więc kontrola tokenów nadal widzi 0 kolorów
+  spoza wzorca.
+- **F09 — jedna skala.** Nowy `EmmaTypography.caption(_:)` (12 pt) jest najniższym
+  dopuszczalnym stopniem tekstu; 73 ad-hoc rozmiary w 22 plikach zamieniono na ten styl.
+  Style nazwane poniżej 12 pt podniesiono do 12 pt, a `button` z 13 na 16 pt.
+- **F09 — duży tekst.** Po pierwszym przebiegu przy `Accessibility XXXL` OCR wykazał
+  realne przycinanie: etykiety zakładek nachodziły na siebie („DzisiKlien Em Roz Kale”),
+  filtry zawijały się w trzy linie, a nazwisko „Maria Sokołowa” ucinało się do „Maria…”.
+  Poprawki: pasek zakładek i filtr segmentowy mają ograniczoną skalę (`…accessibility1`)
+  plus `minimumScaleFactor`, a nazwa w wierszu rozmowy zawija się do dwóch linii
+  i zmniejsza zamiast ucinać.
+- **F12 — jeden powrót.** `ClientCardScreen` i `TasksScreen` chowają systemowy przycisk
+  powrotu; `TasksScreen` używa `DetailHeader` (powrót + tytuł + „+”) zamiast dwóch
+  nagłówków. Nowy `EmmaSwipeBack` przywraca gest krawędzi, który ukrycie systemowego
+  przycisku domyślnie wyłącza.
+- **F13 — kolumna licznika.** Czas, licznik, pinezka i menu tworzą osobną kolumnę
+  w układzie wiersza; podgląd nie wchodzi w jej prostokąt.
+
+Odstępstwa zarejestrowane w `docs/ios/DESIGN_DEVIATIONS.md` jako D-20…D-23.
+Wizerunek Emmy, polskie nazewnictwo, pojedynczy `VoiceSessionCoordinator` i kontrola
+zgód bez zmian. Oznaczeń demo nie ruszano.
+
+### Testy
+
+| Test | Wynik |
+| --- | --- |
+| `swift test` (logika) | **191 / 0** |
+| `xcodebuild test`, cały zestaw, iPhone 17 Pro | **`TEST SUCCEEDED`** — **210 / 0** jednostkowych, **17 / 0** XCUITest |
+| `Stage2LayoutUITests` (4 testy) | brak systemowego powrotu na karcie klienta i Zadaniach, działający gest krawędzi, licznik nie koliduje z menu |
+| `Stage2ScreenshotUITests` (2 metody, 6 scen) na iPhone 17 Pro i iPhone SE (3 gen) | `TEST SUCCEEDED` na obu ekranach; raporty bez pozycji „NIE UDAŁO SIĘ” |
+| `swift test` + 9 kroków `verify-linux-logic.sh` | kroki 1–7 bez zastrzeżeń; **krok 8 jest czerwony z powodów sprzed tego etapu** (patrz ograniczenia) |
+| `check-readability.py` (nowy krok 9/9) | 64 pliki ekranów, 20 tokenów: jedna skala (brak tekstu <12 pt) i wszystkie tokeny ≥4,5:1 |
+| `design-token-diff.py` | kolory spoza referencji: **0** |
+
+### Zrzuty i ocena
+
+`docs/ios/screenshots/stage2-2026-09-13/duzy-ekran/` i `.../maly-ekran/` — po 6 scen:
+karta klienta, Zadania, Rozmowy (F12/F13) oraz te same ekrany przy największym tekście
+dostępności (F09). Rozmiar sprawdzony programowo; treść przez OCR (Apple Vision, pl/en/ru/uk).
+
+Zmierzony wynik, nie wrażenie: w scenie rozmów licznik „2” ma `x ≈ 0,88`, a podgląd
+kończy się na `x ≈ 0,58` — kolumna znaczników jest osobna. Po poprawkach przy `XXXL` OCR
+czyta „Wszystkie Nieprzeczytane Przypięte” w jednej linii, pełne „Maria Sokołowa”
+i „Olena Kovalenko”, a etykiety zakładek w jednej linii.
+
+### Ograniczenia
+
+- **Model wdrażający nie ma wejścia obrazowego.** Zrzuty oceniono metodami pomiarowymi
+  (OCR + geometria ramek), nie wzrokowo. Kontrast, ucięcia i nachodzenia grafiki wymagają
+  człowieka albo modelu z obsługą obrazu.
+- **Krok 8 `verify-linux-logic.sh` jest czerwony i był czerwony przed tym etapem.**
+  `check-dead-code.py` wskazuje `VoiceSessionCoordinator.handleAccountSwitched` jako
+  publiczne API bez wywołania. Zweryfikowane: funkcja istnieje już w bazie audytu
+  `f1e1d34`, a `git grep` nie znajduje po niej wywołania ani w `f1e1d34`, ani w `HEAD`.
+  Nie usunąłem jej: to zabezpieczenie cyklu życia głosu (przełączenie konta), a aplikacja
+  ma dziś jedno wspólne konto (D-17). Wpięcie albo usunięcie należy do etapu 4–5, gdzie
+  dotykamy cyklu życia sesji — usunięcie „na teraz” osłabiłoby zabezpieczenie, którego
+  audyt broni.
+- Pasek zakładek i filtr segmentowy mają **ograniczoną skalę** Dynamic Type
+  (`…accessibility1`). To świadomy kompromis: pięć stałych kolumn nie mieści etykiet przy
+  `XXXL`, a nakładające się napisy są gorsze niż mniejszy tekst nawigacji. Treść rośnie
+  bez ograniczeń.
+- Podgląd wiadomości w wierszu rozmowy ma `lineLimit(2)` (jak w referencji), więc bardzo
+  długa cyrylica jest ucinana wielokropkiem — to nie jest kolizja ani utrata treści:
+  pełny tekst jest w wątku, a etykieta dostępności zawiera całość.
+- Inicjały awatara mają rozmiar proporcjonalny do średnicy koła, nie do Dynamic Type
+  (koło jest stałe, więc skalowanie tekstu w nim ucinałoby znak).
+- Bez zmian: VoiceOver na urządzeniu, dark mode (P2), klawiatura przy dużym tekście,
+  prawdziwy głos i WhatsApp. To etapy 4–6 / `blocked_external`.

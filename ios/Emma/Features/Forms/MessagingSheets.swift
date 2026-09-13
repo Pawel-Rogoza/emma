@@ -117,7 +117,7 @@ struct ConversationOptionsSheet: View {
                 .padding(.bottom, 12)
 
                 Text("Status wiadomości jest przykładowy — WhatsApp nie jest jeszcze połączony.")
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.mutedSoft)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -226,13 +226,13 @@ struct MessageOptionsSheet: View {
             HStack(spacing: 7) {
                 ReceiptMark(transport: message.transport)
                 Text("\(message.transport.displayName) · \(clockText(message))")
-                    .font(EmmaTypography.ui(12))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.muted)
             }
             .padding(.bottom, 6)
 
             Text("Status przykładowy. WhatsApp nie jest jeszcze połączony.")
-                .font(EmmaTypography.ui(11))
+                .font(EmmaTypography.caption())
                 .foregroundStyle(EmmaTheme.mutedSoft)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 14)

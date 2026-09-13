@@ -273,6 +273,7 @@ struct ThreadScreen: View {
         }
         .background(EmmaTheme.chatBackground)
         .navigationBarBackButtonHidden(true)
+        .emmaPreservesSwipeBack()
         .task(id: dependencies.dataVersion) { await store.load(dependencies, threadID: threadID) }
         .onDisappear {
             Task { await store.teardown(dependencies) }
@@ -310,7 +311,7 @@ struct ThreadScreen: View {
                             .font(EmmaTypography.chatHeader)
                             .foregroundStyle(EmmaTheme.ink)
                         Text("WhatsApp · \(model.client.language.displayName)")
-                            .font(EmmaTypography.ui(11))
+                            .font(EmmaTypography.caption())
                             .foregroundStyle(EmmaTheme.mutedSoft)
                     }
                     Spacer(minLength: 0)
@@ -353,7 +354,7 @@ struct ThreadScreen: View {
                 Image(systemName: "folder")
                     .font(.system(size: 13))
                 Text(model.legalCase?.title ?? model.client.topic)
-                    .font(EmmaTypography.ui(12))
+                    .font(EmmaTypography.caption())
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
@@ -383,7 +384,7 @@ struct ThreadScreen: View {
                         Button("Wczytaj starsze wiadomości") {
                             Task { await store.loadEarlier(dependencies) }
                         }
-                        .font(EmmaTypography.ui(12, .medium))
+                        .font(EmmaTypography.caption(.medium))
                         .foregroundStyle(EmmaTheme.accent)
                         .frame(maxWidth: .infinity, minHeight: EmmaSpacing.hitTarget)
                         .accessibilityHint("Dociąga wcześniejsze wiadomości z historii")
@@ -461,7 +462,7 @@ struct ThreadScreen: View {
                         .frame(width: 2)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Odpowiedź · \(quote.authorLabel)")
-                            .font(EmmaTypography.ui(11, .semibold))
+                            .font(EmmaTypography.caption(.semibold))
                             .foregroundStyle(EmmaTheme.quoteRule)
                         Text(quote.text)
                             .font(EmmaTypography.quotedText(quote.text))
@@ -547,7 +548,7 @@ struct ThreadScreen: View {
 
             if let notice = store.dictationNotice {
                 Text(notice)
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.mutedSoft)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)

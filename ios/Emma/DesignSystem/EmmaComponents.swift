@@ -48,7 +48,7 @@ public struct SectionHeader: View {
             Spacer(minLength: 8)
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
-                    .font(EmmaTypography.ui(12, .medium))
+                    .font(EmmaTypography.caption(.medium))
                     .foregroundStyle(EmmaTheme.accent)
                     .frame(minHeight: EmmaSpacing.hitTarget)
                     .contentShape(Rectangle())
@@ -145,7 +145,7 @@ public struct DetailHeader: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(caption.uppercased())
-                    .font(EmmaTypography.ui(12, .semibold))
+                    .font(EmmaTypography.caption(.semibold))
                     .tracking(1)
                     .foregroundStyle(EmmaTheme.mutedSoft)
                 Text(title)
@@ -293,8 +293,17 @@ public struct SegmentedFilter<Item: Hashable>: View {
                     selection = item
                 } label: {
                     Text(title(item))
-                        .font(EmmaTypography.ui(12, isSelected ? .semibold : .regular))
+                        .font(EmmaTypography.caption(isSelected ? .semibold : .regular))
                         .foregroundStyle(isSelected ? EmmaTheme.ink : EmmaTheme.muted)
+                        // Przy największym Dynamic Type etykiety filtrów („Nieprzeczytane”)
+                        // nie mieszczą się w segmencie. Zamiast zawijać je w trzy linie
+                        // (co rozjeżdżało pasek) — jedna linia i czytelne zmniejszenie.
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        // Filtr to kontrolka, nie treść — przy XXXL „Nieprzeczytane”
+                        // nie mieści się w segmencie nawet po zmniejszeniu, więc
+                        // ograniczamy skalę tak jak w pasku zakładek.
+                        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                         .frame(maxWidth: .infinity, minHeight: EmmaMetrics.segmentedMinHeight - 6)
                         .background(isSelected ? EmmaTheme.controlSelected : Color.clear)
                         .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.segmentedInner, style: .continuous))
@@ -484,11 +493,11 @@ public struct InfoList: View {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 HStack(alignment: .top, spacing: 12) {
                     Text(row.label)
-                        .font(EmmaTypography.ui(12))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.muted)
                     Spacer(minLength: 8)
                     Text(row.value)
-                        .font(EmmaTypography.ui(12, .medium))
+                        .font(EmmaTypography.caption(.medium))
                         .foregroundStyle(EmmaTheme.ink)
                         .multilineTextAlignment(.trailing)
                         .fixedSize(horizontal: false, vertical: true)
@@ -536,7 +545,7 @@ public struct LabeledField<Content: View>: View {
             content
             if let help {
                 Text(help)
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.mutedSoft)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -606,7 +615,7 @@ public struct ChoiceList<Item: Hashable>: View {
                                 .multilineTextAlignment(.leading)
                             if let subtitle {
                                 Text(subtitle(item))
-                                    .font(EmmaTypography.ui(11))
+                                    .font(EmmaTypography.caption())
                                     .foregroundStyle(EmmaTheme.mutedSoft)
                                     .multilineTextAlignment(.leading)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -761,7 +770,7 @@ public struct TraceToast: View {
 
     public var body: some View {
         Text(message)
-            .font(EmmaTypography.ui(12))
+            .font(EmmaTypography.caption())
             .foregroundStyle(.white)
             .padding(.horizontal, 16)
             .padding(.vertical, 13)
@@ -804,7 +813,7 @@ public struct QuickActions: View {
                             .font(.system(size: 19, weight: .regular))
                             .foregroundStyle(EmmaTheme.personAvatarText)
                         Text(action.title)
-                            .font(EmmaTypography.ui(11))
+                            .font(EmmaTypography.caption())
                             .foregroundStyle(EmmaTheme.muted)
                             .multilineTextAlignment(.center)
                             .lineLimit(2)
@@ -855,7 +864,7 @@ public struct WorkspaceStats: View {
                         .font(EmmaTypography.heading(23))
                         .foregroundStyle(EmmaTheme.ink)
                     Text(item.label)
-                        .font(EmmaTypography.ui(10))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.mutedSoft)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -895,7 +904,7 @@ public struct ActivityRow: View {
                     .foregroundStyle(EmmaTheme.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(dateText)
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.mutedSoft)
             }
             Spacer(minLength: 0)
@@ -924,7 +933,7 @@ public struct NoteCard: View {
                     .lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(footer)
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.mutedSoft)
             }
         }

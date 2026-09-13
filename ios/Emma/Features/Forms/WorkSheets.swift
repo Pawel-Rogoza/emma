@@ -54,7 +54,7 @@ private struct DateField: View {
                     .accessibilityLabel(label)
                 if showsFormatError {
                     Text("Podaj datę w zapisie RRRR-MM-DD, np. 2026-09-11.")
-                        .font(EmmaTypography.ui(12))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.danger)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -101,7 +101,7 @@ private struct TimeField: View {
                     .accessibilityLabel(label)
                 if showsFormatError {
                     Text("Podaj godzinę w zapisie GG:MM, np. 15:00.")
-                        .font(EmmaTypography.ui(12))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.danger)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -131,7 +131,7 @@ struct NoteSheet: View {
     var body: some View {
         SheetScaffold(title: "Notatka z rozmowy", onClose: { close() }) {
             Text(caption)
-                .font(EmmaTypography.ui(12))
+                .font(EmmaTypography.caption())
                 .foregroundStyle(EmmaTheme.mutedSoft)
                 .padding(.bottom, 14)
 
@@ -160,7 +160,7 @@ struct NoteSheet: View {
 
             if isDictating {
                 Text("Dyktowanie wpisuje tekst do pola. Nic nie zapisze się samo.")
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.mutedSoft)
                     .padding(.bottom, 10)
             }
@@ -300,7 +300,7 @@ struct TaskFormSheet: View {
                             priority = candidate
                         } label: {
                             Text(candidate.displayName)
-                                .font(EmmaTypography.ui(12, isSelected ? .semibold : .regular))
+                                .font(EmmaTypography.caption(isSelected ? .semibold : .regular))
                                 .foregroundStyle(isSelected ? EmmaTheme.ink : EmmaTheme.muted)
                                 .frame(maxWidth: .infinity, minHeight: EmmaMetrics.segmentedMinHeight - 6)
                                 .background(isSelected ? EmmaTheme.controlSelected : Color.clear)

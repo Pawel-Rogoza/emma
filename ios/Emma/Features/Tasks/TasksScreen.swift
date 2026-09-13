@@ -61,13 +61,14 @@ struct TasksScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                ScreenHeader(
-                    kicker: "WSPÓLNA LISTA",
+                // F12 audytu: u góry były jednocześnie systemowy powrót i osobny
+                // nagłówek, co dawało podwójną, pustą strefę. Teraz jest jeden
+                // `DetailHeader`: powrót, tytuł i „Dodaj zadanie” w tym samym wierszu.
+                DetailHeader(
+                    caption: "Wspólna lista",
                     title: "Zadania",
-                )
-
-                HStack {
-                    Spacer(minLength: 0)
+                    onBack: { dependencies.back() }
+                ) {
                     IconButton(
                         systemName: "plus",
                         accessibilityLabel: "Dodaj zadanie"
@@ -101,6 +102,8 @@ struct TasksScreen: View {
         }
         .background(EmmaTheme.bg)
         .scrollIndicators(.hidden)
+        .navigationBarBackButtonHidden(true)
+        .emmaPreservesSwipeBack()
         .task(id: dependencies.dataVersion) { await store.load(dependencies) }
         .onChange(of: store.scope) { _, _ in Task { await store.load(dependencies) } }
     }
@@ -111,7 +114,7 @@ struct TasksScreen: View {
             VStack(spacing: 0) {
                 if model.tasks.isEmpty {
                     Text("Brak zadań w tym widoku.")
-                        .font(EmmaTypography.ui(12))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.muted)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 15)

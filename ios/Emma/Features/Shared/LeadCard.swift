@@ -50,7 +50,7 @@ struct LeadCard: View {
             StatusPill(statusPillText, kind: showsUrgentContact ? .amber : .neutral)
             Spacer(minLength: 8)
             Text(client.language.displayName)
-                .font(EmmaTypography.ui(11))
+                .font(EmmaTypography.caption())
                 .foregroundStyle(EmmaTheme.muted)
         }
     }
@@ -58,7 +58,7 @@ struct LeadCard: View {
     private var footerRow: some View {
         HStack(alignment: .center, spacing: 8) {
             Text(nextEventText)
-                .font(EmmaTypography.ui(11))
+                .font(EmmaTypography.caption())
                 .foregroundStyle(EmmaTheme.muted)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)

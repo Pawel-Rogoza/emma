@@ -201,7 +201,7 @@ struct MessagesScreen: View {
                     }
 
                     Text("Wiadomości przykładowe · WhatsApp niepołączony")
-                        .font(EmmaTypography.ui(11))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.mutedSoft)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, 14)

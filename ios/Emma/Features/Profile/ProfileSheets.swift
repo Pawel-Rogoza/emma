@@ -17,7 +17,7 @@ struct ProfileSheet: View {
                 .padding(.bottom, 12)
 
             Text("Jedno wspólne konto zespołu: te same sprawy, zadania i rozmowy. AI i integracja WhatsApp są symulowane. Głos działa w trybie demonstracyjnym. Data przykładowego dnia: 11 września 2026.")
-                .font(EmmaTypography.ui(11))
+                .font(EmmaTypography.caption())
                 .foregroundStyle(EmmaTheme.mutedSoft)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 16)
@@ -31,7 +31,7 @@ struct ProfileSheet: View {
 
             if dependencies.configuration.usesMockServices {
                 Text("Tryb Demo: \(dependencies.configuration.environment.displayName). Aplikacja nie wykonuje żadnych połączeń sieciowych i nie zawiera kluczy dostawców.")
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.mutedSoft)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 14)

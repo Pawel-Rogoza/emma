@@ -321,6 +321,81 @@ gita; usunięcie `deleteEvent` z protokołu agendy.
 
 ---
 
+### D-20 · Ciemniejsze tokeny tekstu dla kontrastu 4,5:1 — **etap 2 audytu UX (F09)**
+
+**Treść:** 20 tokenów tekstowych w `EmmaTheme` ma ciemniejsze wartości niż w referencji,
+np. `mutedSoft` `#7A8492` → `#5F6D7D`, `taskDateText` `#8B96A5` → `#66768B`,
+`contextStripText` `#6B84A0` → `#526F91`, `dockStatusText` `#8A9AAC` → `#5F6D7D`.
+
+**Powód:** pomiar sRGB w audycie wykazał kontrast poniżej 4,5:1 dla etykiet, które
+decydują o dniu i sterowaniu głosem (np. `dockStatusText` 2,68:1). To nie jest kwestia
+gustu — przy takim kontraście danych nie da się odczytać w słońcu ani przy słabym wzroku.
+Cel: co najmniej 4,5:1 dla zwykłego tekstu (WCAG AA), zgodnie z §3 audytu.
+
+**Wpływ:** metadane są ciemniejsze, więc hierarchia jest mniej „mglista”, ale nadal
+czytelna jako drugi plan. Każda nowa wartość **występuje już w regułach referencji**,
+więc kontrola `design-token-diff.py` nadal nie zgłasza kolorów spoza wzorca.
+
+**Kontrola:** `ios/scripts/check-readability.py` (krok 9/9 `verify-linux-logic.sh`) liczy
+kontrast zadeklarowanych tokenów wobec ich rzeczywistych teł i przerywa przy regresji.
+
+**Cofnięcie:** przywrócenie poprzednich wartości z historii gita (kosztem kontrastu).
+
+### D-21 · Jeden powrót na ekranie szczegółu i przywrócony gest — **etap 2 audytu UX (F12)**
+
+**Treść:** `ClientCardScreen` i `TasksScreen` chowają systemowy przycisk powrotu
+(`.navigationBarBackButtonHidden(true)`), tak jak wcześniej `CaseScreen` i `ThreadScreen`.
+Jedyne wejście powrotu to własny przycisk w `DetailHeader` („Wróć”). Ekran Zadania dostał
+`DetailHeader` zamiast `ScreenHeader` + osobnego wiersza z „+”, więc u góry nie ma już
+dwóch nagłówków. Nowy `EmmaSwipeBack` przywraca gest przesunięcia od krawędzi, który
+ukrycie systemowego przycisku domyślnie wyłącza.
+
+**Powód:** na karcie klienta były dwa powroty obok siebie, a na Zadaniach systemowy
+powrót i własny nagłówek tworzyły podwójną, pustą strefę. Audyt wymaga jednego sposobu
+budowania nagłówka i zachowania gestu powrotu.
+
+**Wpływ:** spójny nagłówek na wszystkich wypychanych ekranach; tytuł pozostaje dostępny
+dla VoiceOver („Wróć” + tytuł). Gest krawędzi działa, ale tylko gdy na stosie jest więcej
+niż jeden ekran — na ekranie głównym nie ma czego przewracać.
+
+**Ograniczenie:** przywrócenie gestu opiera się na delegacie
+`interactivePopGestureRecognizer` (UIKit). Jeśli hierarchia nie zna jeszcze
+`UINavigationController`, modyfikator nic nie robi — brak gestu, nie błąd. Zachowanie
+pilnuje test UI wykonujący przeciągnięcie od krawędzi.
+
+### D-22 · Licznik nieprzeczytanych w osobnej kolumnie — **etap 2 audytu UX (F13)**
+
+**Treść:** w wierszu listy rozmów czas, licznik nieprzeczytanych, pinezka i menu tworzą
+osobną kolumnę w układzie (`VStack` po prawej), a nie warstwy nałożone na tekst.
+
+**Powód:** licznik był wyśrodkowaną nakładką i nachodził na dwuliniowy podgląd wiadomości,
+najgorzej w pierwszym wierszu i przy długiej cyrylicy.
+
+**Wpływ:** podgląd nie może wejść w prostokąt kolumny, bo kolumna zajmuje własną szerokość.
+Przy dużym Dynamic Type kolumna rośnie w pionie razem z resztą wiersza.
+
+**Cofnięcie:** przywrócenie nakładek z historii gita (kosztem kolizji).
+
+### D-23 · Jedna skala tekstu: najniższy stopień 12 pt — **etap 2 audytu UX (F09)**
+
+**Treść:** wszystkie metadane i podpisy przechodzą przez `EmmaTypography.caption(...)`
+(12 pt). Dawne `EmmaTypography.ui(10…)`/`ui(11…)` w widokach zostały zamienione na ten
+styl (73 miejsca w 22 plikach). Style nazwane, które miały 10–11 pt
+(`kicker`, `meetingMeta`, `taskMeta`, `taskDate`, `caseNumber`, `bubbleMeta`, `pill`,
+`tabLabel`), mają teraz 12 pt. `button` urósł z 13 na 16 pt (audyt: przyciski 16–17 pt).
+
+**Powód:** etykiety 10–11 pt przy słabym kontraście podejmowały decyzje o dniu i wysyłce.
+Audyt wymaga jednej skali i braku stałych rozmiarów w ekranach.
+
+**Wpływ:** metadane są nieco większe (o 1–2 pt), przyciski bardziej czytelne. Przy
+domyślnym tekście wygląd pozostaje bliski referencji; skala nadal rośnie z Dynamic Type.
+
+**Kontrola:** `check-readability.py` przerywa, gdy w ekranie pojawi się tekst 10 lub 11 pt.
+
+**Cofnięcie:** przywrócenie poprzednich stylów z historii gita.
+
+---
+
 ## Czego ten rejestr nie zawiera
 
 Nie zawiera porównania zrzutów ekranu, bo **nie zostały wykonane** — brak macOS

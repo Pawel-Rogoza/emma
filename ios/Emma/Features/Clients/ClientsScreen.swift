@@ -215,7 +215,7 @@ struct ListFilterChips<Item: Hashable>: View {
                     selection = item
                 } label: {
                     Text(title(item))
-                        .font(EmmaTypography.ui(11, isSelected ? .medium : .regular))
+                        .font(EmmaTypography.caption(isSelected ? .medium : .regular))
                         .foregroundStyle(isSelected ? EmmaTheme.secondaryButtonText : EmmaTheme.mutedSoft)
                         .padding(.horizontal, 11)
                         .padding(.vertical, 7)

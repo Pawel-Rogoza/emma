@@ -188,7 +188,7 @@ struct CalendarScreen: View {
             Button("Wróć do dzisiaj") {
                 Task { await store.backToToday(dependencies) }
             }
-            .font(EmmaTypography.ui(12, .medium))
+            .font(EmmaTypography.caption(.medium))
             .foregroundStyle(EmmaTheme.weekControlText)
             .frame(maxWidth: .infinity, minHeight: EmmaSpacing.hitTarget)
             .background(EmmaTheme.weekControlBackground)
@@ -209,7 +209,7 @@ struct CalendarScreen: View {
                 } label: {
                     VStack(spacing: 5) {
                         Text(dependencies.dateText.weekdayShort(for: day))
-                            .font(EmmaTypography.ui(11, .medium))
+                            .font(EmmaTypography.caption(.medium))
                             .foregroundStyle(isSelected ? EmmaTheme.daySelectedLabel : EmmaTheme.mutedSoft)
                         Text("\(day.day)")
                             .font(EmmaTypography.heading(16))
