@@ -100,8 +100,11 @@ final class Stage6ContractTests: XCTestCase {
             "Demo ma zostać na mocku, dopóki nie ma skonfigurowanego backendu"
         )
         XCTAssertTrue(
-            VoiceServicesFactory.makePlaybackService() is MockSpeechPlaybackService,
-            "Odsłuch dostawcy nie istnieje — mock jest jawny, nie udawany"
+            VoiceServicesFactory.makePlaybackService(
+                configuration: demoConfiguration,
+                audioSession: AudioSessionController()
+            ) is MockSpeechPlaybackService,
+            "Demo zostaje na deterministycznym mocku odsłuchu"
         )
     }
 
@@ -137,8 +140,11 @@ final class Stage6ContractTests: XCTestCase {
         }
 
         XCTAssertTrue(
-            VoiceServicesFactory.makePlaybackService() is MockSpeechPlaybackService,
-            "Prawdziwy odsłuch nie istnieje: F05 pozostaje otwarte"
+            VoiceServicesFactory.makePlaybackService(
+                configuration: configured,
+                audioSession: AudioSessionController()
+            ) is SystemSpeechPlaybackService,
+            "Poza Demo odsłuch jest realny (syntezator systemowy), a nie mockiem"
         )
         XCTAssertFalse(
             VoiceServicesFactory.providerIsAvailable(configuration: demoConfiguration),

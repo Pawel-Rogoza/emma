@@ -458,7 +458,8 @@ struct AssistantScreen: View {
         Text(
             "Emma działa na przykładowych scenariuszach. Głos jest demonstracyjny: "
                 + "nie ma kont dostawców, więc nie ma integracji z ElevenLabs ani z WhatsApp, "
-                + "a wysyłka wiadomości jest symulowana."
+                + "a wysyłka wiadomości jest symulowana. Odsłuch w demo jest scenariuszowy "
+                + "(bez dźwięku); poza demo czyta go syntezator systemu, nie głos Emmy."
         )
         .font(EmmaTypography.caption())
         .foregroundStyle(EmmaTheme.emmaDemoFootText)

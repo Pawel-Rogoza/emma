@@ -553,6 +553,25 @@ Zrzuty etapu 5 pokazują całą treść karty (pole treści `y = 224 pt` w oknie
 
 **Cofnięcie:** usunięcie `.defaultScrollAnchor(.bottom)`.
 
+### D-30 · Odsłuch w demo pozostaje scenariuszowy, poza demo mówi syntezator systemu — **etap 6 audytu (F05)**
+
+**Treść:** „Odsłuchaj” w Demo nadal korzysta z `MockSpeechPlaybackService` (zdarzenia
+bez dźwięku). Poza Demo — gdy jest skonfigurowany backend — wybierany jest
+`SystemSpeechPlaybackService`, który naprawdę mówi systemowym `AVSpeechSynthesizer`.
+Stopka demo mówi jedno i drugie wprost.
+
+**Powód:** dwa sprzeczne wymagania. Testy i zrzuty muszą być deterministyczne (mock
+kończy odsłuch natychmiast), a użytkownik nie może usłyszeć **głosu systemowego** jako
+głosu Emmy i pomyśleć, że to integracja z dostawcą. Rozdzielenie według konfiguracji
+zachowuje jedno i drugie, a nota w interfejsie nie pozwala pomylić jednego z drugim.
+
+**Wpływ:** odsłuch przestał być pustą atrapą w kodzie produkcyjnym; w Demo nadal nie ma
+dźwięku i jest to wypowiedziane na ekranie. Głos Emmy od dostawcy pozostaje otwarty —
+do czasu konta i backendu wydającego token.
+
+**Cofnięcie:** zwrócenie `MockSpeechPlaybackService()` w obu wariantach (stan sprzed
+etapu 6) i skrócenie noty w stopce.
+
 ---
 
 ## Czego ten rejestr nie zawiera

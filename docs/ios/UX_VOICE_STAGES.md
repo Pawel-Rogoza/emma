@@ -588,8 +588,12 @@ Sprawdzone w kodzie z commita `78fa232` (koniec etapu 5), nie z opisów:
   `ElevenLabs`, a `VoiceAdapters/ElevenLabsVoiceTransport.swift` (275 linii) prowadzi
   rozmowę przez `Conversation` z tego SDK; `VoiceServicesFactory` wybiera go, gdy jest
   `apiBaseURL` (token wydaje `BackendConversationTokenProvider`). To nie jest zaślepka.
-- **Odsłuch dostawcy nie istnieje.** `VoiceServicesFactory.makePlaybackService()`
-  zwraca `MockSpeechPlaybackService()` w obu wariantach — i mówi to wprost w komentarzu.
+- **Realnego odsłuchu nie było wcale.** `VoiceServicesFactory.makePlaybackService()`
+  zwracał `MockSpeechPlaybackService()` w obu wariantach. Mock raportuje
+  `started → progress → finished` natychmiast i **nie wydaje dźwięku**, więc
+  „Odsłuchaj” zmieniało stan w interfejsie, ale nic nie było słychać. Trasa odsłuchu
+  w koordynatorze (`startPlayback(_:service:)`) była przy tym prawdziwa — brakowało
+  wyłącznie implementacji usługi.
 - **Wysyłka WhatsApp to nadal symulacja.** `MockRepository.confirm` tworzy wyłącznie
   `ActionExecution` z `outboxID` (`outbox-<klucz idempotencji>`); nie woła
   `appendOutgoing`, nie ma żadnego żądania sieciowego do WhatsApp, a stany dostarczenia
@@ -611,6 +615,18 @@ Sprawdzone w kodzie z commita `78fa232` (koniec etapu 5), nie z opisów:
 - **`ios/Emma/PreviewSupport/MockRepository.swift`**: deklaracja zgodności skrócona do
   `EmmaRepository, DemoFixtureRepository` — jedno miejsce mówi, co repozytorium demo
   spełnia.
+- **`ios/Emma/VoiceAdapters/SystemSpeechPlaybackService.swift`** (nowy): realny odsłuch
+  na systemowym `AVSpeechSynthesizer`. Zd zdarzenia `started`/`progress`/`finished`
+  pochodzą z delegata syntezatora (`approximate: false`), tryb `.playback` nie otwiera
+  mikrofonu (§5.1), a `stop()` przerywa mowę i kończy odsłuch powodem `interrupted`.
+  To głos **systemowy**, nie głos Emmy — interfejs tego nie udaje.
+- **`ios/Emma/VoiceAdapters/VoiceServicesFactory.swift`** i
+  **`App/AppDependencies.swift`**: wybór odsłuchu zależy od konfiguracji — Demo zostaje
+  na deterministycznym mocku (testy i zrzuty nie zależą od tempa mowy), poza Demo
+  odsłuch jest realny.
+- **`ios/Emma/Features/Assistant/AssistantScreen.swift`**: stopka demo mówi teraz także
+  o odsłuchu: „Odsłuch w demo jest scenariuszowy (bez dźwięku); poza demo czyta go
+  syntezator systemu, nie głos Emmy”.
 
 Zachowane bez zmian: oznaczenia demo w stopce, `fixtureNotice`, jawny mock transportu
 w Demo, pojedynczy `VoiceSessionCoordinator`, wersjonowanie i idempotencja.
@@ -620,7 +636,9 @@ w Demo, pojedynczy `VoiceSessionCoordinator`, wersjonowanie i idempotencja.
 | Warstwa | Zakres | Wynik |
 | --- | --- | --- |
 | `EmmaTests/App/Stage6ContractTests` | zależność od kontraktu, osobna zdolność demo, jawność ścieżki mocka | **4/0** |
-| `xcodebuild test -only-testing:EmmaTests` | jednostkowe + aplikacyjne | **285/0** |
+| `EmmaTests/App/Stage6PlaybackTests` | realny odsłuch: start i koniec z delegata, przerwanie, mock w Demo | **3/0** |
+| `EmmaUITests/Stage6BoundaryUITests` | zrzut jawej granicy mocka | **1/0** |
+| `xcodebuild test -only-testing:EmmaTests` | jednostkowe + aplikacyjne | **288/0** |
 | `swift test` (EmmaCore) | logika bez zmian względem etapu 5 | **242/0** |
 | `verify-linux-logic.sh` | kroki 1–7 i 9 czyste; krok 8 wskazuje `handleAccountSwitched` | jak w etapach 2–5 |
 | `EmmaUITests` | etapy 1–5 | **32/0** (wynik etapu 5, UI nie zmienione w tym etapie) |
@@ -636,8 +654,22 @@ Sprawdzone w `Stage6ContractTests`:
 - **Jawność mocka** — w Demo `usesMockServices == true` i `providerIsAvailable == false`,
   transport to `MockVoiceTransport`, a odsłuch to `MockSpeechPlaybackService`.
 - **Ścieżka dostawcy** — z `apiBaseURL` i dostępnym SDK `VoiceServicesFactory` wybiera
-  `ElevenLabsVoiceTransport` (nie mocka po cichu); odsłuch pozostaje mockiem, bo adaptera
-  odsłuchu nie ma.
+  `ElevenLabsVoiceTransport` (nie mocka po cichu), a odsłuch przechodzi na
+  `SystemSpeechPlaybackService`.
+- **Realny odsłuch** — `Stage6PlaybackTests` uruchamia syntezator na krótkim tekście
+  i czeka na zdarzenie z delegata: dostaje `started(approximate: false)`, `progress`
+  i `finished(.completed)` (cały test trwa ~1,8 s, czyli syntezator naprawdę mówi),
+  a po `stop()` — `finished(.interrupted)`. Demo nadal dostaje mock, więc scenariusze
+  i zrzuty pozostają deterministyczne.
+
+### Zrzut i ocena
+
+`docs/ios/screenshots/stage6-2026-09-13/35-emma-nota-o-demo.png` — stopka Emmy
+z jawną granicą mocka. OCR czyta całym zdaniem: „Głos jest demonstracyjny: nie ma kont
+dostawców, więc nie ma integracji z ElevenLabs ani z WhatsApp, a wysyłka wiadomości jest
+symulowana. Odsłuch w demo jest scenariuszowy (bez dźwięku); poza demo czyta go syntezator
+systemu, nie głos Emmy.” Zrzut jest dowodem, że brak integracji jest **nazwany**, a nie
+przemilczany — nie jest dowodem realnego głosu ani wysyłki.
 
 ### Czego etap 6 **nie** zamyka — `blocked_external`
 
@@ -649,7 +681,7 @@ on przedstawiony jako spełniony:
 | Wymagane | Stan w repozytorium | Czego brakuje |
 | --- | --- | --- |
 | Rozmowa speech-to-speech z dostawcą | adapter `ElevenLabsVoiceTransport` + SDK w `project.yml` | konto/agent u dostawcy, backend wydający `conversationToken`, urządzenie z mikrofonem |
-| Prawdziwy odsłuch | brak adaptera; `makePlaybackService()` zwraca mock | implementacja `SpeechPlaybackService` na kontrolerze sesji audio |
+| Prawdziwy odsłuch | **adapter istnieje i działa** (`SystemSpeechPlaybackService`, test 3/0); w Demo świadomie mock | głos Emmy od dostawcy (a nie systemowy), potwierdzenie słyszalności na iPhone'ie przez człowieka |
 | Wysłanie i odbiór WhatsApp | `MockRepository.confirm` tworzy `outboxID`, nic nie wysyła | konto WhatsApp Business / zgoda odbiorcy, endpoint backendu, webhook stanów |
 | Prawdziwe stany wysłania i dostarczenia | `ExecutionState` + `applyProviderStatus`, ale wyłącznie lokalnie | źródło prawdy po stronie backendu |
 | Test na urządzeniu | brak — wszystkie testy w symulatorze | iPhone, konto testowe, odbiorca testowy |

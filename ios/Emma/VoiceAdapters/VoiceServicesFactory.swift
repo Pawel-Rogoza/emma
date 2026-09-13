@@ -64,12 +64,19 @@ public enum VoiceServicesFactory {
 
     /// Odsłuch.
     ///
-    /// Poza Demo odsłuch dostawcy **nie istnieje** — nie ma go w adapterze. Zwracamy
-    /// więc mock w obu wariantach, ale mówimy to wprost, zamiast przyjmować parametr
-    /// konfiguracji i go ignorować (co sugerowałoby wybór, którego nie ma).
-    /// Docelowo odsłuch wskaże ten sam kontroler sesji audio co rozmowa (§5.3).
-    public static func makePlaybackService() -> SpeechPlaybackService {
-        MockSpeechPlaybackService()
+    /// W Demo zostaje `MockSpeechPlaybackService`: zdarzenia odtwarzania są
+    /// deterministyczne, więc testy nie zależą od tempa mowy. Poza Demo odsłuch
+    /// jest **realny** — `SystemSpeechPlaybackService` mówi systemowym
+    /// syntezatorem, więc „Odsłuchaj” faktycznie brzmi. Głosu Emmy z dostawcy
+    /// nadal nie ma; interfejs tego nie udaje (F05).
+    public static func makePlaybackService(
+        configuration: AppConfiguration,
+        audioSession: AudioSessionController
+    ) -> SpeechPlaybackService {
+        if configuration.usesMockServices {
+            return MockSpeechPlaybackService()
+        }
+        return SystemSpeechPlaybackService(audioSession: audioSession)
     }
 }
 #endif

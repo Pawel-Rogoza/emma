@@ -180,7 +180,10 @@ public final class AppDependencies: ObservableObject {
 
     /// Odsłuch. Poza Demo mock jest nadal mockiem — patrz `VoiceServicesFactory`.
     public func makePlaybackService() -> SpeechPlaybackService {
-        VoiceServicesFactory.makePlaybackService()
+        VoiceServicesFactory.makePlaybackService(
+            configuration: configuration,
+            audioSession: audioSession
+        )
     }
 
     /// Zakończenie sesji przez limit czasu musi być widoczne dla użytkownika:
