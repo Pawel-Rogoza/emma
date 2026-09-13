@@ -127,7 +127,7 @@ zgód bez zmian. Oznaczeń demo nie ruszano.
 | `Stage2LayoutUITests` (4 testy) | brak systemowego powrotu na karcie klienta i Zadaniach, działający gest krawędzi, licznik nie koliduje z menu |
 | `Stage2ScreenshotUITests` (2 metody, 6 scen) na iPhone 17 Pro i iPhone SE (3 gen) | `TEST SUCCEEDED` na obu ekranach; raporty bez pozycji „NIE UDAŁO SIĘ” |
 | `swift test` + 9 kroków `verify-linux-logic.sh` | kroki 1–7 bez zastrzeżeń; **krok 8 jest czerwony z powodów sprzed tego etapu** (patrz ograniczenia) |
-| `check-readability.py` (nowy krok 9/9) | 64 pliki ekranów, 20 tokenów: jedna skala (brak tekstu <12 pt) i wszystkie tokeny ≥4,5:1 |
+| `check-readability.py` (nowy krok 9/9) | 64 pliki ekranów, 20 tokenów: jedna skala (brak tekstu <12 pt) i wszystkie tokeny ≥4,5:1. **Sprostowanie (etap 3):** skrypt przerywał pracę na czerwonym kroku 8, więc krok 9 nie wykonał się w tym przebiegu — kontrola została uruchomiona osobno. Skrypt naprawiono w etapie 3. |
 | `design-token-diff.py` | kolory spoza referencji: **0** |
 
 ### Zrzuty i ocena
@@ -165,3 +165,130 @@ i „Olena Kovalenko”, a etykiety zakładek w jednej linii.
   (koło jest stałe, więc skalowanie tekstu w nim ucinałoby znak).
 - Bez zmian: VoiceOver na urządzeniu, dark mode (P2), klawiatura przy dużym tekście,
   prawdziwy głos i WhatsApp. To etapy 4–6 / `blocked_external`.
+
+---
+
+## Etap 3 — Dzień i listy: pierwszy widok, grupowanie zadań, linki do rekordów
+
+Zakres z §7: F08, grupowanie zadań, kompaktowe nagłówki, linki do powiązanych rekordów.
+
+### Potwierdzenie ustaleń w kodzie (przed zmianą)
+
+| ID | Potwierdzenie w kodzie bazowym |
+| --- | --- |
+| F08 | `TodayScreen.loaded` zaczynał się od pełnej sceny `emmaStage` (orb `.stage` 148 pt na poświacie, „Jestem Emma”, zdanie wyjaśnienia i dwa przyciski), a dopiero pod nią szło „Dziś w kalendarzu” i „Zadania”. Audyt §4 wymaga karty 80–100 pt z portretem 48–64 pt. Nie było sekcji „Najbliższy termin” ani licznika zaległych zadań, a lista wydarzeń stała **przed** zadaniami — pilne zadanie lądowało pod listą spotkań. |
+| Grupowanie zadań | `TasksScreen.list` i `TodayScreen` rysowały jedną płaską listę `model.tasks`. Zaległe zadanie z zeszłego tygodnia wyglądało tak samo jak zadanie na dziś. |
+| Kompaktowe nagłówki | `SectionHeader` miał stałe `sectionHeaderMinHeight` + `sectionTop`/`sectionBottom`; cztery sekcje dnia zajmowały ~4 × 46 pt samych odstępów. |
+| Linki do rekordów | Ekran „Dzisiaj” nie wczytywał spraw (`TodayStore` brał tylko klientów, terminy i zadania), więc numeru sprawy nie było gdzie pokazać. `TaskRow` pokazywał klienta jako tekst; jedyne przejście do rekordu prowadziło przez szczegóły zadania („Karta klienta”). |
+| Listy przy odświeżeniu | `TasksStore.load` i `CaseStore.load` ustawiały `phase = .loading` przy **każdym** wczytaniu, więc odświeżenie po zapisie zdejmowało listę z ekranu. `TodayStore` miał zabezpieczenie z etapu 1 (`if !phase.hasLoaded`). |
+
+### Zmiany
+
+- **F08 — kolejność i ciężar.** `TodayScreen` ma nowy układ: nagłówek dnia → kompaktowa
+  karta Emmy (`EmmaOrb.Size.compact`, 52 pt) z „Porozmawiaj z Emmą”, zdaniem
+  „Zapytaj o dzień, terminy lub wiadomości.”, mikrofonem 44 pt i „Napisz” → „Najbliższy
+  termin” → „Zadania” → „Dalej dziś” → zwijana sekcja „Minione terminy”. Pełna scena
+  Emmy została w zakładce „Emma”. Zdanie „Zapytam o dzień” zastąpione zdaniem
+  z perspektywy użytkownika (F11 z etapu 1 dotyczył wyszukiwania; tutaj chodzi o slogan).
+- **Reguły w rdzeniu.** Nowy `DayAgenda.split(events:now:)` dzieli dzień na najbliższy
+  termin, dalsze i minione (termin trwający jest nadal najbliższy); nowy `TaskGrouping`
+  dzieli zadania na zaległe, dzisiejsze i późniejsze i liczy podsumowanie
+  (`EmmaPlural.overdueTasks`). Oba ekrany — „Dzisiaj” i „Zadania” — korzystają z tej
+  samej reguły.
+- **Najbliższy termin.** Karta pokazuje godzinę, czas trwania, status, tytuł, miejsce,
+  **linki do klienta i sprawy** (`openPerson` / `openCase`) oraz „Przygotuj mnie”
+  (`openEmma(clientID:action:.prepareCase)`) i „Szczegóły”. Brak przyszłych terminów ma
+  jawny pusty stan: „Nie masz już dziś zaplanowanych terminów.”
+- **Zadania.** Nagłówek sekcji ma licznik (`3 zadania do wykonania · 1 zaległe zadanie`)
+  i wejście „Wszystkie zadania” w jednym dotknięciu; wewnątrz karty zadania są
+  pogrupowane nagłówkami `ZALEGŁE` / `NA DZIŚ` / `PÓŹNIEJ`. Na ekranie „Zadania” ten
+  sam podział działa dla zakresów „Otwarte” i „Wszystkie”; „Wykonane” zostaje płaskie.
+- **Kompaktowe nagłówki.** `SectionHeader` dostał wariant `compact:` (30 pt zamiast 38 pt
+  wysokości i mniejsze odstępy) używany na „Dzisiaj”, gdzie liczy się każdy punkt nad
+  zgięciem ekranu. Pozostałe ekrany bez zmian (wartość domyślna).
+- **Odświeżenie nie cofa listy.** `TasksStore.load` i `CaseStore.load` mają ten sam
+  warunek co `TodayStore`: `if !phase.hasLoaded { phase = .loading }`.
+
+Odstępstwa zarejestrowane jako D-24 (układ dnia, uchylenie punktu 1 decyzji D-19) i
+D-25 (pionowy układ wiersza zadania i karty Emmy przy dużym tekście). Wizerunek Emmy,
+polskie nazewnictwo, pojedynczy `VoiceSessionCoordinator` i kontrola zgód bez zmian.
+Oznaczeń demo nie ruszano.
+
+### Testy
+
+| Test | Wynik |
+| --- | --- |
+| `swift test` (logika) | **201 / 0** (+10: `DayAgendaTests`, `TaskGroupingTests`) |
+| `xcodebuild test`, cały zestaw, iPhone 17 Pro | **`TEST SUCCEEDED`** — **223 / 0** jednostkowych, **23 / 0** XCUITest |
+| `Stage3ReloadTests` (`EmmaTests/App`, 3 testy) | odświeżenie nie cofa `TodayStore`, `TasksStore` i `CaseStore` do stanu ładowania |
+| `Stage3LayoutUITests` (4 testy) na iPhone 17 Pro i iPhone SE (3 gen) | najbliższy termin i „Wszystkie zadania” **widoczne bez przewijania** (`isHittable`), 1 dotknięcie otwiera listę zadań, grupa `NA DZIŚ` istnieje, link „Olena Kovalenko” otwiera kartę klienta |
+| `Stage3ScreenshotUITests` (2 metody, 5 scen) na obu ekranach | `TEST SUCCEEDED`; raporty bez pozycji „NIE UDAŁO SIĘ” |
+| `verify-linux-logic.sh` | kroki 1–7 i 9 bez zastrzeżeń; **krok 8 czerwony z powodów sprzed tego etapu** (patrz ograniczenia) |
+| `check-readability.py` (krok 9/9) | 66 plików ekranów, 20 tokenów: bez tekstu <12 pt i wszystkie tokeny ≥4,5:1 |
+| `design-token-diff.py` | kolory spoza referencji: **0** |
+
+Test `Stage3ReloadTests.testTasksReloadKeepsLoadedList` został sprawdzony odwrotnie:
+po tymczasowym przywróceniu `phase = .loading` w `TasksStore` **failuje**
+(„Odświeżenie cofnęło listę do stanu ładowania”), a po przywróceniu warunku przechodzi.
+To dowód, że test mierzy tę regułę, a nie tylko ją opisuje.
+
+### Zrzuty i ocena
+
+`docs/ios/screenshots/stage3-2026-09-13/duzy-ekran/` i `.../maly-ekran/` — po 5 scen:
+pierwszy widok dnia, dalsze terminy po przewinięciu, grupowanie na liście zadań oraz ten
+sam dzień i lista przy największym tekście dostępności. Treść oceniona przez OCR (Apple
+Vision, pl/en/ru/uk) i geometrię ramek, nie wzrokowo.
+
+Zmierzony wynik, nie wrażenie:
+
+- **Duży ekran (402 pt):** „Najbliższy termin” `y ≈ 0,67`, karta terminu 10:30–„Przygotuj
+  mnie” `y ≈ 0,61–0,45`, „Zadania” i „Wszystkie zadania” `y ≈ 0,38`, licznik
+  „3 zadania do wykonania” `y ≈ 0,32`, `NA DZIŚ` `y ≈ 0,29`, dwa wiersze zadań
+  `y ≈ 0,25` i `0,17`. Wszystko powyżej paska zakładek (`y ≈ 0,04`).
+- **Mały ekran (375 × 667 pt):** najbliższy termin `y ≈ 0,63–0,35`, „Zadania” i
+  „Wszystkie zadania” `y ≈ 0,25`, licznik `y ≈ 0,17`, `NA DZIŚ` `y ≈ 0,13` — nadal nad
+  zgięciem. Wiersze zadań zaczynają się dokładnie na zgięciu; to zgodne z warunkiem
+  („wejście do zadań”, nie „pełna lista zadań”).
+- **Kolejność:** po przewinięciu „Dalej dziś” pokazuje 12:00 i 14:00, czyli lista
+  spotkań jest **pod** zadaniami — pilne „Oddzwonić w sprawie zatrzymania” (`Pilne`)
+  widać w pierwszym widoku.
+- **Grupowanie:** na liście zadań OCR czyta filtr „Otwarte | Wszystkie | Wykonane”
+  w jednej linii i grupę `NA DZIŚ`. Grupy `ZALEGŁE` nie widać w zrzucie, bo dane demo
+  mają wszystkie trzy zadania na dzień referencyjny — pokrywa ją test rdzenia
+  (`TaskGroupingTests.testGroupsSplitOverdueTodayAndLaterKeepingOrder`).
+- **Duży tekst:** pierwszy przebieg wykazał łamanie wyrazów w środku („Porozm / awiaj z /
+  Emmą”, „zatrzyma / nia”). Po poprawce (D-25) OCR czyta „Porozmawiaj” i „z Emmą” oraz
+  „Oddzwonić w / sprawie / zatrzymania” w całości. Przy `XXXL` pierwszy widok mieści
+  nagłówek i kartę Emmy; terminy i zadania wymagają przewinięcia (patrz ograniczenia).
+
+### Ograniczenia
+
+- **Model wdrażający nie ma wejścia obrazowego.** Zrzuty oceniono metodami pomiarowymi
+  (OCR + geometria ramek), nie wzrokowo — tak jak w etapie 2.
+- **Przy `Accessibility XXXL` pierwszy widok nie mieści najbliższego terminu.** Na 402 pt
+  nagłówek dnia i karta Emmy zajmują cały ekran. Warunek etapu („najbliższy termin i
+  wejście do zadań na pierwszym widoku”) jest sprawdzony i spełniony przy tekście
+  standardowym; przy największym dostępnościowym skala tekstu rośnie szybciej niż ekran.
+  Test na `XXXL` sprawdza tylko, że elementy istnieją — nie że są nad zgięciem.
+- **Pozycja listy przy odświeżeniu** jest sprawdzona deterministycznie na poziomie sklepów
+  (`Stage3ReloadTests`), a nie pomiarem pikseli w UI. Próba pomiaru pozycji wiersza na
+  ekranie „Zadania” okazała się bezwartościowa: dane demo mają trzy zadania, które mieszczą
+  się bez przewijania, więc test przechodził także **bez** poprawki. Nie zostawiłem takiego
+  testu, bo dawał fałszywe poczucie ochrony.
+- **`check-dead-code.py` (krok 8) jest czerwony i był czerwony przed tym etapem** —
+  `VoiceSessionCoordinator.handleAccountSwitched`. Bez zmian względem etapu 2: to
+  zabezpieczenie cyklu życia głosu przy przełączeniu konta, a aplikacja ma jedno wspólne
+  konto (D-17). Usunięcie „na teraz” osłabiłoby zabezpieczenie, którego broni audyt.
+  Przy okazji naprawiłem skrypt: krok 8 przerywał pracę przed krokiem 9, więc raport etapu 2
+  twierdził, że kontrola czytelności się wykonała, choć tak nie było. Teraz kroki 8 i 9 są
+  niezależne, wynik zbierany jest do końca, a błąd zwracany raz — po kroku 9.
+- **„Kompaktowe nagłówki”** zrealizowane jako wariant `SectionHeader(compact:)` na
+  „Dzisiaj”. Nie zmniejszałem nagłówków na kartach klienta i sprawy, żeby nie wracać do
+  układu pisanego w etapie 2 (F12) bez nowego zrzutu.
+- **Linki do rekordów** na „Dzisiaj” prowadzą do klienta i sprawy najbliższego terminu;
+  wiersze zadań nadal pokazują klienta jako tekst, a przejście do rekordu jest w
+  szczegółach zadania („Karta klienta”). Rozszerzenie tego na wiersz zadania wymaga
+  zagnieżdżonego celu dotknięcia i osobnego sprawdzenia trafień — do rozważenia w etapie 4.
+- Bez zmian: VoiceOver na urządzeniu, dark mode (P2), prawdziwy głos i WhatsApp —
+  etapy 4–6 / `blocked_external`.
+

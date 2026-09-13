@@ -9,7 +9,7 @@ import SceneKit
 @MainActor
 public struct EmmaOrb: View {
     public enum Size: Sendable {
-        case inline, small, medium, card, hero, stage
+        case inline, small, medium, card, compact, hero, stage
 
         var diameter: CGFloat {
             switch self {
@@ -17,6 +17,8 @@ public struct EmmaOrb: View {
             case .small: return 25
             case .medium: return 32
             case .card: return 37
+            // „Dzisiaj” (etap 3 audytu): kompaktowa karta z portretem 48–64 pt.
+            case .compact: return 52
             case .hero: return 100
             case .stage: return 148
             }
@@ -32,7 +34,7 @@ public struct EmmaOrb: View {
         var portraitScale: CGFloat {
             switch self {
             case .inline, .small: return 1.34
-            case .medium, .card: return 1.18
+            case .medium, .card, .compact: return 1.18
             case .hero, .stage: return 1
             }
         }

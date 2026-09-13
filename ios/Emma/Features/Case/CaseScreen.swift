@@ -39,7 +39,9 @@ final class CaseStore: ObservableObject {
     @Published var tab: Tab = .overview
 
     func load(_ dependencies: AppDependencies, caseID: CaseID) async {
-        phase = .loading
+        // Jak na „Dzisiaj” i „Zadaniach”: odświeżenie po zapisie nie cofa listy
+        // do stanu ładowania, więc sprawa zachowuje pozycję i wybraną zakładkę.
+        if !phase.hasLoaded { phase = .loading }
         do {
             guard let legalCase = try await dependencies.repository.legalCase(id: caseID) else {
                 phase = .failed(ScreenLoad.failure(for: DomainError.notFound(resource: "sprawa", id: caseID.rawValue), fallback: "Nie znaleziono sprawy."))

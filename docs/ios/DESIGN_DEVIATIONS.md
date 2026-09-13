@@ -396,10 +396,69 @@ domyślnym tekście wygląd pozostaje bliski referencji; skala nadal rośnie z D
 
 ---
 
+### D-24 · „Dzisiaj”: najpierw sprawa, potem scena Emmy — **etap 3 audytu UX (F08)**
+
+**Treść:** układ ekranu „Dzisiaj” zmienia kolejność i ciężar elementów. Pełna scena Emmy
+(orb `.stage`, „Jestem Emma”, zdanie wyjaśnienia i dwa przyciski) ustępuje **kompaktowej
+karcie** o wysokości ~94 pt: portret 52 pt (`EmmaOrb.Size.compact`), napis „Porozmawiaj
+z Emmą”, podpis „Zapytaj o dzień, terminy lub wiadomości.”, okrągły przycisk mikrofonu
+44 pt i cichy „Napisz” pod nim. Kolejność sekcji to teraz: nagłówek dnia → karta Emmy →
+„Najbliższy termin” (godzina, status, miejsce, linki do klienta i sprawy, „Przygotuj
+mnie”, „Szczegóły”) → „Zadania” z liczbą otwartych i zaległych oraz wejściem „Wszystkie
+zadania” → „Dalej dziś” z pozostałymi terminami → zwijana sekcja „Minione terminy”.
+Nagłówki sekcji na tym ekranie używają wariantu `SectionHeader(compact:)`.
+
+**Powód:** audyt F08 — przy pełnej scenie Emmy najbliższy termin i wejście do zadań
+wypadały poza pierwszy widok, a pilne zadanie lądowało pod długą listą spotkań. To
+świadome **uchylenie punktu 1 decyzji właściciela D-19** („Emma ma więcej miejsca”):
+scena wraca tam, gdzie jest na nią miejsce, czyli do zakładki „Emma”. Pozostałe punkty
+D-19 (oś dnia, wygaszanie minionych, pierścienie zadań) zostają bez zmian, a miniony
+termin nadal widać — tylko w zwiniętej sekcji.
+
+**Wpływ:** pierwszy widok dnia pokazuje najbliższy termin i zadania bez przewijania
+(potwierdzone testem `Stage3LayoutUITests.testNextEventAndTaskEntryAreAboveTheFold`).
+Portret Emmy jest mniejszy niż w D-19; pełna scena nadal istnieje w zakładce „Emma”,
+więc wizerunek Emmy nie znika z aplikacji. Doszły reguły rdzenia `DayAgenda` (najbliższy
+termin / dalsze / minione) i `TaskGrouping` (zaległe / na dziś / później), wspólne dla
+„Dzisiaj” i „Zadania”; `EmmaOrb` dostał rozmiar `.compact` (52 pt).
+
+**Cofnięcie:** przywrócenie poprzedniej wersji `TodayScreen` z historii gita; usunięcie
+`DayAgenda`, `TaskGrouping` i przypadku `.compact` w `EmmaOrb`.
+
+---
+
+### D-25 · Wiersz zadania i karta Emmy układają się w kolumnę przy dużym tekście — **etap 3 audytu UX (F09)**
+
+**Treść:** przy rozmiarach dostępności (`dynamicTypeSize.isAccessibilitySize`) dwa
+poziome układy przechodzą w pionowy:
+
+1. `TaskRow` — data i plakietka „Pilne” schodzą pod tytuł, na pełną szerokość
+   (wcześniej trzy kolumny zostawiały tytułowi ~150 pt).
+2. kompaktowa karta Emmy na „Dzisiaj” — portret i tytuł w jednym wierszu, pod nimi
+   podpis oraz mikrofon i „Napisz”.
+
+**Powód:** OCR zrzutów przy `Accessibility XXXL` wykazał łamanie wyrazów w środku:
+„Porozm / awiaj z / Emmą” oraz „zatrzyma / nia”. To nie jest estetyka — tekst pocięty
+w połowie wyrazu czyta się jak uszkodzony.
+
+**Wpływ:** bez zmian przy standardowym tekście (układ poziomy zostaje). Przy dużym
+tekście lista zadań i karta Emmy są dłuższe, ale czytelne; porównanie w
+`docs/ios/screenshots/stage3-2026-09-13/` (`24-duzy-tekst-dzisiaj.png`,
+`25-duzy-tekst-zadania.png`).
+
+**Kontrola:** OCR zrzutów po zmianie czyta „Porozmawiaj” i „z Emmą” w całości oraz
+„Oddzwonić w / sprawie / zatrzymania”.
+
+**Cofnięcie:** usunięcie gałęzi `if dynamicTypeSize.isAccessibilitySize` w `TaskRow`
+i `TodayScreen.emmaCompactCard()`.
+
+---
+
 ## Czego ten rejestr nie zawiera
 
-Nie zawiera porównania zrzutów ekranu, bo **nie zostały wykonane** — brak macOS
-i symulatora (patrz `BUILD_AND_DEVICE_STATUS.md`). Ocena zgodności wizualnej opiera się
-na kaskadzie CSS referencji, pomiarach plików czcionek i przeglądzie komponentów.
-Pierwsze realne porównanie obrazu jest pierwszym punktem listy po uruchomieniu na Macu.
+Nie zawiera porównania zrzutów ekranu z referencją **piksel po pikselu**. Zrzuty są
+wykonane (`docs/ios/screenshots/`, etapy 1–3), ale nie ma narzędzia zestawiającego je
+z `reference/prototype`; ocena opiera się na pomiarach (OCR + geometria ramek) i na
+kaskadzie CSS referencji. Ocena wizualna „na oko” wymaga człowieka albo modelu z
+obsługą obrazu — model prowadzący etapy 1–3 nie ma wejścia obrazowego.
 

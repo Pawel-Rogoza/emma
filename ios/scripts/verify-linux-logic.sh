@@ -137,10 +137,16 @@ echo
 echo "== 8/9 · Kontrola martwego publicznego API rdzenia =="
 # Publiczna składowa bez użycia to obietnica bez pokrycia i zwykle zalążek drugiej
 # implementacji tej samej reguły. Kontrola jest jawna, więc widać, co pomijamy.
+#
+# Kroki 8 i 9 są od siebie niezależne, więc nie przerywają skryptu od razu:
+# wynik zbieramy, uruchamiamy krok 9 i dopiero potem zwracamy błąd. Wcześniej
+# czerwony krok 8 kończył pracę przed kontrolą czytelności i raport twierdził, że
+# krok 9 się wykonał, choć tak nie było.
+DEAD_CODE_FAILED=0
 if command -v python3 >/dev/null 2>&1; then
   if ! python3 scripts/check-dead-code.py; then
     echo "[BŁĄD] Rdzeń ma publiczne API, którego nikt nie woła." >&2
-    exit 1
+    DEAD_CODE_FAILED=1
   fi
 else
   echo "[POMINIĘTE] Brak python3 — kontrola martwego API nie została wykonana."
@@ -157,6 +163,11 @@ if command -v python3 >/dev/null 2>&1; then
   fi
 else
   echo "[POMINIĘTE] Brak python3 — kontrola czytelności nie została wykonana."
+fi
+
+if [ "$DEAD_CODE_FAILED" -ne 0 ]; then
+  echo "[BŁĄD] Kontrola martwego publicznego API rdzenia nie przeszła (krok 8/9)." >&2
+  exit 1
 fi
 
 cat <<'EOF'
