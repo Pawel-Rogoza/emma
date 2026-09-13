@@ -27,6 +27,14 @@ public struct VoiceUIState: Hashable, Sendable {
     /// Sesja połączona, ale mikrofon wyciszony — to nie jest rozłączenie.
     public var sessionID: VoiceSessionID?
     public var connectionGeneration: ConnectionGeneration
+    /// Tożsamość tury, z której pochodzi `committedUserTranscript`.
+    ///
+    /// Historia rozmowy nie może dopisać tej samej wypowiedzi dwa razy tylko
+    /// dlatego, że stan został opublikowany ponownie (F04). Zdarzenie ma
+    /// `turnID`, a gdy go nie ma — `eventID`; to jest ten jeden klucz.
+    public var committedUserTurnID: String?
+    /// Tożsamość tury, z której pochodzi `agentText` (odpowiedź Emmy).
+    public var agentTurnID: String?
 
     public init(
         connection: ConnectionState = .idle,
@@ -47,7 +55,9 @@ public struct VoiceUIState: Hashable, Sendable {
         playbackIsApproximate: Bool = false,
         isPlaybackActive: Bool = false,
         sessionID: VoiceSessionID? = nil,
-        connectionGeneration: ConnectionGeneration = ConnectionGeneration(0)
+        connectionGeneration: ConnectionGeneration = ConnectionGeneration(0),
+        committedUserTurnID: String? = nil,
+        agentTurnID: String? = nil
     ) {
         self.connection = connection
         self.turn = turn
@@ -68,6 +78,8 @@ public struct VoiceUIState: Hashable, Sendable {
         self.isPlaybackActive = isPlaybackActive
         self.sessionID = sessionID
         self.connectionGeneration = connectionGeneration
+        self.committedUserTurnID = committedUserTurnID
+        self.agentTurnID = agentTurnID
     }
 
     /// Spójny nagłówek stanu. Kolejność ma znaczenie: wynik akcji i problemy przed stanem tury.
@@ -240,6 +252,12 @@ public struct VoiceStateReducer: Sendable {
         return nil
     }
 
+    /// Klucz tożsamości tury: `turnID`, a gdy zdarzenie go nie niesie — `eventID`.
+    /// Dzięki temu powtórzona publikacja tego samego stanu nie dopisze drugiej tury.
+    private static func turnKey(_ event: VoiceEvent) -> String {
+        event.turnID ?? event.eventID
+    }
+
     /// Czy zdarzenie oznacza powrót do stanu użytecznego i może wyczyścić komunikat błędu.
     private func clearsLastError(_ payload: VoiceEventPayload) -> Bool {
         switch payload {
@@ -309,15 +327,19 @@ public struct VoiceStateReducer: Sendable {
         case .userTranscriptFinal(let text):
             state.partialTranscript = ""
             state.committedUserTranscript = text
+            // Tożsamość tury dla historii: jedno zdarzenie = jedna tura (F04).
+            state.committedUserTurnID = Self.turnKey(event)
             state.turn = .thinking
 
         case .agentTextDelta(let delta):
             state.agentText += delta
+            state.agentTurnID = Self.turnKey(event)
             state.turn = .speaking
 
         case .agentTextFinal(let text):
             // `agentTextFinal` **nie** oznacza końca TTS (§5.4).
             state.agentText = text
+            state.agentTurnID = Self.turnKey(event)
             if state.turn != .speaking { state.turn = .thinking }
 
         case .playbackStarted(let approximate):

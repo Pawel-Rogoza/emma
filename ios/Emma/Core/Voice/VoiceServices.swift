@@ -45,6 +45,8 @@ public protocol VoiceSessionRepository: Sendable {
 public protocol AssistantActionRepository: Sendable {
     func prepare(_ request: PrepareAction) async throws -> ActionProposal
     func revise(_ request: ReviseAction) async throws -> ActionProposal
+    func reschedule(_ request: RescheduleAction) async throws -> ActionProposal
+    func changeContext(_ request: ChangeActionContext) async throws -> ActionProposal
     func confirm(_ request: ConfirmAction) async throws -> ActionExecution
     func cancel(_ request: CancelAction) async throws -> ActionExecution
     func status(actionID: ActionID) async throws -> ActionExecution

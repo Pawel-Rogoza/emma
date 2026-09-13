@@ -9,6 +9,20 @@ import SwiftUI
 // dostawców — dzięki temu jeden `VoiceSessionCoordinator` obsługuje rozmowę,
 // dyktowanie i odsłuch (§5.3), a UI i głos korzystają z jednego silnika akcji (§8).
 
+/// Pola spotkania rozpoznane z wypowiedzi (F14). Wszystkie opcjonalne: brak pola
+/// znaczy „zostaw domyślną wartość formularza”, nie „zgaduj”.
+public struct EventDraftSeed: Equatable, Sendable {
+    public var title: String?
+    public var day: LocalDate?
+    public var time: TimeOfDay?
+
+    public init(title: String? = nil, day: LocalDate? = nil, time: TimeOfDay? = nil) {
+        self.title = title
+        self.day = day
+        self.time = time
+    }
+}
+
 @MainActor
 public final class AppDependencies: ObservableObject {
 
@@ -55,6 +69,9 @@ public final class AppDependencies: ObservableObject {
     @Published public var emmaContext: ClientID?
     /// Skrót do wykonania po wejściu na ekran Emmy (`assistantExample(action)`).
     @Published public var pendingEmmaAction: EmmaQuickAction?
+    /// Pola spotkania rozpoznane głosem (F14). Formularz terminu zużywa je przy
+    /// otwarciu, żeby „dodaj spotkanie … o 11” nie gubiło godziny i tytułu.
+    @Published public var pendingEventDraft: EventDraftSeed?
     /// Tryb listy klientów: leady albo sprawy (odpowiada `clientMode`).
     @Published public var clientMode: ClientListMode = .leads
     /// Licznik zmian danych. Każdy ekran obserwuje go w `.task(id:)` i po
@@ -290,7 +307,7 @@ public final class AppDependencies: ObservableObject {
         await voice.end(reason: .userRequested, preserveDraft: true, revokedCapability: false)
     }
 
-    /// Krótkie potwierdzenie operacji. Znika po 3,8 s — jak w referencji.
+/// Krótkie potwierdzenie operacji. Znika po 3,8 s — jak w referencji.
     public func showToast(_ message: String) {
         toast = message
         toastTask?.cancel()

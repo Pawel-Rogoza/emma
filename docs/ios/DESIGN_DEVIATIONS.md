@@ -516,6 +516,43 @@ Pełna prawda o połączeniu i mikrofonie nadal jest podana wprost, nigdy tylko 
 **Cofnięcie:** przywrócenie poprzedniego `composer` i `stateLabel` w `AssistantScreen`
 i `VoiceDock` oraz bezwarunkowej linii technicznej.
 
+### D-28 · Godzina terminu zadania jest pokazana, ale nie jest osobnym polem listy — **etap 5 audytu UX (F14/§6-C)**
+
+**Treść:** „Dodaj zadanie: wyślij dokumenty Olenie jutro do 14” tworzy propozycję
+z terminem `2026-09-12`, a w odpowiedzi Emmy i na karcie widać **godzinę 14:00**.
+Sama propozycja zapisuje jednak wyłącznie datę (`ActionProposal.taskDueDate`) — model
+zadania w tym prototypie zna dzień, nie godzinę.
+
+**Powód:** audyt wymaga, żeby „Do 14” **nie zniknęło** i żeby ograniczenie było
+wypowiedziane *przed* zapisem. Dodanie godziny do zadania zmieniłoby wspólną listę
+zadań, ekran „Dzisiaj” i dane demo — czyli zakres poza etapem 5. Zamiast zgadywać,
+Emma mówi wprost: „Godzina 14:00 jest w treści polecenia; lista zadań pokazuje samą
+datę”.
+
+**Wpływ:** termin słyszalny i widoczny jest datą bezwzględną (`2026-09-12`), godzina
+zostaje w treści wypowiedzi i w potwierdzeniu. Formularz **spotkania** przenosi godzinę
+do pola „Godzina” (`EventDraftSeed`), bo wydarzenie ma pełny termin — tam nic nie ginie.
+
+**Cofnięcie:** rozszerzenie `ActionProposal`/`TaskItem` o `dueTime` i pokazanie godziny
+w listach zadań.
+
+---
+
+### D-29 · Rozmowa Emmy jest kotwiczona na dole — **etap 5 audytu UX (F04/§6)**
+
+**Treść:** `AssistantScreen` dostał `.defaultScrollAnchor(.bottom)`. Przy pojawieniu się
+klawiatury najnowsza karta propozycji zostaje nad nią, a nie pod nią.
+
+**Powód:** bez kotwicy karta (ok. 350 pt) wypadała poza okno rozmowy nad klawiaturą —
+`scrollTo(last.id, anchor: .bottom)` wykonywał się **przed** zmianą wstawki klawiatury,
+więc użytkownik widział sam przycisk zgody bez treści, którą zatwierdza (zmierzone:
+pole treści na `y = -306 pt`, czyli poza ekranem 874 pt).
+
+**Wpływ:** kolejność tur i animacje bez zmian; zmieniła się tylko pozycja przewinięcia.
+Zrzuty etapu 5 pokazują całą treść karty (pole treści `y = 224 pt` w oknie 874 pt).
+
+**Cofnięcie:** usunięcie `.defaultScrollAnchor(.bottom)`.
+
 ---
 
 ## Czego ten rejestr nie zawiera

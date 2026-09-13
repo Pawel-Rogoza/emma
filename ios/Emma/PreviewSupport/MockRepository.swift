@@ -724,6 +724,40 @@ public actor MockRepository:
         )
     }
 
+    public func reschedule(_ request: RescheduleAction) async throws -> ActionProposal {
+        await pause()
+        guard let current = actionState.proposals[request.actionID] else {
+            throw ActionEngineError.proposalNotFound
+        }
+        guard current.version == request.expectedVersion else {
+            throw ActionEngineError.versionConflict(expected: request.expectedVersion, current: current.version)
+        }
+        return try actionEngine.reschedule(
+            actionID: request.actionID,
+            dueDate: request.dueDate,
+            now: request.now,
+            into: &actionState
+        )
+    }
+
+    public func changeContext(_ request: ChangeActionContext) async throws -> ActionProposal {
+        await pause()
+        guard let current = actionState.proposals[request.actionID] else {
+            throw ActionEngineError.proposalNotFound
+        }
+        guard current.version == request.expectedVersion else {
+            throw ActionEngineError.versionConflict(expected: request.expectedVersion, current: current.version)
+        }
+        return try actionEngine.changeContext(
+            actionID: request.actionID,
+            clientID: request.clientID,
+            caseID: request.caseID,
+            threadID: request.threadID,
+            now: request.now,
+            into: &actionState
+        )
+    }
+
     /// Wykonanie idempotentne: to samo potwierdzenie zwraca to samo wykonanie (§8.1).
     public func confirm(_ request: ConfirmAction) async throws -> ActionExecution {
         await pause()

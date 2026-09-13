@@ -41,6 +41,9 @@ struct AssistantScreen: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .scrollDismissesKeyboard(.interactively)
+                // Rozmowa jest kotwiczona na dole: gdy pojawia się klawiatura,
+                // karta nowej propozycji zostaje nad nią, a nie pod nią (§6).
+                .defaultScrollAnchor(.bottom)
                 .onChange(of: store.turns.count) { _, _ in
                     guard let last = store.turns.last else { return }
                     withAnimation(.easeOut(duration: 0.2)) {

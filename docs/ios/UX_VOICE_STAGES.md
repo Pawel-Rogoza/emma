@@ -416,3 +416,153 @@ Zmierzony wynik, nie wrażenie:
 - Bez zmian: VoiceOver na urządzeniu, dark mode (P2), prawdziwy głos i WhatsApp —
   etapy 5–6 / `blocked_external`.
 
+
+## Etap 5 — Dialog intencji: historia tur, poprawki i pola spotkania (F04, F14, F15)
+
+### Potwierdzenie ustaleń w kodzie (przed zmianą)
+
+Sprawdzone w kodzie z commita `bc92c51` (koniec etapu 4), nie z opisów:
+
+- **F04.** `AssistantStore.apply(voiceState:)` tylko przepisywał `VoiceUIState` do
+  `voiceState` i wołał `updateExecution(_:)`. **Nie dopisywał** finalnych tur z
+  `userTranscriptFinal`/`agentTextFinal` ani propozycji dostawcy z `activeProposal` do
+  `turns`. `VoiceUIState` nie miał żadnego identyfikatora tury, więc powtórna publikacja
+  tego samego stanu nie miała czym się różnić od nowej wypowiedzi.
+- **F14.** `handleCommand(_:)` był dopasowaniem słów kluczowych (`DetectedCommand`,
+  `isBare`): brak rozpoznawania daty, godziny, ilości i poprawki, brak pytania
+  doprecyzowującego przy dwóch osobach o tym samym imieniu i brak drogi do formularza
+  spotkania — „Dodaj spotkanie” kończyło się briefingiem albo odpowiedzią „nie
+  rozumiem”.
+- **F15.** Nie było rozróżnienia źródła tury: polecenie albo szło lokalnie, albo do
+  dostawcy. Poprawka przy oczekującej propozycji nie miała ścieżki do `revise`, termin
+  zadania nie miał w silniku akcji żadnej metody zmiany (`ActionEngine` znał `revise` i
+  `changeContext`, ale nie `reschedule`), a pytanie odczytowe mogło skasować szkic.
+
+### Zmiany
+
+- **`ios/Emma/Core/Domain/AssistantIntent.swift`** (nowy, ~340 linii): deterministyczny
+  parser poleceń po polsku — rodzaje (`briefing`, `caseSummary`, `reply`, `note`, `task`,
+  `event`, `confirm`, `cancel`, `correction`, `unknown`), rozpoznawanie poprawki
+  („nie, na poniedziałek”, „zmień na 20 minut”), dat względnych („jutro”, „w poniedziałek”)
+  i godziny („o 11”, „do 14”). Poprawka wymaga znacznika („nie…”, „zmień”, „popraw”,
+  „zamiast”), więc „wyślij… że spóźnię się 15 minut” to nadal wiadomość, a nie korekta.
+- **`ios/Emma/Core/Voice/VoiceStateReducer.swift`**: `VoiceUIState.committedUserTurnID`
+  i `agentTurnID`. Tożsamością tury jest `turnID`, a gdy zdarzenie go nie niesie —
+  `eventID`; nowa sesja startuje z czystym stanem, więc klucze nie kolidują między
+  rozmowami.
+- **`ios/Emma/Features/Assistant/AssistantStore.swift`**: `consumeVoiceTurn(_:)` dopisuje
+  wypowiedź i odpowiedź **raz na turę**; `adoptProviderProposal(_:)` robi z propozycji
+  dostawcy **jedną** kartę (aktualizuje po identyfikatorze, nie dodaje drugiej);
+  `handleCommand(_:origin:turnID:)` z `CommandOrigin` (`.typed`/`.voice`) i jedną regułą
+  właściciela: polecenie rozpoznane lokalnie **nie** idzie do dostawcy, a `.unknown` idzie
+  do niego tylko wtedy, gdy sesja istnieje. Doszły: `startIntent`, `slotQuestion`,
+  `proposalSummary`, `applyCorrection`, `replacingQuantity`, `resolveClarification`
+  (nazwisko przed imieniem), `ordinalIndex` („pierwsza/druga”), `openEventDraft`,
+  `briefing(on:)` z zapamiętaniem listy klientów dla „przygotuj mnie do pierwszego”.
+- **`ios/Emma/Core/Domain/Actions.swift`**: `ActionEngine.reschedule` (tylko zadanie,
+  podnosi wersję, unieważnia zgodę) i `ActionEngineError.notATask`.
+- **`ios/Emma/Core/Domain/Assistant.swift`**, **`VoiceServices.swift`**,
+  **`PreviewSupport/MockRepository.swift`**, **`VoiceSessionCoordinator.swift`**: żądania
+  `RescheduleAction`/`ChangeActionContext`, metody protokołu, implementacje mocka
+  z kontrolą wersji (`versionConflict`) oraz `rescheduleAction`/`changeActionContext`
+  i jedno `publishProposalChange` dla każdej korekty.
+- **`ios/Emma/App/AppDependencies.swift`** i **`Features/Forms/WorkSheets.swift`**:
+  `EventDraftSeed` + `pendingEventDraft` — rozpoznane pola spotkania (nazwa, dzień,
+  godzina) wypełniają formularz nowego terminu zamiast tylko go otwierać.
+- **`ios/Emma/Features/Assistant/AssistantScreen.swift`**: `.defaultScrollAnchor(.bottom)`
+  (D-29), żeby karta propozycji została nad klawiaturą.
+
+### Testy i wyniki
+
+| Warstwa | Zakres | Wynik |
+| --- | --- | --- |
+| `swift test` (EmmaCore) | parser intencji (26) + tożsamość tury (6) i pozostała logika | **242/0** |
+| `xcodebuild test -only-testing:EmmaTests` | jednostkowe + aplikacyjne | **281/0** |
+| `EmmaTests/App/Stage5DialogTests` | trzy przebiegi §6, deduplikacja, doprecyzowanie, właściciel tury | **14/0** |
+| `EmmaUITests` (całość) | etapy 1–4 + nowe sceny etapu 5 | **32/0** (na czystym stanie symulatora) |
+| `verify-linux-logic.sh` | kroki 1–7 i 9 czyste, krok 8 (`check-dead-code.py`) czerwony | jak w etapach 2–4 |
+| `design-token-diff.py` | kolory spoza referencji | **0** |
+
+Sprawdzone w `Stage5DialogTests` na zdarzeniach deterministycznych (`MockVoiceTransport`
+bez scenariusza, zdarzenia wypuszczane ręcznie, opóźnienie 0):
+
+- **§6-A** — jedno polecenie tworzy jedną kartę (`reply`, `client-olena`, „spóźnię się
+  15 minut”); „Zmień na 20 minut” poprawia **tę samą** propozycję (ta sama `actionID`,
+  wyższa wersja) i **unieważnia zgodę**: potwierdzenie uzbrojone na poprzedniej
+  prezentacji nie wykonuje poprawionej wersji; „wyślij” wykonuje raz i powtórzone
+  „wyślij” zwraca to samo `outboxID` (jedno wykonanie na akcję).
+- **§6-B** — „Jakie mam terminy na dzisiaj?” **nie kasuje** szkicu (ta sama `actionID`
+  i ta sama wersja), a „A jutro?” odpowiada o innym dniu (inna treść niż dla dzisiaj).
+- **§6-C** — „Dodaj zadanie: … jutro do 14” tworzy zadanie z terminem `2026-09-12`,
+  a odpowiedź zawiera datę bezwzględną i godzinę `14:00`; „Nie, na poniedziałek” przenosi
+  termin na `2026-09-14` (najbliższy poniedziałek od piątku referencyjnego), a „zapisz”
+  wykonuje **poprawioną** wersję (`execution.proposalVersion == proposal.version`).
+- **Dedup** — to samo zdarzenie tury wypuszczone dwa razy daje **jedną** wypowiedź
+  w historii; ta sama treść w nowej turze daje **dwie** (dedup jest po turze, nie po
+  tekście).
+- **F14** — przy dwóch Olenach Emma pyta „Która osoba? Olena Kovalenko czy Olena Nowak?”,
+  nie tworzy propozycji bez osoby, a odpowiedź „Olena Nowak” rozstrzyga **nazwiskiem**
+  (imię łączy obie osoby, więc `PersonResolver` sam zwraca `.multiple`) i kończy to samo
+  polecenie; „Dodaj spotkanie z Oleną na jutro o 11” otwiera arkusz `Nowy termin`
+  z klientem, dniem i godziną.
+- **F15** — polecenie obsłużone lokalnie nie jest przekazywane dostawcy (mock nie
+  odpowiada „Przyjęłam polecenie tekstem”).
+- **Korekta odbiorcy** — „nie, do <inna osoba>” zmienia klienta **tej samej** karty
+  (`changeActionContext`, wersja w górę) i unieważnia zgodę uzbrojoną na poprzedniej
+  osobie; parser wyłuskuje odbiorcę z „do/dla <imię>” właśnie po to, żeby sama zmiana
+  osoby była poprawką, mimo że nie niesie ani treści, ani terminu.
+
+### Zrzuty i ocena
+
+`docs/ios/screenshots/stage5-2026-09-13/` — cztery sceny z raportami tekstowymi;
+ocena przez OCR (Apple Vision) i geometrię ramek, nie wzrokowo.
+
+- **31 · wiadomość z wypowiedzi:** karta „Wiadomość / Olena Kovalenko / Do sprawdzenia /
+  spóźnię się 15 minut” z „Zatwierdź wiadomość” i notą o zgodzie; pole treści zmierzone
+  w oknie: `y = 224 pt` (okno 402 × 874 pt), czyli **w kadrze**, nie pod klawiaturą.
+- **32 · poprawka treści:** na tej samej karcie OCR czyta „spóźnię się **20** minut”,
+  a nad nią — w turze użytkownika — wypowiedź z „15 minut”: historia zostaje, karta
+  pokazuje nową treść.
+- **33 · pytanie odczytowe:** karta nadal na ekranie („Zatwierdź wiadomość”, nota zgody),
+  pod nią odpowiedź „Dzisiaj w zespole: 3 wydarzenia” z terminami 10:30 / 12:00 / 14:00
+  i pytanie użytkownika „Jakie mam terminy na dzisiaj?”. Szkic przeżył odczyt.
+- **34 · spotkanie:** arkusz „Nowy termin” z klientem `Olena Kovalenko`, polem „Nazwa
+  wydarzenia”, datą `2026-09-12` i godziną `11:00` — rozpoznane pola wypełniły formularz
+  (żadne nie wymagało ponownego wpisania).
+
+Pełny przebieg `EmmaUITests` (32 testy) wymaga **narysowanej klawiatury programowej**
+i czystego stanu aplikacji w symulatorze: w pierwszym podejściu dwa testy spoza etapu 5
+padły na środowisku — `DemoFlowUITests.testLoginScreenAcceptsDemoCredentials` („Brak
+ekranu logowania”, bo w symulatorze została zapisana zalogowana sesja demo) oraz scena
+29 etapu 4 („klawiatura programowa poza ekranem” po przełączeniu
+`ConnectHardwareKeyboard`). Po restarcie `Simulator.app`, odinstalowaniu
+`pl.kancelaria.emma.demo` z urządzenia i ponownym uruchomieniu oba testy przechodzą
+(2/0), a pełny przebieg jest powtarzany na finalnym kodzie.
+
+Materiał zrzutowy jest zbierany przy działającej klawiaturze programowej; żeby karta
+była widoczna w całości, sceny po wysłaniu polecenia przechodzą na inną zakładkę i wracają
+(klawiatura znika, historia rozmowy żyje w rejestrze ekranu), a potem delikatnie przewijają
+rozmowę. Bez tego kroku na zrzucie był sam przycisk zgody — opisane w D-29.
+
+### Ograniczenia
+
+- **Niejednoznaczne imię nie występuje w zestawie demo.** Zestaw `today-default` ma jedną
+  Olenę („Olena Kovalenko”), więc pytanie „Kovalenko czy Nowak?” sprawdza test jednostkowy
+  na **wstrzykniętych** danych (`AppDependencies(repository:)`), a nie zrzut ekranu.
+  Zachowanie na urządzeniu z prawdziwymi danymi jest więc policzone, ale nie sfotografowane.
+- **Odpowiedź głosem na doprecyzowanie** idzie tą samą metodą co wpisanie jej tekstem
+  (`handleCommand(origin: .voice, turnID:)`), ale XCUITest nie wstrzykuje transkryptu —
+  ścieżkę głosową pokrywa test aplikacyjny, nie zrzut.
+- **Godzina zadania nie jest osobnym polem listy** (D-28): „do 14” jest w odpowiedzi
+  i w treści, a propozycja niesie sam dzień. Formularz **spotkania** przenosi godzinę
+  do pola, więc tam ograniczenie nie występuje.
+- **Pre-fill spotkania obejmuje nazwę, dzień i godzinę.** Rodzaj, czas trwania i miejsce
+  zostają na wartościach domyślnych formularza — nie są zgadywane z wypowiedzi.
+- **Propozycja dostawcy to nadal mock.** Adopcja `activeProposal` do historii jest
+  sprawdzona na zdarzeniach mocka; realny dostawca speech-to-speech to etap 6
+  (`blocked_external`). Mock nie jest dowodem wysłania WhatsApp — komunikat „Zapis jest
+  symulowany” w stopce demo zostaje.
+- **`check-dead-code.py` (krok 8) nadal czerwony** — `VoiceSessionCoordinator.handleAccountSwitched`,
+  bez zmian względem etapów 2–4 (jedno wspólne konto, D-17).
+- Bez zmian: VoiceOver na urządzeniu, dark mode (P2), prawdziwy głos i WhatsApp —
+  etap 6 / `blocked_external`.

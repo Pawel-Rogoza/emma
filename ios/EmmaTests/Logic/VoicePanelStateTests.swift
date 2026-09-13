@@ -113,3 +113,100 @@ final class VoicePanelStateTests: XCTestCase {
         XCTAssertFalse(state.isCapturingMicrophone)
     }
 }
+
+// MARK: - Etap 5: tożsamość tury dla historii rozmowy (F04)
+//
+// Historia nie może dopisać tej samej wypowiedzi dwa razy tylko dlatego, że
+// stan został opublikowany ponownie. Kluczem jest `turnID` (a gdy go nie ma —
+// `eventID`), nie treść: to samo „tak” wypowiedziane dwa razy to dwie tury.
+
+final class VoiceTurnIdentityTests: XCTestCase {
+
+    private let reducer = VoiceStateReducer()
+    private let sessionID = VoiceSessionID("session-history")
+
+    private func event(
+        _ payload: VoiceEventPayload,
+        eventID: String = "e1",
+        turnID: String? = "turn-1"
+    ) -> VoiceEvent {
+        VoiceEvent(
+            eventID: eventID,
+            sessionID: sessionID,
+            connectionGeneration: ConnectionGeneration(1),
+            turnID: turnID,
+            receivedAt: Date(timeIntervalSince1970: 1_789_100_000),
+            source: .mockTransport,
+            payload: payload
+        )
+    }
+
+    /// Zdarzenia poza połączoną sesją są odrzucane (generacja/połączenie), więc
+    /// historię sprawdzamy na sesji, która naprawdę stoi.
+    private func connectedState() -> VoiceUIState {
+        var state = VoiceUIState()
+        reducer.apply(
+            VoiceEvent(
+                eventID: "connected",
+                sessionID: sessionID,
+                connectionGeneration: ConnectionGeneration(1),
+                receivedAt: Date(timeIntervalSince1970: 1_789_100_000),
+                source: .mockTransport,
+                payload: .connectionChanged(.connected)
+            ),
+            to: &state
+        )
+        state.sessionID = sessionID
+        return state
+    }
+
+    func testFinalTranscriptCarriesTurnIdentity() {
+        var state = connectedState()
+        reducer.apply(event(.userTranscriptFinal("wyślij")), to: &state)
+        XCTAssertEqual(state.committedUserTurnID, "turn-1")
+        XCTAssertEqual(state.committedUserTranscript, "wyślij")
+    }
+
+    func testTurnIdentityFallsBackToEventID() {
+        var state = connectedState()
+        reducer.apply(
+            event(.userTranscriptFinal("tak"), eventID: "event-9", turnID: nil),
+            to: &state
+        )
+        XCTAssertEqual(state.committedUserTurnID, "event-9")
+    }
+
+    /// Ponowne zastosowanie tego samego zdarzenia nie zmienia tożsamości tury.
+    func testReapplyingSameEventKeepsIdentity() {
+        var state = connectedState()
+        let final = event(.userTranscriptFinal("zapisz"), turnID: "turn-7")
+        reducer.apply(final, to: &state)
+        let identity = state.committedUserTurnID
+        reducer.apply(final, to: &state)
+        XCTAssertEqual(state.committedUserTurnID, identity)
+        XCTAssertEqual(state.committedUserTurnID, "turn-7")
+    }
+
+    func testSecondUtteranceGetsNewIdentity() {
+        var state = connectedState()
+        reducer.apply(event(.userTranscriptFinal("pierwsza"), turnID: "turn-1"), to: &state)
+        reducer.apply(event(.userTranscriptFinal("druga"), eventID: "e2", turnID: "turn-2"), to: &state)
+        XCTAssertEqual(state.committedUserTurnID, "turn-2")
+        XCTAssertEqual(state.committedUserTranscript, "druga")
+    }
+
+    func testAgentTextCarriesItsOwnTurnIdentity() {
+        var state = connectedState()
+        reducer.apply(event(.agentTextFinal("Gotowe."), turnID: "agent-turn-3"), to: &state)
+        XCTAssertEqual(state.agentTurnID, "agent-turn-3")
+        XCTAssertEqual(state.agentText, "Gotowe.")
+    }
+
+    /// Nowa sesja zaczyna się od czystego stanu, więc klucze tur nie kolidują
+    /// z poprzednią rozmową (transport numeruje je od nowa).
+    func testNewSessionStartsWithoutTurnIdentity() {
+        let fresh = VoiceUIState(connection: .connecting, mode: .conversation)
+        XCTAssertNil(fresh.committedUserTurnID)
+        XCTAssertNil(fresh.agentTurnID)
+    }
+}

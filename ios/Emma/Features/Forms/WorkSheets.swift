@@ -489,6 +489,14 @@ struct EventFormSheet: View {
         selectedClient = clientID ?? clients.first?.id
         // Dzień z trasy (np. wybrany w kalendarzu) ma pierwszeństwo nad dniem bieżącym.
         day = initialDay ?? dependencies.today
+        // Nowe spotkanie z głosu: pola rozpoznane w wypowiedzi wypełniają formularz
+        // (F14). Nowe wydarzenie nigdy nie nadpisuje istniejącego.
+        if eventID == nil, let seed = dependencies.pendingEventDraft {
+            dependencies.pendingEventDraft = nil
+            if let title = seed.title, !title.isEmpty { self.title = title }
+            if let day = seed.day { self.day = day }
+            if let time = seed.time { self.time = time }
+        }
         if let eventID, let existing = try? await dependencies.repository.event(id: eventID) {
             original = existing
             selectedClient = existing.clientID

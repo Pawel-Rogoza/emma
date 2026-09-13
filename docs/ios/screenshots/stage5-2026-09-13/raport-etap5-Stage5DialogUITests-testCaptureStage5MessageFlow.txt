@@ -1,0 +1,9 @@
+Zrzuty ekranu Emmy — etap 5 (dialog intencji, poprawki, spotkanie)
+Data: 2026-09-13T15:04:58Z
+Uwaga: zrzut „NIE UDAŁO SIĘ” oznacza, że ekran nie osiągnął założonego stanu.
+Zrzut i tak powstał — pokazuje, co było na ekranie w tym momencie.
+Niejednoznaczne imię (dwie Oleny) nie występuje w zestawie demo, więc
+doprecyzowanie głosem sprawdza test jednostkowy na wstrzykniętych danych.
+  pomiar · treść karty: typ=48 frame=(65.0, 224.66666666666666, 255.0, 41.66666666666666) okno=(0.0, 0.0, 402.0, 874.0)
+zapisano · 31-emma-wiadomosc-karta.png · §6-A — polecenie z wypowiedzi przygotowuje wiadomość
+zapisano · 32-emma-poprawka-tresci.png · §6-A krok 5 — „Zmień na 20 minut” poprawia tę samą kartę

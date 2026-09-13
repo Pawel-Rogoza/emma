@@ -237,6 +237,45 @@ public struct ReviseAction: Sendable {
     }
 }
 
+public struct RescheduleAction: Sendable {
+    public var actionID: ActionID
+    public var expectedVersion: Version
+    public var dueDate: LocalDate?
+    public var now: Date
+
+    public init(actionID: ActionID, expectedVersion: Version, dueDate: LocalDate?, now: Date) {
+        self.actionID = actionID
+        self.expectedVersion = expectedVersion
+        self.dueDate = dueDate
+        self.now = now
+    }
+}
+
+public struct ChangeActionContext: Sendable {
+    public var actionID: ActionID
+    public var expectedVersion: Version
+    public var clientID: ClientID?
+    public var caseID: CaseID?
+    public var threadID: ThreadID?
+    public var now: Date
+
+    public init(
+        actionID: ActionID,
+        expectedVersion: Version,
+        clientID: ClientID?,
+        caseID: CaseID?,
+        threadID: ThreadID?,
+        now: Date
+    ) {
+        self.actionID = actionID
+        self.expectedVersion = expectedVersion
+        self.clientID = clientID
+        self.caseID = caseID
+        self.threadID = threadID
+        self.now = now
+    }
+}
+
 public struct ConfirmAction: Sendable {
     public var confirmation: ActionEngine.Confirmation
     /// Klucz idempotencji; ten sam przy ponowieniu tego samego potwierdzenia.

@@ -636,6 +636,83 @@ public final class VoiceSessionCoordinator {
         }
     }
 
+    /// Korekta terminu zadania („nie, na poniedziałek”, §6-C). Termin jest
+    /// osobnym polem propozycji, więc idzie własną drogą, a nie przez treść.
+    @discardableResult
+    public func rescheduleAction(actionID: ActionID, dueDate: LocalDate?) async -> ActionProposal? {
+        let baseVersion = actionState.proposals[actionID]?.version ?? .initial
+        do {
+            let remote = try await actionRepository.reschedule(
+                RescheduleAction(
+                    actionID: actionID,
+                    expectedVersion: baseVersion,
+                    dueDate: dueDate,
+                    now: clock.now()
+                )
+            )
+            actionState.proposals[remote.id] = remote
+            publishProposalChange(remote)
+            return remote
+        } catch {
+            recordActionFailure(error, fallback: "termin")
+            return nil
+        }
+    }
+
+    /// Korekta odbiorcy albo kontekstu (F14). Zmiana odbiorcy unieważnia zgodę,
+    /// bo dotyczyła innej osoby — pilnuje tego silnik akcji.
+    @discardableResult
+    public func changeActionContext(
+        actionID: ActionID,
+        clientID: ClientID?,
+        caseID: CaseID?,
+        threadID: ThreadID?
+    ) async -> ActionProposal? {
+        let baseVersion = actionState.proposals[actionID]?.version ?? .initial
+        do {
+            let remote = try await actionRepository.changeContext(
+                ChangeActionContext(
+                    actionID: actionID,
+                    expectedVersion: baseVersion,
+                    clientID: clientID,
+                    caseID: caseID,
+                    threadID: threadID,
+                    now: clock.now()
+                )
+            )
+            actionState.proposals[remote.id] = remote
+            publishProposalChange(remote)
+            return remote
+        } catch {
+            recordActionFailure(error, fallback: "odbiorca")
+            return nil
+        }
+    }
+
+    /// Publikacja zmienionej propozycji do stanu ekranu. Jedno miejsce, żeby
+    /// każda korekta (treść, termin, odbiorca) kończyła się tym samym zdarzeniem.
+    private func publishProposalChange(_ proposal: ActionProposal) {
+        var mutable = state
+        internalReducer.apply(
+            VoiceEvent(
+                eventID: "local-proposal-\(proposal.id.rawValue)-\(proposal.version.value)",
+                sessionID: state.sessionID ?? VoiceSessionID("local"),
+                connectionGeneration: state.connectionGeneration,
+                receivedAt: clock.now(),
+                source: .backendActionEngine,
+                payload: .proposalChanged(ProposalSnapshot(proposal: proposal))
+            ),
+            to: &mutable
+        )
+        state = mutable
+    }
+
+    private func recordActionFailure(_ error: Error, fallback: String) {
+        state.lastError = (error as? ActionEngineError)?.safeMessage
+            ?? (error as? DomainError)?.safeMessage
+            ?? DomainError.transportFailure(fallback).safeMessage
+    }
+
     /// Uzbrojenie potwierdzenia głosowego dla konkretnej prezentacji (§8.2).
     public func armVoiceConfirmation(actionID: ActionID, presentationID: String) -> Bool {
         do {
