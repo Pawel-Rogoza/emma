@@ -14,6 +14,7 @@ struct VoiceDock: View {
     private let state: VoiceUIState
     private let speaksReplies: Bool
     private let onToggleSpeech: () -> Void
+    private let onToggleMicrophone: () -> Void
     private let onInterrupt: () -> Void
     private let onEndSession: () -> Void
 
@@ -21,12 +22,14 @@ struct VoiceDock: View {
         state: VoiceUIState,
         speaksReplies: Bool,
         onToggleSpeech: @escaping () -> Void,
+        onToggleMicrophone: @escaping () -> Void,
         onInterrupt: @escaping () -> Void,
         onEndSession: @escaping () -> Void
     ) {
         self.state = state
         self.speaksReplies = speaksReplies
         self.onToggleSpeech = onToggleSpeech
+        self.onToggleMicrophone = onToggleMicrophone
         self.onInterrupt = onInterrupt
         self.onEndSession = onEndSession
     }
@@ -48,19 +51,43 @@ struct VoiceDock: View {
 
                 Spacer(minLength: 8)
 
+                // Wyciszenie jest czynnością pierwszego rzędu, obok przerwania
+                // i zakończenia (F06/F07) — nie ukrywamy go w menu.
+                if state.sessionID != nil {
+                    Button(action: onToggleMicrophone) {
+                        Image(systemName: state.isCapturingMicrophone ? "mic.fill" : "mic.slash.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(
+                                state.isCapturingMicrophone ? EmmaTheme.primaryButtonText : EmmaTheme.dockActionText
+                            )
+                            .frame(width: 44, height: 44)
+                            .background(
+                                state.isCapturingMicrophone ? EmmaTheme.primaryButton : Color.clear,
+                                in: Circle()
+                            )
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(state.isCapturingMicrophone ? "Wycisz mikrofon" : "Włącz mikrofon")
+                    .accessibilityValue(state.microphone.displayName)
+                }
                 if state.canInterrupt {
                     dockButton("Przerwij", systemImage: "pause.fill", action: onInterrupt)
                 }
                 if state.canEndSession {
-                    dockButton("Zakończ rozmowę", systemImage: "xmark.circle", action: onEndSession)
+                    dockButton("Zakończ", systemImage: "xmark.circle", action: onEndSession)
                 }
             }
 
-            // Połączenie i mikrofon mówimy wprost — nigdy wyłącznie kolorem (§5.5).
-            Text("Połączenie: \(state.connection.displayName) · Mikrofon: \(state.microphone.displayName) · Tryb: \(state.mode.displayName)")
-                .font(EmmaTypography.caption())
-                .foregroundStyle(EmmaTheme.dockStatusText)
-                .fixedSize(horizontal: false, vertical: true)
+            // Połączenie i mikrofon mówimy wprost, ale **tylko gdy sesja istnieje**
+            // (F07). Bez sesji „Połączenie: Nieaktywna · Mikrofon niedostępny ·
+            // Tryb: Bezczynny” to trzy sprzeczne komunikaty o niczym.
+            if state.sessionID != nil {
+                Text("Połączenie: \(state.connection.displayName) · Mikrofon: \(state.microphone.displayName) · Tryb: \(state.mode.displayName)")
+                    .font(EmmaTypography.caption())
+                    .foregroundStyle(EmmaTheme.dockStatusText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             if let toolLabel = state.toolLabel {
                 Text("Emma: \(toolLabel)")
@@ -82,16 +109,16 @@ struct VoiceDock: View {
         }
     }
 
-    /// Etykiety z referencji `paintVoice()`.
+    /// Jeden stan bez żargonu (F07). Bazę daje rdzeń (`VoiceUIState.sessionHeadline`),
+    /// żeby dock i mini-panel nie rozjechały się w nazwach.
     private var stateLabel: String {
-        switch state.turn {
-        case .listening: return "Słucham…"
-        case .thinking: return "Przygotowuję odpowiedź…"
-        case .speaking: return "Emma mówi…"
-        case .interrupted: return "Przerwane"
-        case .waiting:
+        guard state.sessionID != nil else { return state.sessionHeadline }
+        // Wyciszenie jest ważniejsze niż tryb: „Rozmowa głosowa” przy wyciszonym
+        // mikrofonie obiecywało nasłuch, którego nie ma.
+        if state.turn == .waiting, state.microphone != .muted, state.connection == .connected {
             return speaksReplies ? "Rozmowa głosowa" : "Odpowiedzi tekstowe"
         }
+        return state.sessionHeadline
     }
 
     private func dockButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {

@@ -292,3 +292,127 @@ Zmierzony wynik, nie wrażenie:
 - Bez zmian: VoiceOver na urządzeniu, dark mode (P2), prawdziwy głos i WhatsApp —
   etapy 4–6 / `blocked_external`.
 
+---
+
+## Etap 4 — Globalny panel sesji i prawda w docku (F06, F07)
+
+### Potwierdzenie ustaleń w kodzie (przed zmianą)
+
+Sprawdzone w kodzie z commita `de06a96` (koniec etapu 3), nie z opisów:
+
+- **F06.** `VoiceDock` był rysowany tylko w `AssistantScreen` (zakładka „Emma”).
+  `RootShell` nie miał żadnego paska sesji, a `SheetHost` — żadnego widoku nad treścią
+  arkusza. Rozmowa uruchomiona z „Dzisiaj” (karta Emmy) zostawała bez sterowania po
+  przejściu na inną zakładkę albo po otwarciu formularza.
+- **Powłoka nie miała z czego czytać stanu.** `AppDependencies` subskrybował koordynator
+  (`observeSessionEnd()`), ale trzymał wynik lokalnie; na zewnątrz nie było ani stanu
+  `VoiceUIState`, ani metod sterujących. `AssistantStore` wołał `dependencies.voice.end(...)`
+  bezpośrednio.
+- **F07.** `VoiceDock` rysował linię `"Połączenie: \(connection) · Mikrofon: \(microphone) ·
+  Tryb: \(mode)"` **bezwarunkowo**, więc bez sesji dock pokazywał jednocześnie „Rozmowa
+  głosowa”, „Połączenie: Nieaktywna”, „Mikrofon niedostępny” i „Tryb: Bezczynny”.
+  Kompozytor `AssistantScreen` miał trzy ikony o równej wadze (mikrofon 43 pt, pole,
+  dyktowanie, wysłanie) i **aktywne** wysłanie przy pustym polu (`sendComposer()` czyścił
+  pole i kończył bez efektu, więc przycisk wyglądał na działający).
+- Panel sterowania na ekranie Emmy nie ma być dublowany (§4 audytu), a nad arkuszem ma
+  zostać widoczny, gdy rozmowa trwa pod spodem.
+
+### Zmiany
+
+- **`ios/Emma/Features/Shared/VoiceMiniPanel.swift`** (nowy): pasek z małym `EmmaOrb`,
+  stanem z rdzenia, wyciszeniem (44 pt) i „Zakończ rozmowę” (44 pt); dotknięcie treści
+  wraca do rozmowy. Czyta `VoiceUIState` z zależności, nie tworzy własnej subskrypcji.
+- **`ios/Emma/Core/Voice/VoiceStateReducer.swift`**: `VoiceUIState` dostał
+  `showsGlobalVoicePanel` (widoczny, dopóki sesja istnieje — także wyciszona i po
+  nieudanym połączeniu), `sessionHeadline` (jeden stan bez żargonu, wspólny dla docku
+  i panelu) oraz `isCapturingMicrophone`.
+- **`ios/Emma/App/AppDependencies.swift`**: `@Published voiceState` aktualizowany przez
+  **istniejącego** obserwatora koordynatora; `toggleVoiceMicrophone()` i
+  `endVoiceSession()` jako jedyne ścieżki sterowania dla docku i panelu.
+- **`ios/Emma/App/RootShell.swift`**: panel nad paskiem zakładek z rezerwacją miejsca
+  w układzie, gdy `showsGlobalVoicePanel && tab != .emma && sheet == nil`; w `SheetHost`
+  panel jest **w układzie** arkusza (VStack nad treścią), więc klawiatura wypycha go
+  w górę, a nie zasłania.
+- **`ios/Emma/Features/Shared/VoiceDock.swift`**: linia techniczna tylko przy istniejącej
+  sesji, `stateLabel` z rdzenia, wyciszenie w docku, „Zakończ” zamiast „Zakończ rozmowę”
+  (pełna nazwa została w panelu).
+- **`ios/Emma/Features/Assistant/AssistantStore.swift`**: `endSession()` i nowe
+  `toggleMicrophone()` delegują do zależności; `canSendComposer` (puste pole nie wysyła).
+- **`ios/Emma/Features/Assistant/AssistantScreen.swift`**: kompozytor z jednym
+  „Rozmawiaj” (56 pt), trybem pisania z „Dyktuj tekst” i nieaktywnym wysłaniem pustego
+  pola; `EmmaMetrics.emmaVoiceButtonSize = 56`.
+- **Poprawka czytelności przy `Accessibility XXXL`** (znaleziona przy przeglądzie zrzutów
+  etapu 4): karta Emmy na „Dzisiaj” kładzie portret nad tytułem, a tytuł i podpis zajmują
+  pełną szerokość karty (D-25, uzupełnienie); mini-panel chowa podpis „Wróć do rozmowy”
+  i daje stanowi dwa wiersze zamiast urywać tekst.
+
+### Testy
+
+| Test | Wynik |
+| --- | --- |
+| `swift test` (logika) | **210 / 0** (+9: `VoicePanelStateTests`) |
+| `xcodebuild test`, cały zestaw, iPhone 17 Pro | **`TEST SUCCEEDED`** — **235 / 0** jednostkowych, **29 / 0** XCUITest |
+| `Stage4VoicePanelTests` (`EmmaTests/App`, 3 testy) | lustro `voiceState` w powłoce; wyciszenie i zakończenie idą jedną sesją (identyfikator sesji bez zmian) |
+| `Stage4VoicePanelUITests` (4 testy) na iPhone 17 Pro i iPhone SE (3 gen) | panel widoczny i dotykalny w innej zakładce; brak duplikatu na ekranie Emmy; wyciszenie nie kończy sesji, zakończenie usuwa panel; nad arkuszem z klawiaturą `panelEnd.maxY ≤ keyboard.minY` |
+| `Stage4ScreenshotUITests` (2 metody, 5 scen) na obu ekranach | `TEST SUCCEEDED`; raporty bez pozycji „NIE UDAŁO SIĘ” |
+| `verify-linux-logic.sh` | kroki 1–7 i 9 bez zastrzeżeń; **krok 8 czerwony z powodów sprzed etapu 3** (patrz ograniczenia) |
+| `check-readability.py` (krok 9/9) | 67 plików ekranów, 20 tokenów: wszystkie tokeny ≥4,5:1 |
+| `design-token-diff.py` | kolory spoza referencji: **0** |
+
+Test klawiatury jest sprawdzony **na prawdziwej klawiaturze programowej**, nie na
+założeniu: zmierzone ramki w symulatorze iPhone 17 Pro to panel `y = 489…533`, klawiatura
+`y = 583…816` (ekran 402 × 874 pt), więc zakończenie rozmowy jest w całości nad
+klawiaturą. Gdy symulator nie rysuje klawiatury (podłączona klawiatura sprzętowa),
+`application.keyboards.firstMatch` ma ramkę **poza ekranem** (`y = 952`), a test kończy
+się `XCTSkip` z podanym powodem — świadomie nie daje zielonego wyniku bez sprawdzenia
+układu.
+
+### Zrzuty i ocena
+
+`docs/ios/screenshots/stage4-2026-09-13/duzy-ekran/` i `.../maly-ekran/` — po 5 scen:
+kompozytor Emmy w spoczynku, dock z żywą sesją, mini-panel na „Dzisiaj”, mini-panel nad
+arkuszem z klawiaturą oraz mini-panel przy największym tekście dostępności. Ocena przez
+OCR (Apple Vision, pl/en/ru/uk) i geometrię ramek, nie wzrokowo.
+
+Zmierzony wynik, nie wrażenie:
+
+- **Kompozytor (26):** „Rozmawiaj” `y ≈ 0,22`, „Dyktuj tekst” `y ≈ 0,14`, pole
+  „Napisz do Emmy…” `y ≈ 0,06`, pasek zakładek `y ≈ 0,04`. Nad kompozytorem dock mówi
+  **„Gotowa do rozmowy”** (`y ≈ 0,28`) — bez sesji nie ma już ani „Połączenia:
+  Nieaktywna”, ani „Mikrofon niedostępny” (sedno F07).
+- **Dock z sesją (27)** i **mini-panel na „Dzisiaj” (28):** panel na dużym ekranie
+  `y ≈ 0,13–0,17`, na małym `y ≈ 0,11–0,14`, pasek zakładek `y ≈ 0,01–0,05`. OCR czyta
+  „Emma czeka” i „Wróć do rozmowy”, obok widzi ikonę mikrofonu i „×”. Panel jest **nad**
+  paskiem zakładek i nie dubluje się z dockiem (na ekranie Emmy OCR nie znajduje
+  „Wróć do rozmowy”).
+- **Klawiatura (29):** na obu ekranach panel leży nad klawiaturą — na dużym ekranie
+  ramki `panelEnd.maxY = 533 ≤ keyboard.minY = 583`; OCR czyta „QWE”/„123” pod panelem,
+  a arkusz „Nowe zadanie” nad nim.
+- **Duży tekst (30):** po poprawce OCR czyta „Porozmawiaj” i „z Emmą” w całości na obu
+  ekranach (przed poprawką: „Porozmawi / aj z Emmą” na 375 pt), a panel pokazuje stan
+  „Emma / czeka” w dwóch wierszach bez urywania.
+
+### Ograniczenia
+
+- **Model wdrażający nie ma wejścia obrazowego.** Zrzuty oceniono metodami pomiarowymi
+  (OCR + geometria ramek), nie wzrokowo — tak jak w etapach 2 i 3.
+- **Klawiatura wymaga narysowanej klawiatury programowej.** W środowisku prowadzącym
+  działa to po uruchomieniu `Simulator.app` i wyłączeniu sprzętowej klawiatury
+  (`defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false`).
+  Przy `xcodebuild` uruchomionym bez `Simulator.app` klawiatura jest zgłaszana poza
+  ekranem, a test jest pomijany (`XCTSkip`) — nie jest to wtedy dowód, że układ nad
+  klawiaturą działa. Na urządzeniu z klawiaturą sprzętową panel i tak jest w układzie
+  arkusza, więc nie powinien się schować — tego wariantu **nie zmierzyłem**.
+- **„Zakończone” połączenie nadal nie jest dowodem realnego głosu.** Sesja w panelu to
+  ta sama sesja mocka co w docku (`MockVoiceTransport`); panel dowodzi sterowania jedną
+  sesją, a nie speech-to-speech. Prawdziwa integracja pozostaje w etapie 6
+  (`blocked_external`).
+- **Zakładki inne niż „Emma” sprawdzone na dwóch ekranach**, ale nie na każdym z pięciu
+  („Klienci”, „Rozmowy”, „Kalendarz”) — panel jest rysowany w `RootShell` dla wszystkich
+  zakładek poza „Emma”, a testy pokrywają „Dzisiaj” i arkusz. Pozostałe zakładki mają ten
+  sam warunek widoczności, więc nie ma tam osobnej ścieżki kodu.
+- **`check-dead-code.py` (krok 8) nadal czerwony** — `VoiceSessionCoordinator.handleAccountSwitched`,
+  bez zmian względem etapów 2 i 3 (jedno wspólne konto, D-17).
+- Bez zmian: VoiceOver na urządzeniu, dark mode (P2), prawdziwy głos i WhatsApp —
+  etapy 5–6 / `blocked_external`.
+

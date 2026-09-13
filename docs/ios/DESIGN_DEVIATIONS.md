@@ -449,16 +449,80 @@ tekście lista zadań i karta Emmy są dłuższe, ale czytelne; porównanie w
 **Kontrola:** OCR zrzutów po zmianie czyta „Porozmawiaj” i „z Emmą” w całości oraz
 „Oddzwonić w / sprawie / zatrzymania”.
 
+**Uzupełnienie (etap 4):** poprawka z etapu 3 była niepełna. Na małym ekranie
+(375 pt) przy `Accessibility XXXL` portret w tym samym wierszu co tytuł nadal urywał
+wyraz — OCR zrzutu `30-duzy-tekst-mini-panel.png` czytał „Porozmawi / aj z Emmą”.
+Etap 4 kładzie portret **nad** tytułem, a tytuł i podpis zajmują pełną szerokość karty
+(`frame(maxWidth: .infinity, alignment: .leading)`). Po poprawce OCR obu ekranów czyta
+„Porozmawiaj” i „z Emmą” w całości. Zrzuty etapu 3 zostały **wykonane ponownie**
+(`24-duzy-tekst-dzisiaj.png` na obu ekranach), bo poprzednia wersja utrwalała błąd —
+etap 3 oceniłem wtedy tylko na dużym ekranie i przeoczyłem to na małym.
+
 **Cofnięcie:** usunięcie gałęzi `if dynamicTypeSize.isAccessibilitySize` w `TaskRow`
 i `TodayScreen.emmaCompactCard()`.
+
+---
+
+### D-26 · Sterowanie rozmową istnieje poza ekranem Emmy (globalny mini-panel) — **etap 4 audytu UX (F06)**
+
+**Treść:** dopóki sesja głosu istnieje, nad paskiem zakładek — a gdy otwarty jest arkusz
+modalny, nad treścią tego arkusza — widnieje pasek o wysokości 56 pt: mały portret Emmy,
+jeden stan („Łączę z Emmą”, „Słucham”, „Mikrofon wyciszony”, „Emma mówi”, „Rozmowa
+niedostępna”), przycisk wyciszenia (44 pt) i „Zakończ rozmowę” (44 pt). Dotknięcie treści
+wraca do pełnej rozmowy. Panelu **nie ma** na zakładce „Emma” (tam jest pełny dock) ani
+w drzewie dostępności za otwartym arkuszem, gdy ten rysuje własny panel.
+
+**Powód:** audyt F06 — sterowanie było dostępne wyłącznie na ekranie Emmy, więc rozmowa
+uruchomiona „przy okazji” zadania lub notatki stawała się nieosiągalna bez porzucenia
+tego, co się robiło. To także wymaganie akceptacyjne etapu: „Jedna sesja; sterowanie
+dostępne we wszystkich zakładach i modalach”.
+
+**Wpływ:** panel czyta stan z **jednego** koordynatora (`VoiceUIState`) i woła jego metody
+przez `AppDependencies.toggleVoiceMicrophone()` / `endVoiceSession()`; nie powstaje drugi
+silnik, druga subskrypcja ani druga sesja. Wyciszenie nie kończy rozmowy, a zakończenie
+jest tą samą ścieżką co w docku Emmy. Przy największym tekście panel skraca się o podpis
+„Wróć do rozmowy”, żeby stan nie był urywany (zrzut `30-duzy-tekst-mini-panel.png`).
+`RootShell` rezerwuje na panel miejsce w układzie, więc nie zasłania treści.
+
+**Cofnięcie:** usunięcie `VoiceMiniPanel.swift` i trzech wstawień w `RootShell`
+(oraz `AppDependencies.toggleVoiceMicrophone()` / `endVoiceSession()`); powrót
+`AssistantStore.endSession()` do bezpośredniego wołania koordynatora.
+
+---
+
+### D-27 · Dock Emmy nie mówi już o „Połączeniu: Nieaktywna”, a kompozytor ma jedno „Rozmawiaj” — **etap 4 audytu UX (F07)**
+
+**Treść:** trzy zmiany widoczne na ekranie Emmy:
+
+1. Linia techniczna „Połączenie: … · Mikrofon: … · Tryb: …” jest pokazywana **tylko**, gdy
+   sesja istnieje. Bez sesji dock mówi jednym zdaniem („Gotowa do rozmowy”).
+2. Dock ma wyciszenie mikrofonu obok przerwania i zakończenia; przycisk zakończenia
+   w docku skrócony do „Zakończ” (pełne „Zakończ rozmowę” zostało w mini-panelu), żeby
+   trzy akcje zmieściły się w jednym wierszu na 375 pt.
+3. Kompozytor: jedno główne „Rozmawiaj” (56 pt, `EmmaMetrics.emmaVoiceButtonSize`)
+   zamiast trzech ikon w jednym rzędzie, pod nim tryb pisania z jawnym „Dyktuj tekst”
+   i wysłaniem **nieaktywnym**, gdy pole jest puste. Stan dyktowania nazywa się
+   „Zakończ”, więc nie ma dwóch znaczeń jednego przycisku.
+
+**Powód:** audyt F07 — dock jednocześnie twierdził „Rozmowa głosowa”, „Połączenie:
+Nieaktywna” i „Mikrofon niedostępny”, a trzy ikony o równej wadze nie mówiły, co jest
+wejściem w rozmowę. Warunek etapu: mikrofon 56–64 pt i nieaktywne wysłanie pustego pola.
+
+**Wpływ:** znika sprzeczny komunikat bez sesji; wizualnie dock jest krótszy, bo linia
+techniczna pojawia się dopiero w rozmowie. Etykiety zmieniły się w testach dostępności
+(„Rozpocznij wypowiedź” → „Rozmawiaj”, „Zatrzymaj nasłuch” → „Wycisz mikrofon”).
+Pełna prawda o połączeniu i mikrofonie nadal jest podana wprost, nigdy tylko kolorem.
+
+**Cofnięcie:** przywrócenie poprzedniego `composer` i `stateLabel` w `AssistantScreen`
+i `VoiceDock` oraz bezwarunkowej linii technicznej.
 
 ---
 
 ## Czego ten rejestr nie zawiera
 
 Nie zawiera porównania zrzutów ekranu z referencją **piksel po pikselu**. Zrzuty są
-wykonane (`docs/ios/screenshots/`, etapy 1–3), ale nie ma narzędzia zestawiającego je
+wykonane (`docs/ios/screenshots/`, etapy 1–4), ale nie ma narzędzia zestawiającego je
 z `reference/prototype`; ocena opiera się na pomiarach (OCR + geometria ramek) i na
 kaskadzie CSS referencji. Ocena wizualna „na oko” wymaga człowieka albo modelu z
-obsługą obrazu — model prowadzący etapy 1–3 nie ma wejścia obrazowego.
+obsługą obrazu — model prowadzący etapy 1–4 nie ma wejścia obrazowego.
 

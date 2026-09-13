@@ -19,6 +19,22 @@ public struct RootShell: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+            // Mini-panel sesji (§4, F06): nad paskiem zakładek i **z rezerwacją
+            // miejsca w układzie**, więc nie zasłania treści. Na ekranie Emmy
+            // jest pełny panel sterowania, a nad arkuszem panel rysuje sam
+            // arkusz — tutaj go wtedy nie ma, żeby nie istniała druga, ukryta
+            // kopia tego samego sterowania (VoiceOver i testy trafiłyby w nią).
+            if dependencies.voiceState.showsGlobalVoicePanel,
+               dependencies.tab != .emma,
+               dependencies.sheet == nil {
+                VoiceMiniPanel(
+                    state: dependencies.voiceState,
+                    onOpen: { dependencies.go(to: .emma) },
+                    onToggleMicrophone: { Task { await dependencies.toggleVoiceMicrophone() } },
+                    onEnd: { Task { await dependencies.endVoiceSession() } }
+                )
+            }
+
             EmmaTabBar(selection: $dependencies.tab, unreadCount: dependencies.unreadTotal)
         }
         .background(EmmaTheme.bg)
@@ -84,44 +100,63 @@ struct SheetHost: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                switch sheet {
-                case .profile:
-                    ProfileSheet()
-                case .resetDemo:
-                    ResetDemoSheet()
-                case .newLead:
-                    NewLeadSheet()
-                case .startCase(let clientID):
-                    StartCaseSheet(clientID: clientID)
-                case .caseSettings(let caseID):
-                    CaseSettingsSheet(caseID: caseID)
-                case .note(let clientID, let caseID):
-                    NoteSheet(clientID: clientID, caseID: caseID)
-                case .taskForm(let taskID, let clientID, let caseID):
-                    TaskFormSheet(taskID: taskID, clientID: clientID, caseID: caseID)
-                case .eventForm(let eventID, let clientID, let caseID, let initialDay):
-                    EventFormSheet(
-                        eventID: eventID,
-                        clientID: clientID,
-                        caseID: caseID,
-                        initialDay: initialDay
+            // Formularz prezentowany modalnie musi mieć sterowanie sesją, jeśli
+            // rozmowa trwa pod spodem (F06). Panel jest **w układzie** arkusza,
+            // nad jego treścią, a nie nakładką: dzięki temu klawiatura wypycha
+            // go w górę i nie zasłania zakończenia rozmowy.
+            VStack(spacing: 0) {
+                Group {
+                    switch sheet {
+                    case .profile:
+                        ProfileSheet()
+                    case .resetDemo:
+                        ResetDemoSheet()
+                    case .newLead:
+                        NewLeadSheet()
+                    case .startCase(let clientID):
+                        StartCaseSheet(clientID: clientID)
+                    case .caseSettings(let caseID):
+                        CaseSettingsSheet(caseID: caseID)
+                    case .note(let clientID, let caseID):
+                        NoteSheet(clientID: clientID, caseID: caseID)
+                    case .taskForm(let taskID, let clientID, let caseID):
+                        TaskFormSheet(taskID: taskID, clientID: clientID, caseID: caseID)
+                    case .eventForm(let eventID, let clientID, let caseID, let initialDay):
+                        EventFormSheet(
+                            eventID: eventID,
+                            clientID: clientID,
+                            caseID: caseID,
+                            initialDay: initialDay
+                        )
+                    case .eventDetail(let eventID):
+                        EventDetailSheet(eventID: eventID)
+                    case .taskDetail(let taskID):
+                        TaskDetailSheet(taskID: taskID)
+                    case .newConversation:
+                        NewConversationSheet()
+                    case .conversationOptions(let threadID):
+                        ConversationOptionsSheet(threadID: threadID)
+                    case .messageOptions(let threadID, let messageID):
+                        MessageOptionsSheet(threadID: threadID, messageID: messageID)
+                    case .emmaContextSelection(let action):
+                        EmmaContextSheet(action: action)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .environment(\.emmaLayout, EmmaLayoutMetrics(width: EmmaMetrics.sheetMaxWidth))
+
+                if dependencies.voiceState.showsGlobalVoicePanel {
+                    VoiceMiniPanel(
+                        state: dependencies.voiceState,
+                        onOpen: {
+                            dependencies.dismissSheet()
+                            dependencies.go(to: .emma)
+                        },
+                        onToggleMicrophone: { Task { await dependencies.toggleVoiceMicrophone() } },
+                        onEnd: { Task { await dependencies.endVoiceSession() } }
                     )
-                case .eventDetail(let eventID):
-                    EventDetailSheet(eventID: eventID)
-                case .taskDetail(let taskID):
-                    TaskDetailSheet(taskID: taskID)
-                case .newConversation:
-                    NewConversationSheet()
-                case .conversationOptions(let threadID):
-                    ConversationOptionsSheet(threadID: threadID)
-                case .messageOptions(let threadID, let messageID):
-                    MessageOptionsSheet(threadID: threadID, messageID: messageID)
-                case .emmaContextSelection(let action):
-                    EmmaContextSheet(action: action)
                 }
             }
-            .environment(\.emmaLayout, EmmaLayoutMetrics(width: EmmaMetrics.sheetMaxWidth))
         }
         .presentationDetents(sheet.detents)
         .presentationDragIndicator(.visible)

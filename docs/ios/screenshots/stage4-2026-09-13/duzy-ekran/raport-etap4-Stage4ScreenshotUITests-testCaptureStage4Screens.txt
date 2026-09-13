@@ -1,0 +1,8 @@
+Zrzuty ekranu Emmy — etap 4 (globalny panel sesji)
+Data: 2026-09-13T14:07:07Z
+Uwaga: zrzut „NIE UDAŁO SIĘ” oznacza, że ekran nie wczytał się w założonym czasie.
+Zrzut i tak powstał — pokazuje, co było na ekranie w tym momencie.
+zapisano · 26-emma-kompozytor.png · Emma — jedno „Rozmawiaj” i tryb pisania z „Dyktuj tekst”
+zapisano · 27-emma-dock-sesji.png · Emma — dock z żywą sesją: stan, mikrofon, przerwanie, zakończenie
+zapisano · 28-mini-panel-dzisiaj.png · Dzisiaj — mini-panel nad paskiem zakładek, inna zakładka niż Emma
+zapisano · 29-mini-panel-klawiatura.png · Arkusz z klawiaturą — sterowanie sesją widoczne nad klawiaturą

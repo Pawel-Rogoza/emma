@@ -39,6 +39,12 @@ public final class AppDependencies: ObservableObject {
 
     @Published public private(set) var currentUser: User
     @Published public var tab: AppTab = .today
+    /// Lustro stanu głosu dla widoków powłoki (etap 4 audytu, F06).
+    ///
+    /// Źródłem prawdy pozostaje `voice` — jeden koordynator i jedna sesja (§5.3).
+    /// To tylko publikacja jego stanu, żeby pasek zakładek i arkusze mogły
+    /// pokazać mini-panel bez tworzenia drugiego obserwatora w każdym widoku.
+    @Published public private(set) var voiceState = VoiceUIState()
     @Published public var navigation: [AppTab: TabNavigation] = [:]
     @Published public var sheet: AppSheet?
     @Published public var toast: String?
@@ -163,7 +169,11 @@ public final class AppDependencies: ObservableObject {
     /// inaczej rozmowa „sama się rozłącza”, co wygląda jak awaria.
     private func observeSessionEnd() {
         _ = voice.addObserver { [weak self] state in
-            guard let self, state.connection == .ended else { return }
+            guard let self else { return }
+            // Jedno lustro stanu dla powłoki: pasek zakładek i arkusze czytają
+            // `voiceState`, a nie subskrybują koordynatora po swojemu (F06).
+            self.voiceState = state
+            guard state.connection == .ended else { return }
             guard let reason = self.voice.lastEndReason else { return }
             guard reason == .idleTimeout || reason == .sessionExpired else { return }
             self.showToast(reason.displayName)
@@ -264,6 +274,20 @@ public final class AppDependencies: ObservableObject {
 
     public func dismissSheet() {
         sheet = nil
+    }
+
+    // MARK: Sterowanie sesją z dowolnego miejsca (F06)
+
+    /// Wyciszenie albo włączenie mikrofonu z mini-panelu. Wyciszony mikrofon
+    /// **nie** kończy rozmowy i nie zmienia stanu połączenia (§5.5).
+    public func toggleVoiceMicrophone() async {
+        await voice.setMicrophoneMuted(voiceState.isCapturingMicrophone)
+    }
+
+    /// Zakończenie rozmowy z dowolnego ekranu. Jedna ścieżka dla docku Emmy
+    /// i mini-panelu, żeby zakończenie nie miało dwóch implementacji (§5.3).
+    public func endVoiceSession() async {
+        await voice.end(reason: .userRequested, preserveDraft: true, revokedCapability: false)
     }
 
     /// Krótkie potwierdzenie operacji. Znika po 3,8 s — jak w referencji.

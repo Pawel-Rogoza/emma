@@ -168,18 +168,18 @@ struct TodayScreen: View {
     /// około 80–100 pt przy standardowym tekście. Nie ma sztywnej wysokości, więc
     /// przy dużym Dynamic Type karta rośnie razem z tekstem.
     ///
-    /// Przy rozmiarach dostępności karta układa się **pionowo**: trzy kolumny
-    /// zostawiały tytułowi ~150 pt i „Porozmawiaj z Emmą” łamało się w środku
-    /// wyrazu („Porozm / awiaj z / Emmą” — zrzut `24-duzy-tekst-dzisiaj.png`).
+    /// Przy rozmiarach dostępności karta układa się **pionowo**, a tytuł zajmuje
+    /// całą szerokość karty. Trzy kolumny zostawiały tytułowi ~150 pt i „Porozmawiaj
+    /// z Emmą” łamało się w środku wyrazu („Porozm / awiaj z / Emmą” — zrzut
+    /// `24-duzy-tekst-dzisiaj.png`), a portret obok tytułu na 375 pt nadal urywał
+    /// wyraz („Porozmawi / aj z Emmą” — zrzut `30-duzy-tekst-mini-panel.png`).
     @ViewBuilder
     private func emmaCompactCard() -> some View {
         SurfaceCard(padding: EdgeInsets(top: 13, leading: 15, bottom: 13, trailing: 13)) {
             if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 12) {
-                        emmaOrb
-                        emmaVoiceTitle
-                    }
+                    emmaOrb
+                    emmaVoiceTitle
                     emmaSubtitle
                     HStack(spacing: 14) {
                         emmaMicButton
@@ -221,7 +221,9 @@ struct TodayScreen: View {
                 .foregroundStyle(EmmaTheme.ink)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
-                .frame(minHeight: 24, alignment: .leading)
+                // Cała szerokość karty: przy dostępności portret nie zabiera już
+                // miejsca tytułowi, więc wyraz nie musi łamać się w środku.
+                .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -233,6 +235,7 @@ struct TodayScreen: View {
             .font(EmmaTypography.caption())
             .foregroundStyle(EmmaTheme.muted)
             .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var emmaMicButton: some View {

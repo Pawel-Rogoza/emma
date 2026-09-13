@@ -53,6 +53,7 @@ struct AssistantScreen: View {
                 state: store.voiceState,
                 speaksReplies: store.speaksReplies,
                 onToggleSpeech: { Task { await store.toggleSpeech() } },
+                onToggleMicrophone: { Task { await store.toggleMicrophone() } },
                 onInterrupt: { Task { await store.interrupt() } },
                 onEndSession: { Task { await store.endSession() } }
             )
@@ -466,25 +467,45 @@ struct AssistantScreen: View {
     }
 
     // MARK: Kompozytor (`.assistant-compose`)
+    //
+    // F07: jedno główne „Rozmawiaj” zamiast trzech ikon obok siebie, osobny
+    // tryb pisania z jawnym „Dyktuj tekst” i wysłanie nieaktywne dla pustego
+    // pola. Mikrofon ma 56 pt (audyt: 56–64 pt dla głównej akcji głosowej).
 
     private var composer: some View {
-        HStack(spacing: 6) {
-            Button {
-                Task { await store.toggleListening() }
-            } label: {
-                // Nasłuch zatrzymuje wyraźny znak „stop”, a nie „checkmark”:
-                // haczyk sugerował zatwierdzenie, choć przycisk wycisza mikrofon.
-                Image(systemName: store.isMicrophoneCapturing ? "stop.fill" : "mic")
-                    .font(.system(size: store.isMicrophoneCapturing ? 16 : 19, weight: .regular))
-                    .foregroundStyle(store.isMicrophoneCapturing ? Color.white : EmmaTheme.emmaMicText)
-                    .frame(width: EmmaMetrics.emmaComposerButtonSize, height: EmmaMetrics.emmaComposerButtonSize)
-                    .background(store.isMicrophoneCapturing ? EmmaTheme.primaryButton : EmmaTheme.contextStripBackground)
+        VStack(spacing: 8) {
+            if store.voiceState.sessionID == nil {
+                Button {
+                    Task { await store.toggleListening() }
+                } label: {
+                    HStack(spacing: 9) {
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 20, weight: .semibold))
+                        Text("Rozmawiaj")
+                            .font(EmmaTypography.button)
+                    }
+                    .foregroundStyle(EmmaTheme.primaryButtonText)
+                    .frame(maxWidth: .infinity, minHeight: EmmaMetrics.emmaVoiceButtonSize)
+                    .background(EmmaTheme.primaryButton)
                     .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.composerInner, style: .continuous))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Rozmawiaj")
+                .accessibilityHint("Rozpoczyna rozmowę głosową z Emmą")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(store.isMicrophoneCapturing ? "Zatrzymaj nasłuch" : "Rozpocznij wypowiedź")
-            .accessibilityValue(store.isMicrophoneCapturing ? "Nasłuch aktywny" : "Nasłuch wyłączony")
 
+            writingRow
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
+        .background(EmmaTheme.bg)
+    }
+
+    /// Tryb pisania: pole, jawny przycisk dyktowania i wysłanie.
+    private var writingRow: some View {
+        HStack(spacing: 6) {
             TextField("Napisz do Emmy…", text: $store.composer)
                 .font(EmmaTypography.composerField)
                 .foregroundStyle(EmmaTheme.ink)
@@ -493,7 +514,8 @@ struct AssistantScreen: View {
                 .submitLabel(.send)
                 .onSubmit { Task { await store.sendComposer() } }
                 .accessibilityLabel("Polecenie dla Emmy")
-                .padding(.horizontal, 2)
+                .padding(.horizontal, 4)
+                .frame(minHeight: EmmaSpacing.hitTarget)
 
             Button {
                 Task {
@@ -504,15 +526,22 @@ struct AssistantScreen: View {
                     }
                 }
             } label: {
-                Image(systemName: "waveform")
-                    .font(.system(size: 17, weight: .regular))
-                    .foregroundStyle(store.isDictating ? Color.white : EmmaTheme.emmaMicText)
-                    .frame(width: EmmaMetrics.emmaComposerButtonSize, height: EmmaMetrics.emmaComposerButtonSize)
-                    .background(store.isDictating ? EmmaTheme.primaryButton : EmmaTheme.contextStripBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.composerInner, style: .continuous))
+                HStack(spacing: 5) {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 15, weight: .regular))
+                    Text(store.isDictating ? "Zakończ" : "Dyktuj tekst")
+                        .font(EmmaTypography.caption(.medium))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(store.isDictating ? Color.white : EmmaTheme.emmaMicText)
+                .padding(.horizontal, 9)
+                .frame(minHeight: EmmaSpacing.hitTarget)
+                .background(store.isDictating ? EmmaTheme.primaryButton : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.composerInner, style: .continuous))
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(store.isDictating ? "Zakończ dyktowanie" : "Dyktuj polecenie do pola")
+            .accessibilityLabel(store.isDictating ? "Zakończ dyktowanie" : "Dyktuj tekst do pola")
 
             Button {
                 Task { await store.sendComposer() }
@@ -525,6 +554,9 @@ struct AssistantScreen: View {
                     .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.composerInner, style: .continuous))
             }
             .buttonStyle(.plain)
+            // Puste pole nie wysyła — przycisk jest nieaktywny, a nie „cicho nic nie robi”.
+            .disabled(!store.canSendComposer)
+            .opacity(store.canSendComposer ? 1 : 0.4)
             .accessibilityLabel("Przekaż polecenie")
         }
         .padding(6)
@@ -534,10 +566,6 @@ struct AssistantScreen: View {
             RoundedRectangle(cornerRadius: EmmaRadii.emmaComposer, style: .continuous)
                 .strokeBorder(EmmaTheme.emmaComposerBorder, lineWidth: 1)
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 6)
-        .padding(.bottom, 10)
-        .background(EmmaTheme.bg)
     }
 }
 

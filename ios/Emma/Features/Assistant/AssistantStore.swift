@@ -592,7 +592,14 @@ final class AssistantStore: ObservableObject {
     func endSession() async {
         guard let dependencies else { return }
         isPlayingSummary = false
-        await dependencies.voice.end(reason: .userRequested, preserveDraft: true, revokedCapability: false)
+        // Jedna ścieżka zakończenia dla docku i globalnego mini-panelu (F06).
+        await dependencies.endVoiceSession()
+    }
+
+    /// Wyciszenie mikrofonu z docku Emmy. Ta sama metoda, której używa mini-panel.
+    func toggleMicrophone() async {
+        guard let dependencies else { return }
+        await dependencies.toggleVoiceMicrophone()
     }
 
     /// Przełączenie odpowiedzi głosowych. Referencja przy tej okazji zatrzymuje
@@ -790,9 +797,15 @@ final class AssistantStore: ObservableObject {
 
     var statusText: String { voiceState.statusHeadline }
 
-    var isMicrophoneCapturing: Bool { voiceState.microphone == .capturing }
+    var isMicrophoneCapturing: Bool { voiceState.isCapturingMicrophone }
 
     var isDictating: Bool { voiceState.mode == .dictation }
+
+    /// Puste pole nie wysyła (F07/§4). Reguła w jednym miejscu, żeby przycisk
+    /// i `sendComposer()` nie mogły się rozjechać.
+    var canSendComposer: Bool {
+        !composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var contextTitle: String {
         // Nazwa kontekstu firmowego pochodzi z reguły domenowej, a nie z literału

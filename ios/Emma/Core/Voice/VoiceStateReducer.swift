@@ -130,6 +130,41 @@ public struct VoiceUIState: Hashable, Sendable {
     public var canEndSession: Bool {
         sessionID != nil && connection != .ended && connection != .idle
     }
+
+    /// Czy pokazać globalny mini-panel sterowania sesją (etap 4 audytu, F06).
+    ///
+    /// Panel stoi nad paskiem zakładek na każdej zakładce poza „Emma” i nad
+    /// arkuszem modalnym, dopóki sesja istnieje — także gdy mikrofon jest
+    /// wyciszony albo połączenie się odtwarza. Bez sesji i po jej zakończeniu
+    /// nie ma czego sterować, więc panelu nie ma.
+    public var showsGlobalVoicePanel: Bool { canEndSession }
+
+    /// Krótki stan sesji jednym napisem, bez żargonu (etap 4 audytu, F07).
+    ///
+    /// Wcześniej dock mówił równocześnie „Rozmowa głosowa”, „Połączenie:
+    /// Nieaktywna” i „Mikrofon niedostępny”. Kolejność ma znaczenie: problem
+    /// połączenia → wyciszenie → tura. Bez sesji mówimy „Gotowa do rozmowy”.
+    public var sessionHeadline: String {
+        switch connection {
+        case .requestingPermission: return "Uruchamiam mikrofon"
+        case .connecting: return "Łączę z Emmą"
+        case .reconnecting: return "Odtwarzam połączenie"
+        case .failed: return "Rozmowa niedostępna"
+        case .idle, .ended: return "Gotowa do rozmowy"
+        case .connected: break
+        }
+        if microphone == .muted, turn != .speaking { return "Mikrofon wyciszony" }
+        switch turn {
+        case .listening: return "Słucham"
+        case .thinking: return "Przygotowuję odpowiedź"
+        case .speaking: return "Emma mówi"
+        case .interrupted: return "Przerwane"
+        case .waiting: return "Emma czeka"
+        }
+    }
+
+    /// Czy przycisk mikrofonu w mini-panelu ma być zaznaczony (mikrofon aktywny).
+    public var isCapturingMicrophone: Bool { microphone == .capturing }
 }
 
 /// Stan akcji w prezentacji (§5.5).
