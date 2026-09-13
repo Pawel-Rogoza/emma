@@ -616,7 +616,7 @@ Sprawdzone w kodzie z commita `78fa232` (koniec etapu 5), nie z opisów:
   `EmmaRepository, DemoFixtureRepository` — jedno miejsce mówi, co repozytorium demo
   spełnia.
 - **`ios/Emma/VoiceAdapters/SystemSpeechPlaybackService.swift`** (nowy): realny odsłuch
-  na systemowym `AVSpeechSynthesizer`. Zd zdarzenia `started`/`progress`/`finished`
+  na systemowym `AVSpeechSynthesizer`. Zdarzenia `started`/`progress`/`finished`
   pochodzą z delegata syntezatora (`approximate: false`), tryb `.playback` nie otwiera
   mikrofonu (§5.1), a `stop()` przerywa mowę i kończy odsłuch powodem `interrupted`.
   To głos **systemowy**, nie głos Emmy — interfejs tego nie udaje.
@@ -641,7 +641,7 @@ w Demo, pojedynczy `VoiceSessionCoordinator`, wersjonowanie i idempotencja.
 | `xcodebuild test -only-testing:EmmaTests` | jednostkowe + aplikacyjne | **288/0** |
 | `swift test` (EmmaCore) | logika bez zmian względem etapu 5 | **242/0** |
 | `verify-linux-logic.sh` | kroki 1–7 i 9 czyste; krok 8 wskazuje `handleAccountSwitched` | jak w etapach 2–5 |
-| `EmmaUITests` | etapy 1–5 | **32/0** (wynik etapu 5, UI nie zmienione w tym etapie) |
+| `EmmaUITests` | etapy 1–5 + zrzut granicy mocka | **33/0** |
 
 Sprawdzone w `Stage6ContractTests`:
 
