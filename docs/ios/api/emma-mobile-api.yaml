@@ -462,6 +462,37 @@ paths:
   # ---------------------------------------------------------------- Zapis
 
   /cases:
+    get:
+      tags: [Odczyt]
+      summary: Lista spraw
+      description: |
+        Sprawy aktywne i zamknięte. Aplikacja ma zakładkę „Sprawy”, a bez tej
+        trasy musiałaby składać listę z kart klientów pojedynczo (N+1).
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [in_progress, awaiting_client, closed]
+        - name: client_id
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: Lista spraw
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/LegalCase" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
     post:
       tags: [Zapis]
       summary: Rozpoczęcie prowadzenia sprawy

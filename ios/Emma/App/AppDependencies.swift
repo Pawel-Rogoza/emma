@@ -49,7 +49,10 @@ public final class AppDependencies: ObservableObject {
     /// Token dostępu do backendu. Dostarcza go `AuthStore` (M1: logowanie mobilne);
     /// w Demo pozostaje `nil`, bo żaden request nie ma prawa wyjść z telefonu.
     /// Klucza dostawcy tu nie będzie nigdy.
-    private let accessTokenProvider: (() -> String?)?
+    ///
+    /// Typ jest `@MainActor`, bo `AuthStore` żyje na głównym aktorze: odczyt tokenu
+    /// z wątku tła byłby wyścigiem, a nie skrótem.
+    private let accessTokenProvider: (@MainActor @Sendable () -> String?)?
 
     /// Token, którym warstwy zależne od API podpisują żądania. To wartość
     /// z ostatniego logowania/odnowienia — odświeżaniem zajmuje się `AuthStore`.
@@ -102,7 +105,7 @@ public final class AppDependencies: ObservableObject {
         clock: Clock? = nil,
         repository: (any EmmaRepository)? = nil,
         fixtureName: String? = nil,
-        accessTokenProvider: (() -> String?)? = nil
+        accessTokenProvider: (@MainActor @Sendable () -> String?)? = nil
     ) {
         self.configuration = configuration
         self.fixtureName = fixtureName
@@ -124,11 +127,26 @@ public final class AppDependencies: ObservableObject {
         let dataset = resolution.fixture.usesLongNames
             ? DemoFixtures.datasetWithLongNames()
             : DemoFixtures.dataset()
-        self.repository = repository ?? MockRepository(
-            dataset: dataset,
-            clock: resolvedClock,
-            artificialLatency: 0
-        )
+        if let repository {
+            self.repository = repository
+        } else if !configuration.usesMockServices, let baseURL = configuration.apiBaseURL {
+            // Gdy backend jest skonfigurowany, dane muszą pochodzić z sieci.
+            // Zostawienie tu `MockRepository` znaczyłoby, że przykładowe sprawy
+            // są pokazywane jako prawdziwe. Demo i brak adresu nadal używają mocka.
+            self.repository = BackendRepository(
+                baseURL: baseURL,
+                accessTokenProvider: { await accessTokenProvider?() },
+                // Użytkownika dostarczy sesja mobilna. Dopóki repozytorium nie ma
+                // go skąd wziąć, zgłasza brak sesji zamiast podstawiać konto demo.
+                currentUser: { nil }
+            )
+        } else {
+            self.repository = MockRepository(
+                dataset: dataset,
+                clock: resolvedClock,
+                artificialLatency: 0
+            )
+        }
 
         self.currentUser = dataset.user
         self.fixtureNotice = resolution.notice

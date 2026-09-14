@@ -27,6 +27,10 @@ final class BackendLoginUITests: XCTestCase {
     private var email: String { ProcessInfo.processInfo.environment["EMMA_UI_LOGIN_EMAIL"] ?? "" }
     private var password: String { ProcessInfo.processInfo.environment["EMMA_UI_LOGIN_PASSWORD"] ?? "" }
     private var totpSecret: String { ProcessInfo.processInfo.environment["EMMA_UI_TOTP_SECRET"] ?? "" }
+    /// Nazwa klienta, która ma istnieć w bazie backendu. Test nie wpisuje jej
+    /// sam — oczekuje danych, które przygotował backend (patrz runbook).
+    private var expectedClient: String { ProcessInfo.processInfo.environment["EMMA_UI_EXPECT_CLIENT"] ?? "Olena Kowalenko" }
+    private var expectedCase: String { ProcessInfo.processInfo.environment["EMMA_UI_EXPECT_CASE"] ?? "II K 341/26" }
 
     override func setUp() {
         continueAfterFailure = false
@@ -100,6 +104,41 @@ final class BackendLoginUITests: XCTestCase {
             "Po poprawnym logowaniu nie pojawiła się powłoka aplikacji"
         )
         attachScreenshot("M1-02-po-zalogowaniu")
+    }
+
+    /// Dowód, że aplikacja czyta **prawdziwe** dane kancelarii: po zalogowaniu
+    /// do backendu zakładka „Klienci” ma pokazać osobę z bazy, a jej karta —
+    /// sprawę z bazy. To nie to samo co „ekran się otworzył”: gdyby repozytorium
+    /// dalej czytało fixture'y, ten test by padł.
+    func testRealBackendDataAppearsInClientsAndCard() throws {
+        try XCTSkipIf(backendURL == nil, "Brak EMMA_UI_BACKEND_URL — test integracyjny pominięty")
+        try launchAgainstBackend()
+        typeCredentials(totp: TOTP.code(secret: totpSecret))
+
+        let clientsTab = application.buttons["tab.clients"]
+        XCTAssertTrue(clientsTab.waitForExistence(timeout: 30), "Brak zakładki „Klienci” po zalogowaniu")
+        clientsTab.tap()
+
+        // Wiersz listy to przycisk z etykietą „nazwa, temat, status, język…”,
+        // więc dopasowujemy po początku etykiety.
+        let lead = application.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", expectedClient)
+        ).firstMatch
+        XCTAssertTrue(
+            lead.waitForExistence(timeout: 25),
+            "Zakładka „Klienci” nie pokazała klienta \(expectedClient) z backendu"
+        )
+        attachScreenshot("M2-01-klienci-z-backendu")
+
+        lead.tap()
+        let caseCard = application.buttons.matching(
+            NSPredicate(format: "label CONTAINS %@", expectedCase)
+        ).firstMatch
+        XCTAssertTrue(
+            caseCard.waitForExistence(timeout: 25),
+            "Karta klienta nie pokazała sprawy \(expectedCase) z backendu"
+        )
+        attachScreenshot("M2-02-karta-klienta-z-backendu")
     }
 
     func testWrongPasswordShowsServerMessageAndStaysOnLogin() throws {

@@ -49,6 +49,7 @@ let package = Package(
                 "Core/Auth/MobileAuthClient.swift",
                 "Core/Auth/MobileSessionKeeper.swift",
                 "Core/Domain",
+                "Core/Data",
                 "Core/Voice/VoiceEvents.swift",
                 "Core/Voice/VoiceServices.swift",
                 "Core/Voice/VoiceStateReducer.swift",
