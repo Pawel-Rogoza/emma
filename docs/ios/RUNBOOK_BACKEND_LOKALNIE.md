@@ -49,6 +49,20 @@ d=json.load(open('/tmp/emma-live/setup.json'))
 print(u.parse_qs(u.urlparse(d['totpEnrollUrl']).query)['secret'][0])" > /tmp/emma-live/secret.txt
 ```
 
+## 3a. Wsyp dane, które istnieją **tylko** w bazie
+
+Test integracyjny z M2b sprawdza, czy aplikacja pokazuje dane z backendu. Żeby
+to było dowodem, a nie zbiegiem okoliczności, dane muszą być takie, jakich nie
+ma żadna fikstura w kodzie — inaczej wynik przeszedłby także na atrapie:
+
+```bash
+sqlite3 /tmp/emma-live/crm.sqlite3 \
+  "INSERT INTO clients (name,language,notes,created_at)
+     VALUES ('Zenon Backendowicz-Testowy','ukraiński','Notatka','2026-09-10T08:30:00.000Z');
+   INSERT INTO cases (client_id,title,signature,stage,opened_at,assignee)
+     VALUES (last_insert_rowid(),'Zatrzymanie prawa jazdy','II K 999/26','active','2026-09-11',1);"
+```
+
 ## 4. Uruchom test integracyjny aplikacji
 
 ```bash
@@ -58,6 +72,8 @@ TEST_RUNNER_EMMA_UI_BACKEND_URL=http://127.0.0.1:4399 \
 TEST_RUNNER_EMMA_UI_LOGIN_EMAIL=pawel@majkuny.pl \
 TEST_RUNNER_EMMA_UI_LOGIN_PASSWORD='Emma-live-2026!' \
 TEST_RUNNER_EMMA_UI_TOTP_SECRET="$SECRET" \
+TEST_RUNNER_EMMA_UI_EXPECT_CLIENT='Zenon Backendowicz-Testowy' \
+TEST_RUNNER_EMMA_UI_EXPECT_CASE='II K 999/26' \
 xcodebuild -project Emma.xcodeproj -scheme Emma-Demo \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
   -derivedDataPath .build/DerivedData test \
@@ -67,6 +83,15 @@ xcodebuild -project Emma.xcodeproj -scheme Emma-Demo \
 Przedrostek `TEST_RUNNER_` jest konieczny: `xcodebuild` przekazuje do procesu
 testów tylko zmienne z tym przedrostkiem (i zdejmuje go po drodze). Bez tego
 testy integracyjne same się pomijają (`XCTSkip`).
+
+`EMMA_UI_EXPECT_CLIENT` / `EMMA_UI_EXPECT_CASE` wskazują, co ma się pojawić na
+ekranie. Wpisujemy tam dane z bazy, nie z fikstur — inaczej test nie odróżni
+odczytu z backendu od atrapy.
+
+**Uwaga o symulatorze:** jeśli testy interfejsu padają na geometrii klawiatury
+(`klawiatura programowa poza ekranem`) albo na „Failed to create a bundle
+instance”, symulator jest w złym stanie — `xcrun simctl shutdown all` i powtórz
+przebieg. Sprawdzone 2026-09-14: po restarcie ten sam test przechodzi.
 
 Bez tych zmiennych testy integracyjne są pomijane, a pełny zestaw Demo
 (`swift test`, `xcodebuild test -only-testing:EmmaTests`, UI w Demo) działa
