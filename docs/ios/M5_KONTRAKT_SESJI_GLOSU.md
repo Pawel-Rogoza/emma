@@ -107,3 +107,60 @@ brak sekretów w logach.
 
 **Zasada:** osiem warunków, każdy z dowodem z urządzenia. Do tego czasu
 oznaczenia Demo zostają, a M5 nie jest „gotowe” — jest „zaimplementowane”.
+
+---
+
+# Stan wdrożenia (2026-09-14)
+
+## Co jest zrobione — z dowodem
+
+Migracja `044_mobile_voice_sessions.sql` (tabela techniczna: sesja aplikacji,
+użytkownik, instalacja, `context_version`, stan, `provider_conversation_id`,
+znaczniki czasu; **bez kolumny na token dostawcy**) i pięć tras dokładnie pod
+`src/pages/api/mobile/v1/voice/`:
+
+| Trasa | Plik |
+| --- | --- |
+| `POST /voice/sessions` | `sessions/index.ts` |
+| `POST /voice/conversation-token` | `conversation-token.ts` |
+| `PATCH /voice/sessions/{id}/context` | `sessions/[session_id]/context.ts` |
+| `GET /voice/sessions/{id}/status` | `sessions/[session_id]/status.ts` |
+| `DELETE /voice/sessions/{id}` | `sessions/[session_id].ts` |
+
+**Dowód z żywego serwera** (lokalnie, sobowtór dostawcy zamiast prawdziwego
+klucza — żeby nie zużywać konta i nie mieszać danych produkcyjnych):
+
+- `POST /api/mobile/v1/voice/sessions` → **201**, `state: active`, wersja 1.
+- `POST /api/mobile/v1/voice/conversation-token` → **200**
+  `{token, conversation_id: cx-lokalny-1, context_version: 1, session_id}`,
+  **bez `expires_at`**.
+- `GET …/status` → `active`, rozmowa `cx-lokalny-1`.
+- `PATCH …/context` wersja 2 → **200**; cofnięcie na 1 → **409**
+  `version_conflict` z `current_version: 2`.
+- `DELETE` → **204**; token po zamknięciu → **409**.
+- `POST /api/voice/conversation-token` i `/voice/conversation-token` → **404**
+  (nie istnieje trasa bez prefiksu — sprawdzone, nie założone).
+- W plikach bazy (`crm.sqlite3`, `-wal`, `-shm`) **0** wystąpień tokenu
+  i klucza API; w logach aplikacji **0**.
+- Wiersz sesji: `ended`, wersja 2, `provider_conversation_id = cx-lokalny-1`.
+- Audyt: `mobile.voice_session_open`, `mobile.voice_token`,
+  `mobile.voice_context_change`, `mobile.voice_session_end` — metadane bez tokenu
+  i bez `conversation_id`.
+
+Testy: `src/lib/crm/mobile/voice.test.ts` → **10/10** (własność: cudzy
+użytkownik 403, inna instalacja 403, brak sesji 404; rosnąca wersja; zamknięcie
+idempotentne; brak tokenu w bazie i audycie; 503 przy wyłączonym głosie,
+awarii dostawcy i braku `conversation_id`). `npx astro check` → 0 błędów.
+
+## Czego jeszcze NIE ma (i nie udaję, że jest)
+
+1. **Warstwa iOS** (punkt 6): `VoiceSessionRepository` nie ma jeszcze metody na
+   token; brak realnego `currentUser` w repozytorium; `EMMA_API_BASE_URL` nadal
+   puste, więc aplikacja działa na mocku.
+2. **Test na urządzeniu** (punkt 8): prawdziwy mikrofon, odpowiedź Qwen przez
+   ElevenLabs, przerwanie wypowiedzi, mute, zakończenie sesji, logout, brak
+   sekretów w logach. Do tego czasu **oznaczenia Demo zostają**, a M5 jest
+   „zaimplementowane”, nie „gotowe”.
+3. **Rozmowa naprawdę przez WebRTC** — sprawdziliśmy, że backend wydaje token
+   i zapisuje powiązanie; nie sprawdziliśmy jeszcze, że aplikacja wchodzi z nim
+   do pokoju i że Emma odpowiada głosem.
