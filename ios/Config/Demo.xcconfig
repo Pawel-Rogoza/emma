@@ -14,7 +14,7 @@ EMMA_ENVIRONMENT = demo
 EMMA_API_BASE_URL =
 
 // Token podpisywania uzupełnia właściciel lokalnie (Config/Local.xcconfig, poza repo).
-EMMA_DEVELOPMENT_TEAM =
+EMMA_DEVELOPMENT_TEAM = QZ25N94YZ8
 
 // Kod języka interfejsu. Język Emmy jest osobno konfigurowalny w aplikacji.
 EMMA_DEFAULT_LOCALE = pl

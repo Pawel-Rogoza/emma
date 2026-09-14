@@ -11,5 +11,5 @@ EMMA_ENVIRONMENT = staging
 // Pusty adres = aplikacja pozostaje w trybie demo i to jawnie komunikuje.
 EMMA_API_BASE_URL =
 
-EMMA_DEVELOPMENT_TEAM =
+EMMA_DEVELOPMENT_TEAM = QZ25N94YZ8
 EMMA_DEFAULT_LOCALE = pl
