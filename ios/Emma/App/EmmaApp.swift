@@ -12,17 +12,34 @@ import SwiftUI
 @main
 struct EmmaApp: App {
     @StateObject private var dependencies: AppDependencies
-    @StateObject private var auth = AuthStore()
+    @StateObject private var auth: AuthStore
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
         let configuration = AppConfiguration.resolve()
-        _dependencies = StateObject(
-            wrappedValue: AppDependencies(
-                configuration: configuration,
-                fixtureName: AppConfiguration.fixtureName()
-            )
+        // Kolejność jest istotna: `AuthStore` powstaje pierwszy, bo to on ma
+        // token dostępu, którym warstwy API podpisują żądania. Powłoka nie
+        // tworzy własnej sesji i nie zna implementacji logowania.
+        let authStore = AuthStore(configuration: configuration)
+        let dependencies = AppDependencies(
+            configuration: configuration,
+            fixtureName: AppConfiguration.fixtureName(),
+            accessTokenProvider: { [weak authStore] in authStore?.accessToken }
         )
+        // Rozmowa głosowa nie może przeżyć wylogowania ani zmiany konta: jedno
+        // złącze łączy logowanie z koordynatorem, więc żaden ekran nie musi
+        // o tym pamiętać.
+        authStore.onSessionEnded = { [weak dependencies] reason in
+            guard let dependencies else { return }
+            switch reason {
+            case .loggedOut:
+                await dependencies.voice.handleUserLoggedOut()
+            case .accountSwitched:
+                await dependencies.voice.handleAccountSwitched()
+            }
+        }
+        _auth = StateObject(wrappedValue: authStore)
+        _dependencies = StateObject(wrappedValue: dependencies)
         EmmaFontRegistration.verifyRegisteredFonts()
     }
 

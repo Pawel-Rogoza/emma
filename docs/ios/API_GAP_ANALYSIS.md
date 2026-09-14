@@ -21,8 +21,8 @@ Legenda: **Gotowe** (aplikacja to obsługuje) · **Wymagane** (potrzebne od back
 | --- | --- | --- |
 | Adres backendu z konfiguracji builda | Gotowe | `EMMA_API_BASE_URL` z `.xcconfig`, brak wartości w Demo |
 | Brak sekretów w aplikacji | Gotowe | żadnego klucza API w kodzie, w `Info.plist` ani w repozytorium |
-| Token dostępu użytkownika | Wymagane | aplikacja umie go przekazać, backend musi go wydać |
-| Logowanie / sesja użytkownika | Wymagane | kontrakt istnieje (`/auth/login|refresh|revoke`), backend ma na razie tylko WebAuthn + ciasteczko dla panelu i `fallback-login` (admin + TOTP) — mobilnych bearerów nie ma |
+| Token dostępu użytkownika | Gotowe (klient) / Gotowe (backend) | aplikacja pobiera i przechowuje parę tokenów (`MobileSessionKeeper`, kluczyk), backend wydaje ją przez `/api/mobile/v1/auth/login`; token trafia do `AppDependencies.accessToken` |
+| Logowanie / sesja użytkownika | Gotowe (klient) / Gotowe (backend, M1) | backend: `POST /api/mobile/v1/auth/login\|refresh\|revoke` (bearer, rotacja z oknem propagacji, rewokacja per urządzenie, TOTP gdy konto go ma — migracja 041, `docs/emma/MOBILE_API_M1_LOGIN.md`); aplikacja: `AuthStore` + `MobileAuthClient` + kluczyk. **Uwaga:** po zalogowaniu dane nadal pochodzą z `MockRepository` — podłączenie repozytorium to M2 |
 | Przełączenie użytkownika w Demo | Gotowe | `switchUser(to:)` czyści stan głosu i odczytów |
 
 ## 2. Głos

@@ -46,9 +46,14 @@ public final class AppDependencies: ObservableObject {
     public let referenceDay: LocalDate
     /// Jeden kontroler sesji audio dla rozmowy, dyktowania i odsłuchu (§5.3).
     public let audioSession = AudioSessionController()
-    /// Token dostępu do backendu. Do czasu wdrożenia logowania (etap 07) go nie ma —
-    /// to jedyne miejsce, które ma go dostarczyć. Klucza dostawcy tu nie będzie nigdy.
-    public var accessToken: String? { nil }
+    /// Token dostępu do backendu. Dostarcza go `AuthStore` (M1: logowanie mobilne);
+    /// w Demo pozostaje `nil`, bo żaden request nie ma prawa wyjść z telefonu.
+    /// Klucza dostawcy tu nie będzie nigdy.
+    private let accessTokenProvider: (() -> String?)?
+
+    /// Token, którym warstwy zależne od API podpisują żądania. To wartość
+    /// z ostatniego logowania/odnowienia — odświeżaniem zajmuje się `AuthStore`.
+    public var accessToken: String? { accessTokenProvider?() }
 
     // MARK: Stan wspólny
 
@@ -96,10 +101,12 @@ public final class AppDependencies: ObservableObject {
         configuration: AppConfiguration = .current,
         clock: Clock? = nil,
         repository: (any EmmaRepository)? = nil,
-        fixtureName: String? = nil
+        fixtureName: String? = nil,
+        accessTokenProvider: (() -> String?)? = nil
     ) {
         self.configuration = configuration
         self.fixtureName = fixtureName
+        self.accessTokenProvider = accessTokenProvider
 
         // Zestaw danych rozstrzygamy raz, na starcie: dzień referencyjny, zalogowany
         // prawnik i scenariusz głosu pochodzą z jednego, nazwanego źródła.

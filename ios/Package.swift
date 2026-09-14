@@ -41,7 +41,13 @@ let package = Package(
                 "Resources"
             ],
             // Wyłącznie warstwy niezależne od SwiftUI/UIKit/AVFoundation.
+            // `Core/Auth/BiometricAuthenticator.swift` (LocalAuthentication)
+            // zostaje poza pakietem — stąd wskazujemy pojedyncze pliki, a nie
+            // cały katalog.
             sources: [
+                "Core/Auth/MobileAuthModels.swift",
+                "Core/Auth/MobileAuthClient.swift",
+                "Core/Auth/MobileSessionKeeper.swift",
                 "Core/Domain",
                 "Core/Voice/VoiceEvents.swift",
                 "Core/Voice/VoiceServices.swift",

@@ -63,6 +63,13 @@ paths:
                   type: string
                   description: Identyfikator instalacji aplikacji; wiąże sesję z urządzeniem.
                 device_name: { type: string }
+                totp:
+                  type: string
+                  description: >-
+                    Kod jednorazowy TOTP. Wymagany, gdy konto ma skonfigurowany
+                    TOTP (backend nie obniża progu bezpieczeństwa konta dla
+                    aplikacji natywnej); pomijany dla kont bez TOTP. Rozszerzenie
+                    kontraktu z M1 — pole opcjonalne, więc starsi klienci go nie wysyłają.
       responses:
         "200":
           description: Sesja utworzona
