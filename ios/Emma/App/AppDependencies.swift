@@ -54,6 +54,15 @@ public final class AppDependencies: ObservableObject {
     /// z wątku tła byłby wyścigiem, a nie skrótem.
     private let accessTokenProvider: (@MainActor @Sendable () -> String?)?
 
+    /// Token dla warstw API z możliwością odnowienia (FIX C). W odróżnieniu od
+    /// synchronicznego `accessTokenProvider` (migawka dla transportu głosu) ten
+    /// dostawca czeka na aktora sesji i **odnawia access token z wyprzedzeniem**,
+    /// zamiast wysyłać wygasły. Zwraca `nil`, gdy sesji naprawdę nie ma.
+    private let sessionTokenProvider: (@MainActor @Sendable () async -> String?)?
+    /// Wymuszone odnowienie po 401 z zasobu danych. Zwraca nowy token albo `nil`;
+    /// `nil` po nieudanym odnowieniu oznacza koniec sesji (401), a nie brak sieci.
+    private let sessionTokenRefresher: (@MainActor @Sendable () async -> String?)?
+
     /// Token, którym warstwy zależne od API podpisują żądania. To wartość
     /// z ostatniego logowania/odnowienia — odświeżaniem zajmuje się `AuthStore`.
     public var accessToken: String? { accessTokenProvider?() }
@@ -106,28 +115,58 @@ public final class AppDependencies: ObservableObject {
         repository: (any EmmaRepository)? = nil,
         fixtureName: String? = nil,
         accessTokenProvider: (@MainActor @Sendable () -> String?)? = nil,
+        sessionTokenProvider: (@MainActor @Sendable () async -> String?)? = nil,
+        sessionTokenRefresher: (@MainActor @Sendable () async -> String?)? = nil,
         currentUserProvider: (@MainActor @Sendable () -> User?)? = nil
     ) {
         self.configuration = configuration
         self.fixtureName = fixtureName
         self.accessTokenProvider = accessTokenProvider
+        self.sessionTokenProvider = sessionTokenProvider
+        self.sessionTokenRefresher = sessionTokenRefresher
 
         // Zestaw danych rozstrzygamy raz, na starcie: dzień referencyjny, zalogowany
         // prawnik i scenariusz głosu pochodzą z jednego, nazwanego źródła.
         let resolution = DemoFixtureCatalog.resolve(fixtureName)
         self.fixture = resolution.fixture
 
-        let resolvedClock: Clock = clock ?? DemoClock(
-            referenceDate: resolution.fixture.referenceDay,
-            hour: resolution.fixture.referenceHour,
-            minute: resolution.fixture.referenceMinute
-        )
+        // FIX D: zegar demo (stały dzień fixture, np. 2026-09-11) obowiązuje
+        // **wyłącznie** w Demo. W Staging/Production „dziś” musi pochodzić
+        // z prawdziwego zegara, bo inaczej `from`/`through` i `due_on_or_before`
+        // pytają backend o dzień z fixture, a ekran „Dziś” pokazuje nie ten dzień.
+        let resolvedClock: Clock
+        if let clock {
+            resolvedClock = clock
+        } else if configuration.usesMockServices {
+            resolvedClock = DemoClock(
+                referenceDate: resolution.fixture.referenceDay,
+                hour: resolution.fixture.referenceHour,
+                minute: resolution.fixture.referenceMinute
+            )
+        } else {
+            resolvedClock = SystemClock()
+        }
         self.clock = resolvedClock
         self.referenceDay = AppDependencies.localDate(from: resolvedClock.now())
 
         let dataset = resolution.fixture.usesLongNames
             ? DemoFixtures.datasetWithLongNames()
             : DemoFixtures.dataset()
+
+        // FIX C: warstwy API pytają o token asynchronicznie (świeży albo odnowiony),
+        // a po 401 mogą raz wymusić odnowienie i ponowić żądanie. Gdy aplikacja nie
+        // wstrzyknęła dostawcy sesji (podglądy, testy), zostaje dawna migawka.
+        let apiTokenProvider: @Sendable () async -> String? = {
+            if let sessionTokenProvider { return await sessionTokenProvider() }
+            return await accessTokenProvider?()
+        }
+        let apiTokenRefresher: (@Sendable () async -> String?)?
+        if let sessionTokenRefresher {
+            apiTokenRefresher = { await sessionTokenRefresher() }
+        } else {
+            apiTokenRefresher = nil
+        }
+
         if let repository {
             self.repository = repository
         } else if !configuration.usesMockServices, let baseURL = configuration.apiBaseURL {
@@ -136,7 +175,8 @@ public final class AppDependencies: ObservableObject {
             // są pokazywane jako prawdziwe. Demo i brak adresu nadal używają mocka.
             self.repository = BackendRepository(
                 baseURL: baseURL,
-                accessTokenProvider: { await accessTokenProvider?() },
+                accessTokenProvider: apiTokenProvider,
+                tokenRefresher: apiTokenRefresher,
                 // Użytkownik pochodzi z sesji mobilnej (odtworzonej albo świeżo
                 // zalogowanej). Bez niej repozytorium zgłasza brak sesji zamiast
                 // podstawiać konto demo.
@@ -159,7 +199,8 @@ public final class AppDependencies: ObservableObject {
         } else if !configuration.usesMockServices, let baseURL = configuration.apiBaseURL {
             voiceRepository = BackendVoiceSessionRepository(
                 baseURL: baseURL,
-                accessTokenProvider: { await accessTokenProvider?() }
+                accessTokenProvider: apiTokenProvider,
+                tokenRefresher: apiTokenRefresher
             )
         } else {
             voiceRepository = self.repository
@@ -213,7 +254,8 @@ public final class AppDependencies: ObservableObject {
             configuration: self.configuration,
             fixtureName: fixtureName,
             accessToken: accessToken,
-            installationID: InstallationIdentifier.current,
+            // Ten sam identyfikator instalacji co w logowaniu (FIX A).
+            installationID: InstallationIdentity.current(),
             mockScenarioName: voiceScenarioName
         )
     }

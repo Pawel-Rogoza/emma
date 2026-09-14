@@ -111,8 +111,9 @@ final class AuthStore: ObservableObject {
         // zobaczyłby 401 mimo ważnej sesji.
         if let session, session.restoredAtLaunch {
             Task { [weak self] in
-                guard let token = try? await session.accessToken() else { return }
-                self?.accessToken = token
+                // Świeży albo odnowiony token; porażka odnowienia 401 kończy
+                // sesję, a nie zostawia aplikacji bez nagłówka Authorization.
+                _ = await self?.sessionAccessToken()
             }
         }
     }
@@ -196,6 +197,64 @@ final class AuthStore: ObservableObject {
         defaults.set(true, forKey: Self.signedInKey)
         state = .unlocked
         return true
+    }
+
+    // MARK: Token dla warstw API (FIX B i C)
+
+    /// Token dostępu dla repozytoriów danych i głosu.
+    ///
+    /// Czeka na aktora sesji, więc dostaje token **ważny** (odnawiany z wyprzedzeniem
+    /// przez `MobileSessionKeeper`), a nie migawkę, która mogła wygasnąć.
+    /// Gdy odnowienie zawiedzie na 401 (token odświeżania też wygasł), kończymy
+    /// sesję. Brak sieci **nie** kasuje sesji — zwracamy ostatni znany token,
+    /// a żądanie samo zgłosi błąd transportu.
+    func sessionAccessToken() async -> String? {
+        guard let session else { return accessToken }
+        do {
+            let token = try await session.accessToken()
+            accessToken = token
+            return token
+        } catch MobileAuthError.unauthorized {
+            expireRemoteSession()
+            return nil
+        } catch {
+            return accessToken
+        }
+    }
+
+    /// Wymuszone odnowienie po 401 z zasobu danych. Klient HTTP woła to **raz**
+    /// i ponawia żądanie z nowym tokenem. `nil` znaczy „nie udało się odnowić”:
+    /// po 401 z odnowienia sesja jest już zamknięta, przy błędzie sieci zostaje
+    /// jak jest (żadnego wylogowania z powodu samej sieci).
+    func refreshSessionAccessToken() async -> String? {
+        guard let session else { return accessToken }
+        do {
+            let refreshed = try await session.refresh()
+            accessToken = refreshed.accessToken
+            remoteUser = refreshed.user
+            return refreshed.accessToken
+        } catch MobileAuthError.unauthorized {
+            expireRemoteSession()
+            return nil
+        } catch {
+            return nil
+        }
+    }
+
+    /// Koniec sesji po stronie aplikacji wywołany odrzuceniem odnowienia (401).
+    /// Tokeny w kluczyku i w aktorze sesji są już usunięte przez
+    /// `MobileSessionKeeper.refresh()`; tu wracamy na ekran logowania i mówimy
+    /// wprost, dlaczego.
+    private func expireRemoteSession() {
+        guard state != .signedOut else { return }
+        defaults.set(false, forKey: Self.signedInKey)
+        accessToken = nil
+        remoteUser = nil
+        notice = "Sesja wygasła. Zaloguj się ponownie."
+        state = .signedOut
+        onUserChanged?(nil)
+        let notify = onSessionEnded
+        Task { await notify?(.loggedOut) }
     }
 
     /// Wylogowanie kasuje zapamiętaną sesję — następny start to znów logowanie.

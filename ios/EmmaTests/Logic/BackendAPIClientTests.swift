@@ -126,6 +126,124 @@ final class BackendAPIClientTests: XCTestCase {
         }
     }
 
+    // MARK: Odświeżenie sesji (FIX C)
+
+    /// 401 → jedno odnowienie → ponowienie z nowym tokenem (kontrakt mobilny).
+    func testUnauthorizedRefreshesOnceAndRetries() async throws {
+        StubURLProtocol.respond(sequence: [
+            (json: Data(#"{"code":"unauthorized","message":"Sesja wygasła."}"#.utf8), status: 401),
+            (json: Data(#"{"items":[],"next_cursor":null,"has_more":false}"#.utf8), status: 200),
+        ])
+        let refreshes = RefreshCounter()
+        let client = BackendAPIClient(
+            baseURL: baseURL,
+            accessToken: { "stary-token" },
+            refreshToken: { refreshes.next() },
+            session: URLSession(configuration: ephemeralConfiguration())
+        )
+
+        let page = try await client.clients(query: "", stage: nil)
+
+        XCTAssertTrue(page.items.isEmpty)
+        XCTAssertEqual(refreshes.value, 1, "401 ma odświeżyć raz, nie w kółko")
+        XCTAssertEqual(StubURLProtocol.requestCount, 2)
+        let requests = StubURLProtocol.allRequests
+        XCTAssertEqual(requests.first?.value(forHTTPHeaderField: "Authorization"), "Bearer stary-token")
+        XCTAssertEqual(requests.last?.value(forHTTPHeaderField: "Authorization"), "Bearer nowy-token")
+    }
+
+    /// Drugie 401 (nawet po odnowieniu) nadal jest błędem sesji — nie ponawiamy w nieskończoność.
+    func testSecondUnauthorizedStaysUnauthorizedAfterRefresh() async throws {
+        StubURLProtocol.respond(sequence: [
+            (json: Data(#"{"code":"unauthorized"}"#.utf8), status: 401),
+            (json: Data(#"{"code":"unauthorized"}"#.utf8), status: 401),
+        ])
+        let refreshes = RefreshCounter()
+        let client = BackendAPIClient(
+            baseURL: baseURL,
+            accessToken: { "stary-token" },
+            refreshToken: { refreshes.next() },
+            session: URLSession(configuration: ephemeralConfiguration())
+        )
+
+        await assertError(.unauthorized) {
+            _ = try await client.clients(query: "", stage: nil)
+        }
+        XCTAssertEqual(refreshes.value, 1)
+        XCTAssertEqual(StubURLProtocol.requestCount, 2)
+    }
+
+    /// 403 to brak uprawnień, nie wygasła sesja: **żadnego** odświeżania ani wylogowania.
+    func testForbiddenNeverRefreshes() async throws {
+        StubURLProtocol.respond(sequence: [
+            (json: Data(#"{"code":"forbidden","message":"Ta sesja należy do innej instalacji."}"#.utf8), status: 403),
+        ])
+        let refreshes = RefreshCounter()
+        let client = BackendAPIClient(
+            baseURL: baseURL,
+            accessToken: { "stary-token" },
+            refreshToken: { refreshes.next() },
+            session: URLSession(configuration: ephemeralConfiguration())
+        )
+
+        await assertError(.forbidden("Ta sesja należy do innej instalacji.")) {
+            _ = try await client.clients(query: "", stage: nil)
+        }
+        XCTAssertEqual(refreshes.value, 0, "403 nie może odświeżać sesji")
+        XCTAssertEqual(StubURLProtocol.requestCount, 1)
+    }
+
+    /// Gdy odnowienie się nie uda (np. brak sieci), żądanie dostaje 401,
+    /// ale klient nie ma prawa wylogować — to należy do `AuthStore`.
+    func testFailedRefreshDoesNotLoopAndReportsUnauthorized() async throws {
+        StubURLProtocol.respond(sequence: [
+            (json: Data(#"{"code":"unauthorized"}"#.utf8), status: 401),
+        ])
+        let refreshes = RefreshCounter(result: nil)
+        let client = BackendAPIClient(
+            baseURL: baseURL,
+            accessToken: { "stary-token" },
+            refreshToken: { refreshes.next() },
+            session: URLSession(configuration: ephemeralConfiguration())
+        )
+
+        await assertError(.unauthorized) {
+            _ = try await client.clients(query: "", stage: nil)
+        }
+        XCTAssertEqual(refreshes.value, 1)
+        XCTAssertEqual(StubURLProtocol.requestCount, 1, "bez nowego tokenu nie ma czym ponowić")
+    }
+
+    private func ephemeralConfiguration() -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        return configuration
+    }
+
+    /// Licznik odnowień z zamkiem: domknięcie `refreshToken` jest `@Sendable`.
+    private final class RefreshCounter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+        private let result: String?
+
+        init(result: String? = "nowy-token") {
+            self.result = result
+        }
+
+        var value: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return count
+        }
+
+        func next() -> String? {
+            lock.lock()
+            defer { lock.unlock() }
+            count += 1
+            return result
+        }
+    }
+
     func testNotFoundMapsToNotFound() async throws {
         StubURLProtocol.respond(json: Data(#"{"code":"not_found","message":"Nie ma."}"#.utf8), status: 404)
         await assertError(.notFound) {

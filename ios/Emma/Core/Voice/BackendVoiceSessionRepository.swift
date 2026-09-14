@@ -27,12 +27,14 @@ public struct BackendVoiceSessionRepository: VoiceSessionRepository, Sendable {
     public init(
         baseURL: URL,
         accessTokenProvider: @escaping @Sendable () async -> String?,
+        tokenRefresher: (@Sendable () async -> String?)? = nil,
         session: URLSession = .shared,
         timeout: TimeInterval = 20
     ) {
         self.api = BackendAPIClient(
             baseURL: baseURL,
             accessToken: accessTokenProvider,
+            refreshToken: tokenRefresher,
             session: session,
             timeout: timeout
         )

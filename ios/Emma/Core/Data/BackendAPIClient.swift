@@ -94,16 +94,26 @@ public struct BackendAPIClient: Sendable {
     /// głównym aktorze (`AuthStore`). Synchroniczna lektura z wątku tła byłaby
     /// wyścigiem o dane, a nie optymalizacją (Swift 6: pełna kontrola izolacji).
     private let accessToken: @Sendable () async -> String?
+    /// Jednorazowe odnowienie po 401 (FIX C). Gdy `nil` (podglądy, testy
+    /// transportu), klient zachowuje się jak wcześniej: 401 jest błędem.
+    ///
+    /// Kontrakt: 401 → jedno odnowienie → ponowienie żądania z nowym tokenem.
+    /// Dopiero nieudane odnowienie (albo drugie 401) jest błędem `unauthorized`
+    /// i to `AuthStore` decyduje o zakończeniu sesji. 403 nie odświeża i **nie**
+    /// wylogowuje — to brak uprawnień do zasobu, nie wygasła sesja.
+    private let refreshToken: (@Sendable () async -> String?)?
     private let timeout: TimeInterval
 
     public init(
         baseURL: URL,
         accessToken: @escaping @Sendable () async -> String?,
+        refreshToken: (@Sendable () async -> String?)? = nil,
         session: URLSession = .shared,
         timeout: TimeInterval = 20
     ) {
         self.baseURL = baseURL
         self.accessToken = accessToken
+        self.refreshToken = refreshToken
         self.session = session
         self.timeout = timeout
     }
@@ -262,11 +272,8 @@ public struct BackendAPIClient: Sendable {
     // MARK: Żądanie i odpowiedź
 
     private func get<T: Decodable>(_ path: String, query: [URLQueryItem]) async throws -> T {
-        let token = await accessToken()
-        let request = try makeRequest(path: path, query: query, token: token)
-        let (data, response) = try await perform(request)
-        guard let http = response as? HTTPURLResponse else {
-            throw BackendRepositoryError.transport("nieprawidłowa odpowiedź serwera")
+        let (data, http) = try await authenticatedRequest { token in
+            try self.makeRequest(path: path, query: query, token: token)
         }
         guard (200..<300).contains(http.statusCode) else {
             throw Self.error(from: http, data: data)
@@ -327,23 +334,20 @@ public struct BackendAPIClient: Sendable {
         body: B,
         idempotencyKey: String
     ) async throws -> T {
-        let token = await accessToken()
         let encoded: Data
         do {
             encoded = try Self.encoder.encode(body)
         } catch {
             throw BackendRepositoryError.decoding("nie udało się zapisać treści żądania: \(error)")
         }
-        let request = try makeRequest(
-            path: path,
-            method: method,
-            body: encoded,
-            idempotencyKey: idempotencyKey,
-            token: token
-        )
-        let (data, response) = try await perform(request)
-        guard let http = response as? HTTPURLResponse else {
-            throw BackendRepositoryError.transport("nieprawidłowa odpowiedź serwera")
+        let (data, http) = try await authenticatedRequest { token in
+            try self.makeRequest(
+                path: path,
+                method: method,
+                body: encoded,
+                idempotencyKey: idempotencyKey,
+                token: token
+            )
         }
         guard (200..<300).contains(http.statusCode) else {
             throw Self.error(from: http, data: data)
@@ -361,20 +365,47 @@ public struct BackendAPIClient: Sendable {
         path: String,
         idempotencyKey: String
     ) async throws {
-        let token = await accessToken()
-        let request = try makeRequest(
-            path: path,
-            method: method,
-            idempotencyKey: idempotencyKey,
-            token: token
-        )
-        let (data, response) = try await perform(request)
-        guard let http = response as? HTTPURLResponse else {
-            throw BackendRepositoryError.transport("nieprawidłowa odpowiedź serwera")
+        let (data, http) = try await authenticatedRequest { token in
+            try self.makeRequest(
+                path: path,
+                method: method,
+                idempotencyKey: idempotencyKey,
+                token: token
+            )
         }
         guard (200..<300).contains(http.statusCode) else {
             throw Self.error(from: http, data: data)
         }
+    }
+
+    // MARK: Żądanie z obsługą wygaśnięcia tokenu
+
+    /// Wykonuje żądanie z bieżącym tokenem, a przy 401 **raz** odnawia token
+    /// i ponawia. Zwraca surową odpowiedź (także błędną), żeby wołający mógł
+    /// zmapować status na właściwy błąd domenowy.
+    ///
+    /// Świadomie nie ponawiamy przy 403: brak uprawnień do zasobu nie jest
+    /// wygasłą sesją i nie może prowadzić do wylogowania.
+    private func authenticatedRequest(
+        _ make: @Sendable (String?) throws -> URLRequest
+    ) async throws -> (Data, HTTPURLResponse) {
+        let token = await accessToken()
+        let (data, http) = try await performAndValidate(try make(token))
+        guard http.statusCode == 401,
+              let refreshToken,
+              let refreshed = await refreshToken(),
+              !refreshed.isEmpty else {
+            return (data, http)
+        }
+        return try await performAndValidate(try make(refreshed))
+    }
+
+    private func performAndValidate(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else {
+            throw BackendRepositoryError.transport("nieprawidłowa odpowiedź serwera")
+        }
+        return (data, http)
     }
 
     /// Koder tworzymy na każde wywołanie — jak dekoder, żeby nie współdzielić

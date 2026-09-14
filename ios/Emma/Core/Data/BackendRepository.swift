@@ -24,6 +24,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
     public init(
         baseURL: URL,
         accessTokenProvider: @escaping @Sendable () async -> String?,
+        tokenRefresher: (@Sendable () async -> String?)? = nil,
         currentUser: @escaping @Sendable () async -> User?,
         session: URLSession = .shared,
         timeout: TimeInterval = 20
@@ -31,6 +32,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
         self.api = BackendAPIClient(
             baseURL: baseURL,
             accessToken: accessTokenProvider,
+            refreshToken: tokenRefresher,
             session: session,
             timeout: timeout
         )

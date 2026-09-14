@@ -119,6 +119,53 @@ final class MobileAuthStoreTests: XCTestCase {
         XCTAssertEqual(auth.state, .locked)
     }
 
+    /// Po restarcie token musi trafić do `AuthStore` z kluczyka, zanim powłoka
+    /// zdąży wczytać dane. Inaczej ekrany lecą bez `Authorization` i dostają 401.
+    func testRestoredSessionProvidesAccessTokenAtLaunch() async throws {
+        let (auth, _, _) = makeRemoteStore(stored: FakeClient.session(), rememberSession: true)
+        for _ in 0..<100 where auth.accessToken == nil {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(auth.accessToken, "access-testowy")
+    }
+
+    // MARK: Odświeżenie i koniec sesji (FIX B/C)
+
+    /// Odnowienie odrzucone przez backend (401) kończy sesję: wracamy na logowanie.
+    func testUnauthorizedRefreshEndsSessionAndClearsKeychain() async {
+        let client = FakeClient()
+        let (auth, _, store) = makeRemoteStore(
+            client: client,
+            stored: FakeClient.session(),
+            rememberSession: true
+        )
+        client.result = .failure(.unauthorized("Token odświeżania wygasł."))
+
+        let token = await auth.refreshSessionAccessToken()
+
+        XCTAssertNil(token)
+        XCTAssertEqual(auth.state, .signedOut)
+        XCTAssertEqual(auth.notice, "Sesja wygasła. Zaloguj się ponownie.")
+        XCTAssertNil(try? store.load())
+    }
+
+    /// Brak sieci przy odnowieniu **nie** może wylogować: sesja i kluczyk zostają.
+    func testTransportFailureDuringRefreshKeepsSession() async {
+        let client = FakeClient()
+        let (auth, _, store) = makeRemoteStore(
+            client: client,
+            stored: FakeClient.session(),
+            rememberSession: true
+        )
+        client.result = .failure(.transport("brak sieci"))
+
+        let token = await auth.refreshSessionAccessToken()
+
+        XCTAssertNil(token)
+        XCTAssertEqual(auth.state, .locked)
+        XCTAssertNotNil(try? store.load())
+    }
+
     // MARK: Logowanie
 
     func testSuccessfulRemoteSignInUnlocksAndKeepsToken() async {
@@ -311,5 +358,32 @@ final class AppDependenciesTokenTests: XCTestCase {
 
     func testDemoHasNoAccessToken() {
         XCTAssertNil(AppDependencies.demo().accessToken)
+    }
+
+    // MARK: Dzień z fixture tylko w Demo (FIX D)
+
+    /// Staging/Production muszą pytać backend o **prawdziwy** dzień, a nie o stałą
+    /// 2026-09-11 z fixture. Inaczej `from`/`through` i `due_on_or_before` mijają
+    /// się z dniem, który widzi użytkownik.
+    func testProductionUsesRealClockAndNotFixtureDay() {
+        let production = AppConfiguration(
+            environment: .production,
+            apiBaseURL: URL(string: "https://majkuny.pl")!,
+            defaultLocale: "pl"
+        )
+        let dependencies = AppDependencies(configuration: production, fixtureName: "today-default")
+
+        XCTAssertTrue(dependencies.clock is SystemClock)
+        XCTAssertEqual(dependencies.today, SystemClock().today())
+        XCTAssertNotEqual(dependencies.today, LocalDate(year: 2026, month: 9, day: 11))
+    }
+
+    /// Demo nadal ma deterministyczny dzień referencyjny z fixture.
+    func testDemoKeepsFixtureReferenceDay() {
+        let demo = AppConfiguration(environment: .demo, apiBaseURL: nil, defaultLocale: "pl")
+        let dependencies = AppDependencies(configuration: demo, fixtureName: "today-default")
+
+        XCTAssertTrue(dependencies.clock is DemoClock)
+        XCTAssertEqual(dependencies.today, LocalDate(year: 2026, month: 9, day: 11))
     }
 }

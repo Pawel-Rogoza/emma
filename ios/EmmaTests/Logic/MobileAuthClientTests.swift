@@ -239,13 +239,30 @@ final class StubURLProtocol: URLProtocol {
     // ale każdy dostęp przechodzi przez `lock`. Bez tego adnotacji tryb Swift 6
     // odrzuca statyczną mutowalną własność.
     nonisolated(unsafe) private static var stub = Stub(status: 200, body: Data(), headers: [:], failure: nil)
+    /// Kolejka odpowiedzi dla jednego wywołania: pozwala sprawdzić ponowienie
+    /// po 401 (pierwsza odpowiedź 401, druga 200). Pusta = używamy `stub`.
+    nonisolated(unsafe) private static var stubQueue: [Stub] = []
     nonisolated(unsafe) private static var recordedRequest: URLRequest?
+    nonisolated(unsafe) private static var recordedRequests: [URLRequest] = []
     nonisolated(unsafe) private static var recordedBody: [String: Any]?
 
     static var lastRequest: URLRequest? {
         lock.lock()
         defer { lock.unlock() }
         return recordedRequest
+    }
+
+    /// Wszystkie żądania od ostatniego `reset()` — w kolejności wysłania.
+    static var allRequests: [URLRequest] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedRequests
+    }
+
+    static var requestCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedRequests.count
     }
 
     static var lastBody: [String: Any]? {
@@ -257,12 +274,21 @@ final class StubURLProtocol: URLProtocol {
     static func respond(json: Data, status: Int, headers: [String: String] = [:]) {
         lock.lock()
         defer { lock.unlock() }
+        stubQueue = []
         stub = Stub(status: status, body: json, headers: headers, failure: nil)
+    }
+
+    /// Odpowiedzi po kolei na kolejne żądania. Po wyczerpaniu kolejki wraca `stub`.
+    static func respond(sequence: [(json: Data, status: Int)]) {
+        lock.lock()
+        defer { lock.unlock() }
+        stubQueue = sequence.map { Stub(status: $0.status, body: $0.json, headers: [:], failure: nil) }
     }
 
     static func fail(with error: URLError) {
         lock.lock()
         defer { lock.unlock() }
+        stubQueue = []
         stub = Stub(status: 0, body: Data(), headers: [:], failure: error)
     }
 
@@ -270,7 +296,9 @@ final class StubURLProtocol: URLProtocol {
         lock.lock()
         defer { lock.unlock() }
         stub = Stub(status: 200, body: Data(), headers: [:], failure: nil)
+        stubQueue = []
         recordedRequest = nil
+        recordedRequests = []
         recordedBody = nil
     }
 
@@ -283,12 +311,18 @@ final class StubURLProtocol: URLProtocol {
         let body = request.httpBody ?? Self.readStream(request.httpBodyStream)
         Self.lock.lock()
         Self.recordedRequest = request
+        Self.recordedRequests.append(request)
         if let body, let parsed = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
             Self.recordedBody = parsed
         } else {
             Self.recordedBody = nil
         }
-        let current = Self.stub
+        let current: Stub
+        if !Self.stubQueue.isEmpty {
+            current = Self.stubQueue.removeFirst()
+        } else {
+            current = Self.stub
+        }
         Self.lock.unlock()
 
         if let failure = current.failure {

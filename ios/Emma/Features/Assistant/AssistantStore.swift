@@ -892,7 +892,11 @@ final class AssistantStore: ObservableObject {
         await dependencies.voice.startConversation(
             context: currentContext(),
             user: dependencies.currentUser,
-            installationID: InstallationIdentifier.current,
+            // Jeden identyfikator instalacji dla całej aplikacji (FIX A): ten sam,
+            // którym podpisuje się logowanie (`AuthStore`). Wcześniej warstwa głosu
+            // generowała własny identyfikator, więc backend odrzucał każde
+            // `POST /voice/sessions` jako należące do innej instalacji (403).
+            installationID: InstallationIdentity.current(),
             // Jedna decyzja „mock czy dostawca” dla całej aplikacji. W Demo zawsze
             // mock (bez sieci i bez kont), ale to fabryka o tym mówi, a nie ekran.
             transportFactory: { [dependencies] configuration in
@@ -1315,19 +1319,7 @@ enum AssistantStoreRegistry {
     @MainActor static let shared = AssistantStore()
 }
 
-// MARK: - Identyfikator instalacji
-//
-// Stabilny, lokalny i jawny — nie jest sekretem i nie jest kluczem dostawcy (§1.8).
-
-enum InstallationIdentifier {
-    private static let key = "emma.installation-id"
-
-    static var current: String {
-        if let existing = UserDefaults.standard.string(forKey: key), !existing.isEmpty {
-            return existing
-        }
-        let created = "demo-installation-\(UUID().uuidString.lowercased())"
-        UserDefaults.standard.set(created, forKey: key)
-        return created
-    }
-}
+// Identyfikator instalacji ma jedno źródło: `InstallationIdentity`
+// (`Features/Auth/KeychainMobileSessionStore.swift`). Trzymanie drugiego,
+// niezależnego identyfikatora dla głosu („demo-installation-…”) dawało dwa
+// różne `installation_id` w jednej instalacji i backend odpowiadał 403.

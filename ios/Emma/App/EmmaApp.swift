@@ -25,6 +25,14 @@ struct EmmaApp: App {
             configuration: configuration,
             fixtureName: AppConfiguration.fixtureName(),
             accessTokenProvider: { [weak authStore] in authStore?.accessToken },
+            // FIX B/C: repozytoria pytają o ważny token (z odnowieniem) i mogą
+            // raz wymusić odnowienie po 401, zamiast iść bez `Authorization`.
+            sessionTokenProvider: { [weak authStore] in
+                await authStore?.sessionAccessToken()
+            },
+            sessionTokenRefresher: { [weak authStore] in
+                await authStore?.refreshSessionAccessToken()
+            },
             // Użytkownik pochodzi z sesji mobilnej (świeżo zalogowanej albo
             // odtworzonej z kluczyka), a nie z danych demo.
             currentUserProvider: { [weak authStore] in
