@@ -11,7 +11,14 @@ public enum BackendRepositoryError: Error, Equatable, Sendable {
     /// 401. Token nie jest czyszczony po stronie klienta HTTP — odświeżaniem
     /// sesji zajmuje się `AuthStore`, a warstwa danych tylko zgłasza stan.
     case unauthorized
+    /// 403. Sesja istnieje, ale należy do innego użytkownika albo innej
+    /// instalacji — ponawianie nic nie da, trzeba zakończyć próbę.
+    case forbidden(String?)
     case notFound
+    /// 409. Konflikt wersji kontekstu albo stanu sesji. `currentVersion` jest
+    /// z kontraktu (`current_version`), żeby ekran mógł pokazać stan faktyczny,
+    /// zamiast kazać użytkownikowi zgadywać.
+    case conflict(currentVersion: Int?, message: String?)
     case server(status: Int, message: String?)
     case transport(String)
     /// Trasa, której kontrakt mobilny jeszcze nie ma. Nazwa operacji mówi, co
@@ -23,8 +30,12 @@ public enum BackendRepositoryError: Error, Equatable, Sendable {
         switch self {
         case .unauthorized:
             return "Sesja wygasła. Zaloguj się ponownie."
+        case .forbidden(let message):
+            return message ?? "Ta rozmowa należy do innego urządzenia."
         case .notFound:
             return "Nie znaleziono danych."
+        case .conflict(_, let message):
+            return message ?? "Dane zmieniły się w międzyczasie — odśwież i spróbuj ponownie."
         case .server(_, let message):
             return message ?? "Backend zwrócił błąd."
         case .transport(let reason):
@@ -189,7 +200,14 @@ public struct BackendAPIClient: Sendable {
         }
     }
 
-    private func makeRequest(path: String, query: [URLQueryItem], token: String?) throws -> URLRequest {
+    private func makeRequest(
+        path: String,
+        query: [URLQueryItem] = [],
+        method: String = "GET",
+        body: Data? = nil,
+        idempotencyKey: String? = nil,
+        token: String?
+    ) throws -> URLRequest {
         guard var components = URLComponents(
             url: baseURL.appendingPathComponent(path),
             resolvingAgainstBaseURL: false
@@ -203,14 +221,85 @@ public struct BackendAPIClient: Sendable {
             throw BackendRepositoryError.transport("nieprawidłowe zapytanie")
         }
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
+        request.httpMethod = method
         request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let body {
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        if let idempotencyKey, !idempotencyKey.isEmpty {
+            // Kontrakt wymaga klucza przy zapisach; bez niego backend odrzuca
+            // żądanie (422), więc nie wysyłamy zapisu „na próbę”.
+            request.setValue(idempotencyKey, forHTTPHeaderField: "Idempotency-Key")
+        }
         if let token, !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         return request
     }
+
+    /// Zapis z odpowiedzią JSON. `Idempotency-Key` jest wymagany przez kontrakt,
+    /// więc wywołanie bez niego jest błędem programisty, a nie użytkownika.
+    private func send<B: Encodable, T: Decodable>(
+        _ method: String,
+        path: String,
+        body: B,
+        idempotencyKey: String
+    ) async throws -> T {
+        let token = await accessToken()
+        let encoded: Data
+        do {
+            encoded = try Self.encoder.encode(body)
+        } catch {
+            throw BackendRepositoryError.decoding("nie udało się zapisać treści żądania: \(error)")
+        }
+        let request = try makeRequest(
+            path: path,
+            method: method,
+            body: encoded,
+            idempotencyKey: idempotencyKey,
+            token: token
+        )
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else {
+            throw BackendRepositoryError.transport("nieprawidłowa odpowiedź serwera")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw Self.error(from: http, data: data)
+        }
+        do {
+            return try Self.decoder.decode(T.self, from: data)
+        } catch {
+            throw BackendRepositoryError.decoding("\(error)")
+        }
+    }
+
+    /// Zapis bez treści oczekiwanej w odpowiedzi (204).
+    private func sendNoContent(
+        _ method: String,
+        path: String,
+        idempotencyKey: String
+    ) async throws {
+        let token = await accessToken()
+        let request = try makeRequest(
+            path: path,
+            method: method,
+            idempotencyKey: idempotencyKey,
+            token: token
+        )
+        let (data, response) = try await perform(request)
+        guard let http = response as? HTTPURLResponse else {
+            throw BackendRepositoryError.transport("nieprawidłowa odpowiedź serwera")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw Self.error(from: http, data: data)
+        }
+    }
+
+    /// Koder tworzymy na każde wywołanie — jak dekoder, żeby nie współdzielić
+    /// instancji, która nie jest `Sendable`.
+    static var encoder: JSONEncoder { JSONEncoder() }
 
     private func perform(_ request: URLRequest) async throws -> (Data, URLResponse) {
         do {
@@ -232,6 +321,15 @@ public struct BackendAPIClient: Sendable {
         let message: String
     }
 
+    /// Ciało konfliktu wersji (`version_conflict`) niesie `current_version`.
+    private struct ErrorVersionBody: Decodable {
+        let currentVersion: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case currentVersion = "current_version"
+        }
+    }
+
     /// Mapowanie odpowiedzi błędu po statusie. Ciało `{code, message}` służy
     /// tylko do pokazania komunikatu; o rodzaju błędu decyduje status, bo to on
     /// jest częścią transportu i nie zależy od wersji kontraktu.
@@ -240,8 +338,15 @@ public struct BackendAPIClient: Sendable {
         switch response.statusCode {
         case 401:
             return .unauthorized
+        case 403:
+            return .forbidden(message)
         case 404:
             return .notFound
+        case 409:
+            // Konflikt wersji: kontrakt dokłada `current_version`, żeby aplikacja
+            // mogła pokazać wersję faktyczną, a nie tylko „błąd”.
+            let version = (try? JSONDecoder().decode(ErrorVersionBody.self, from: data))?.currentVersion
+            return .conflict(currentVersion: version, message: message)
         default:
             return .server(status: response.statusCode, message: message)
         }
