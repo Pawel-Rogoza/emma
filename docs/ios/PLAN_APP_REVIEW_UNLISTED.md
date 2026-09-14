@@ -18,6 +18,33 @@ i w jakiej kolejności.
 | Konto testowe dla recenzenta | brak |
 | Polityka prywatności, karta App Privacy | brak |
 
+## Zmiana decyzji (2026-09-14, później tego dnia)
+
+Zamiast pokazywać w recenzji build bez prawdziwego głosu i wiadomości:
+**wstrzymujemy wysłanie do App Review do czasu prawdziwych integracji**
+(ElevenLabs, APNs, WhatsApp Business). Recenzja nie jest celem samym w sobie —
+ma pokazać działającą Emmę, a nie jej zakres.
+
+**Co to zmienia praktycznie:** nic nie stoi na przeszkodzie, żebyś miał Emmę na
+swoim iPhonie wcześniej — do tego służy **TestFlight (testy wewnętrzne)** albo
+**Ad Hoc**, które nie przechodzą App Review. Kolejność się nie zmienia:
+najpierw podłączyć zapisy i ustawić adres backendu, potem wgrać build na
+TestFlight i testować na własnym telefonie, a do App Store wysłać później,
+gdy głos i WhatsApp będą prawdziwe.
+
+### Czego potrzebuję od Ciebie do prawdziwych integracji
+
+| Integracja | Czego brakuje |
+| --- | --- |
+| Głos (M5) | konto ElevenLabs + **ID agenta** + klucz API (sekret zostaje na serwerze, nigdy w aplikacji); backend wystawia wtedy `/voice/conversation-token` |
+| Asystent tekstowy | klucz do modelu (Qwen/DashScope), jeśli asystent ma działać poza mockiem |
+| Powiadomienia (APNs) | klucz `.p8` + **Key ID** + **Team ID** dla bundle `pl.kancelaria.emma` |
+| WhatsApp (M6) | konto WhatsApp Business (Meta): numer, phone number ID, trwały token, token weryfikacji webhooka |
+| App Store Connect | rekord aplikacji dla `pl.kancelaria.emma` + URL polityki prywatności |
+
+Bez tych danych M5 i M6 mogę doprowadzić tylko do granicy „trasy i kontrakt
+przetestowane”, ale **nie** zadeklaruję, że głos albo wysyłka WhatsApp działają.
+
 ## Kolejność prac
 
 1. **Podłączyć zapisy do backendu** (trasy działają od M4a): `createTask`,
