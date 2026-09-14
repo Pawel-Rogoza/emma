@@ -5,6 +5,8 @@
 
 EMMA_BUNDLE_ID = pl.kancelaria.emma
 EMMA_ENVIRONMENT = production
-EMMA_API_BASE_URL = https://majkuny.pl
+// Wartość składamy przez `$()`, bo w xcconfig `//` rozpoczyna komentarz i
+// dosłowne `https://…` zostałoby obcięte do `https:`.
+EMMA_API_BASE_URL = https:/$()/majkuny.pl
 EMMA_DEVELOPMENT_TEAM = QZ25N94YZ8
 EMMA_DEFAULT_LOCALE = pl

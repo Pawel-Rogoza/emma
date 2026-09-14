@@ -79,6 +79,10 @@ struct EmmaApp: App {
             }
             if phase != .active {
                 Task { await dependencies.voice.handleApplicationBackgrounded() }
+            } else {
+                // Powrót na pierwszy plan: pytamy backend o faktyczny stan sesji,
+                // żeby przejęcie przez inne urządzenie nie uszło uwadze (§5.6).
+                Task { await dependencies.voice.handleApplicationForegrounded() }
             }
         }
     }

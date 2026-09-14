@@ -104,6 +104,17 @@ final class AuthStore: ObservableObject {
                 usesRemoteAuth: self.session != nil
             )
         }
+
+        // Odtworzona sesja nie ma jeszcze tokenu w pamięci: pobieramy go z kluczyka
+        // (i odnawiamy, gdy jest blisko wygaśnięcia). Bez tego po restarcie aplikacji
+        // każde żądanie głosu i danych szłoby bez nagłówka Authorization, a użytkownik
+        // zobaczyłby 401 mimo ważnej sesji.
+        if let session, session.restoredAtLaunch {
+            Task { [weak self] in
+                guard let token = try? await session.accessToken() else { return }
+                self?.accessToken = token
+            }
+        }
     }
 
     // MARK: Tryb pracy

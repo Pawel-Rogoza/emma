@@ -160,6 +160,12 @@ public final class VoiceSessionCoordinator {
                 )
             )
             sessionConfiguration = configuration
+            startedAt = clock.now()
+            lastActivityAt = startedAt
+            // Stróż limitów działa też na ścieżce produkcyjnej. Bez tego limity
+            // czasu i uzgodnienie statusu z backendem działałyby wyłącznie dla
+            // transportu wstrzykniętego przez `attach` (podglądy i testy).
+            startLimitWatchdog()
             let transport = transportFactory(configuration)
             self.transport = transport
             state.sessionID = configuration.sessionID
@@ -856,6 +862,16 @@ public final class VoiceSessionCoordinator {
         guard state.connection == .connected else { return }
         state.lastError = "Rozmowa wstrzymana. Wróć do aplikacji."
         await end(reason: .applicationBackgrounded, preserveDraft: true, revokedCapability: true)
+    }
+
+    /// Powrót aplikacji na pierwszy plan. Sesja mogła zostać przejęta przez inne
+    /// urządzenie albo zamknięta po stronie backendu, a my wciąż mamy połączenie.
+    /// Pytamy więc o faktyczny stan (`GET /voice/sessions/{id}/status`), zamiast
+    /// zgadywać go z zegara (§5.6). Zwykle to no-op: przejście w tło kończy u nas
+    /// sesję, ale ma znaczenie, gdy tło zostało pominięte (np. przerwanie systemowe).
+    public func handleApplicationForegrounded() async {
+        guard state.sessionID != nil else { return }
+        _ = await reconcileSessionWithBackend()
     }
 
     public func handleUserLoggedOut() async {
