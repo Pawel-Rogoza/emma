@@ -1004,7 +1004,13 @@ components:
         briefing: { type: [string, "null"] }
         incoming_message: { type: [string, "null"] }
         incoming_translation: { type: [string, "null"] }
-        incoming_time: { $ref: "#/components/schemas/TimeOfDay" }
+        incoming_time:
+          type: [string, "null"]
+          pattern: "^[0-9]{2}:[0-9]{2}$"
+          description: >-
+            Godzina ostatniej wiadomości przychodzącej. `null` razem z
+            `incoming_message: null` — gdy nie ma wiadomości, nie ma też godziny;
+            wpisanie tu 00:00 byłoby nieprawdą.
         needs_reply: { type: boolean }
         version: { $ref: "#/components/schemas/Version" }
 
