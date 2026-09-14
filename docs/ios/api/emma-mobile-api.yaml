@@ -26,8 +26,18 @@ info:
     Nazwy typów odpowiadają typom domenowym aplikacji, żeby mapowanie było jednoznaczne.
 
 servers:
-  - url: https://api.example.invalid/v1
-    description: Adres przykładowy — właściwy pochodzi z `EMMA_API_BASE_URL` w `.xcconfig`.
+  - url: https://majkuny.pl/api/mobile/v1
+    description: |
+      Baza adresów mobilnych. Aplikacja składa URL jako
+      `EMMA_API_BASE_URL` (sam host, np. `https://majkuny.pl`) + `api/mobile/v1/`
+      + ścieżka z tego dokumentu — dlatego ścieżki są tu zapisane **względnie**
+      (`/clients`, `/voice/sessions`), a nie z powtórzonym prefiksem.
+
+      Trasa po stronie backendu musi leżeć w `src/pages/api/mobile/v1/…`.
+      Plik położony wyżej (np. `src/pages/api/voice/…`) utworzyłby
+      `/api/voice/…` — adres, którego aplikacja **nigdy** nie wywoła i którego
+      nginx nie przepuszcza. To jest błąd, który łatwo popełnić i trudno
+      zauważyć w testach, bo testy podmieniają transport.
 
 tags:
   - name: Sesja
@@ -762,14 +772,69 @@ paths:
 
   # ---------------------------------------------------------------- Głos
 
+  /voice/sessions:
+    post:
+      tags: [Głos]
+      summary: Otwarcie sesji głosowej
+      description: |
+        Zakłada techniczną sesję transportu głosu należącą do **zalogowanego
+        użytkownika i konkretnej instalacji** (`installation_id`). Sesja jest
+        wyłącznie nośnikiem rozmowy: nie tworzy drugiego systemu rozmów, zadań
+        ani akcji — historię asystenta i wnioski o akcje prowadzi nadal
+        kanoniczny silnik asystenta.
+
+        Powtórzenie żądania z tym samym `session_id` nie zakłada drugiej sesji
+        (idempotencja po identyfikatorze z aplikacji).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, installation_id]
+              properties:
+                session_id:
+                  type: string
+                  description: Identyfikator nadany przez aplikację (np. UUID).
+                installation_id: { type: string }
+                context_version: { $ref: "#/components/schemas/Version" }
+                language:
+                  type: string
+                  enum: [pl, uk, ru]
+      responses:
+        "201":
+          description: Sesja otwarta
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VoiceSession" }
+        "200":
+          description: Sesja już istniała (powtórzone żądanie) — ten sam stan
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VoiceSession" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: |
+            Sesja należy do innej instalacji tego samego użytkownika albo
+            do innego użytkownika. Rozmowa nie może przejąć cudzej sesji.
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
   /voice/conversation-token:
     post:
       tags: [Głos]
-      summary: Wydanie krótkotrwałego tokenu rozmowy
+      summary: Wydanie tokenu rozmowy
       description: |
-        Backend tworzy sesję u dostawcy i zwraca **tylko token** — klucz API
-        dostawcy nigdy nie opuszcza serwera. Token jest związany z sesją,
-        użytkownikiem i wersją kontekstu; wygasa szybko.
+        Backend prosi dostawcę o token rozmowy i zwraca aplikacji **tylko
+        token**; klucz API dostawcy nigdy nie opuszcza serwera. Token nie jest
+        zapisywany ani logowany — w bazie zostaje wyłącznie powiązanie sesji
+        z rozmową u dostawcy (`provider_conversation_id`).
+
+        `context_version` musi zgadzać się z wersją bieżącą sesji; niezgodność
+        to `409`, żeby aplikacja nie zaczęła rozmowy o nieaktualnym kontekście.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -792,24 +857,89 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ConversationToken" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: Sesja należy do innej instalacji lub użytkownika. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
         "503":
-          description: Dostawca głosu niedostępny — aplikacja pokazuje to wprost,
-          # Bez udawania, że rozmowa trwa.
+          description: |
+            Dostawca głosu niedostępny albo głos wyłączony konfiguracją.
+            Aplikacja pokazuje to wprost — nie udaje, że rozmowa trwa.
 
-  /voice/sessions/{session_id}:
-    delete:
+  /voice/sessions/{session_id}/context:
+    patch:
       tags: [Głos]
-      summary: Zakończenie sesji głosowej
+      summary: Zmiana kontekstu w trakcie rozmowy
       description: |
-        Wywoływane przy zakończeniu rozmowy, przejściu w tło dłuższym niż dozwolone
-        oraz przy wylogowaniu. Backend zwalnia sesję u dostawcy i kończy naliczanie.
+        Podnosi `context_version` sesji, gdy aplikacja zmieni kontekst (np.
+        wejście w inną sprawę). Powrót do wcześniejszej wersji jest odrzucany:
+        wersja może tylko rosnąć, inaczej token wydany dla nowszej wersji
+        opisywałby starszy kontekst.
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [context_version]
+              properties:
+                context_version: { $ref: "#/components/schemas/Version" }
+                context: { $ref: "#/components/schemas/AssistantContext" }
+      responses:
+        "200":
+          description: Sesja z nową wersją kontekstu
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VoiceSession" }
+        "403": { description: Sesja należy do innej instalacji lub użytkownika. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /voice/sessions/{session_id}/status:
+    get:
+      tags: [Głos]
+      summary: Stan sesji głosowej
+      description: |
+        Aplikacja sprawdza, czy sesja nadal żyje (po powrocie z tła, po
+        odzyskaniu sieci). Odpowiedź mówi wprost, czy sesja jest aktywna,
+        zakończona czy wygasła — bez zgadywania z upływu czasu.
       parameters:
         - name: session_id
           in: path
           required: true
           schema: { type: string }
       responses:
+        "200":
+          description: Stan sesji
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VoiceSession" }
+        "403": { description: Sesja należy do innej instalacji lub użytkownika. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /voice/sessions/{session_id}:
+    delete:
+      tags: [Głos]
+      summary: Zakończenie sesji głosowej
+      description: |
+        Wywoływane przy zakończeniu rozmowy, przejściu w tło dłuższym niż
+        dozwolone oraz przy wylogowaniu. Backend zamyka sesję po swojej stronie
+        i przestaje uznawać wydane dla niej tokeny; powtórzenie jest bezpieczne.
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
         "204": { description: Sesja zamknięta }
+        "403": { description: Sesja należy do innej instalacji lub użytkownika. }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   # ---------------------------------------------------------------- Synchronizacja
 
@@ -1364,24 +1494,57 @@ components:
 
     # ------------------------------------------------------------ Głos
 
+    VoiceSession:
+      type: object
+      required: [id, state, context_version, installation_id, started_at]
+      properties:
+        id: { type: string }
+        state:
+          type: string
+          enum: [active, ended, expired, revoked]
+          description: >-
+            Stan sesji po stronie backendu. `expired` i `revoked` są osobne od
+            `ended`: pierwsze wynika z upływu czasu, drugie z decyzji
+            (wylogowanie, utrata instalacji).
+        context_version: { $ref: "#/components/schemas/Version" }
+        installation_id: { type: string }
+        started_at: { type: string, format: date-time }
+        ended_at: { type: [string, "null"], format: date-time }
+        provider_conversation_id:
+          type: [string, "null"]
+          description: Rozmowa u dostawcy, jeśli już wydano token. Bez tokenu — `null`.
+
     ConversationToken:
       type: object
-      required: [token, expires_at, session_id]
+      required: [token, conversation_id, context_version]
       properties:
         token:
           type: string
           description: |
             Krótkotrwały token rozmowy wydany przez backend. To **nie** jest klucz
-            API dostawcy — klucz pozostaje na serwerze i nigdy nie trafia do aplikacji.
-        expires_at: { type: string, format: date-time }
-        session_id: { type: string }
-        provider_conversation_id: { type: [string, "null"] }
+            API dostawcy — klucz pozostaje na serwerze i nigdy nie trafia do
+            aplikacji. Backend nie zapisuje go ani nie loguje.
+        conversation_id:
+          type: string
+          description: |
+            Identyfikator rozmowy u dostawcy. Backend zapisuje wyłącznie
+            powiązanie: sesja mobilna ↔ rozmowa u dostawcy. Służy do
+            rozpoznania rozmowy przy zamknięciu i w telemetrii.
+        context_version: { $ref: "#/components/schemas/Version" }
+        session_id:
+          type: string
+          description: Sesja mobilna, dla której wydano token (gdy dotyczy).
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: >-
+            Dostawca **nie podaje** potwierdzonego czasu wygaśnięcia tokenu,
+            więc backend go nie wymyśla. Aplikacja traktuje brak wartości jako
+            „nieznany”, a nie „nie wygasa”: żywotność sesji pilnuje stan sesji
+            (`GET /voice/sessions/{id}/status`), a nie zgadywanie z zegara.
         capabilities:
-          type: object
-          additionalProperties: { type: boolean }
-          description: Co dostawca faktycznie potrafi; aplikacja nie zakłada z góry.
-
-    # ------------------------------------------------------------ Synchronizacja
+          type: [object, "null"]
+          description: Co wolno w tej sesji (np. tryb zapisu); do rozszerzenia.
 
     ChangeBatch:
       type: object
