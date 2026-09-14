@@ -340,6 +340,29 @@ paths:
                     type: array
                     items: { $ref: "#/components/schemas/ScheduledEvent" }
 
+  /notes:
+    post:
+      tags: [Zapis]
+      summary: Dodanie notatki
+      description: |
+        Autor bierze się z sesji: `author_id` musi wskazywać zalogowanego
+        użytkownika, inaczej notatkę dałoby się podpisać cudzym nazwiskiem.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NewNote" }
+      responses:
+        "201":
+          description: Notatka dodana
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Note" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
   /threads:
     get:
       tags: [Wiadomości]
@@ -551,6 +574,32 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
 
   /events/{event_id}:
+    delete:
+      tags: [Zapis]
+      summary: Usunięcie terminu
+      description: |
+        Wymaga `expected_version` w ciele: dwa urządzenia widzą ten sam termin,
+        jedno go usuwa, a drugie nie może usunąć czegoś innego, niż widziało.
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version]
+              properties:
+                expected_version: { $ref: "#/components/schemas/Version" }
+      responses:
+        "204":
+          description: Termin usunięty
+        "409": { $ref: "#/components/responses/Conflict" }
+
     patch:
       tags: [Zapis]
       summary: Zmiana terminu
