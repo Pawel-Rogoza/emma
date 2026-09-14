@@ -81,7 +81,10 @@ public struct VoiceSessionConfiguration: Hashable, Codable, Sendable {
     public var transport: VoiceTransportKind
     /// Identyfikator rozmowy u dostawcy, jeśli backend go zna.
     public var providerConversationID: String?
-    public var expiresAt: Date
+    /// Czas wygaśnięcia poświadczenia, **jeśli** dostawca go podaje. `nil` znaczy
+    /// „nieznany” — nie wymyślamy daty, a o żywotności sesji rozstrzyga backend
+    /// (`GET /voice/sessions/{id}/status`).
+    public var expiresAt: Date?
     public var capabilities: VoiceCapabilities
 
     public init(
@@ -92,7 +95,7 @@ public struct VoiceSessionConfiguration: Hashable, Codable, Sendable {
         endpoint: String? = nil,
         transport: VoiceTransportKind = .webrtc,
         providerConversationID: String? = nil,
-        expiresAt: Date,
+        expiresAt: Date?,
         capabilities: VoiceCapabilities
     ) {
         self.sessionID = sessionID

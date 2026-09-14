@@ -71,6 +71,10 @@ public actor MobileSessionKeeper {
     /// jest dostępny bez `await` — `AuthStore` potrzebuje tej odpowiedzi
     /// synchronicznie, przy tworzeniu stanu początkowego.
     public nonisolated let restoredAtLaunch: Bool
+    /// Użytkownik z odtworzonej sesji, jeśli była. `nonisolated`, bo powłoka musi
+    /// umieć odczytać go synchronicznie przy starcie — bez tego po restarcie
+    /// aplikacja nie wiedziałaby, kto jest zalogowany, dopóki nie odnowi tokenu.
+    public nonisolated let restoredUser: MobileAuthUser?
 
     public init(
         client: any MobileAuthServicing,
@@ -89,6 +93,7 @@ public actor MobileSessionKeeper {
         let restored = try? store.load()
         self.session = restored
         self.restoredAtLaunch = restored != nil
+        self.restoredUser = restored?.user
     }
 
     public var currentUser: MobileAuthUser? { session?.user }

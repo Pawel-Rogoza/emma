@@ -42,8 +42,8 @@ public enum DemoFixtureCatalog {
             referenceDay: LocalDate(year: 2026, month: 9, day: 11),
             referenceHour: 9,
             referenceMinute: 41,
-            voiceScenarioName: "standard-proposal-flow",
-            summary: "Zwykły dzień kancelarii: propozycja Emmy, zgoda, wykonanie."
+            voiceScenarioName: "emma-conversation-start",
+            summary: "Zwykły dzień kancelarii; „Rozmawiaj” otwiera czystą rozmowę z Emmą."
         ),
         DemoFixture(
             name: "mixed-languages",
@@ -74,7 +74,7 @@ public enum DemoFixtureCatalog {
             referenceDay: LocalDate(year: 2026, month: 9, day: 11),
             referenceHour: 9,
             referenceMinute: 41,
-            voiceScenarioName: "standard-proposal-flow",
+            voiceScenarioName: "emma-conversation-start",
             summary: "Dzień z klientką o długim nazwisku w cyrylicy — układ przy największym tekście.",
             usesLongNames: true
         ),

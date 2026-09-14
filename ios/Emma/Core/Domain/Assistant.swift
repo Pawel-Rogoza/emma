@@ -200,14 +200,16 @@ public struct VoiceSessionStatus: Hashable, Codable, Sendable {
     public var sessionID: VoiceSessionID
     public var isActive: Bool
     public var context: AssistantContext
-    public var expiresAt: Date
+    /// Czas wygaśnięcia, jeśli dostawca go podaje. `nil` to „nieznany”, nie „brak
+    /// terminu” — o żywotności sesji rozstrzyga backend, a nie lokalny zegar.
+    public var expiresAt: Date?
     public var providerConversationID: String?
 
     public init(
         sessionID: VoiceSessionID,
         isActive: Bool,
         context: AssistantContext,
-        expiresAt: Date,
+        expiresAt: Date?,
         providerConversationID: String? = nil
     ) {
         self.sessionID = sessionID

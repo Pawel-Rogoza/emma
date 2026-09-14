@@ -845,6 +845,39 @@ final class AssistantStore: ObservableObject {
 
     // MARK: Głos: sesja, dyktowanie, odsłuch
 
+    /// „Rozmawiaj”: nowa rozmowa z Emmą od czystego stanu.
+    ///
+    /// Nie dziedziczymy wątku klienta ani historii poprzedniej rozmowy: kontekst
+    /// wraca do całej kancelarii, a prezentacja (tury, propozycje, doprecyzowania,
+    /// szkic w polu) jest czyszczona. Koordynator odrzuca też zachowany szkic,
+    /// żeby zakończenie nowej sesji nie wskrzesiło starej propozycji. Dzięki temu
+    /// przycisk nie odtwarza scenki klienta (np. Oleny) z danych demo.
+    func startNewConversation() async {
+        guard let dependencies else { return }
+        dependencies.emmaContext = nil
+        dependencies.pendingEmmaAction = nil
+        dependencies.pendingVoiceStart = false
+        resetPresentation()
+        dependencies.voice.discardPreservedPresentation()
+        await startConversation()
+    }
+
+    /// Czyszczenie stanu prezentacji przed nową rozmową. Numeracja identyfikatorów
+    /// zostaje — ma rosnąć w obrębie procesu, a nie zaczynać się od nowa.
+    private func resetPresentation() {
+        turns.removeAll()
+        composer = ""
+        awaitingInput = nil
+        pendingClarification = nil
+        consumedUserTurnID = nil
+        consumedAgentTurnID = nil
+        localAnswerTurnID = nil
+        localProposalTurnID = nil
+        adoptedProposalID = nil
+        lastBriefedClientIDs = []
+        isPlayingSummary = false
+    }
+
     /// Jedna sesja na proces. Wznowienie nie tworzy drugiego połączenia (§5.3).
     func startConversation() async {
         guard let dependencies else { return }

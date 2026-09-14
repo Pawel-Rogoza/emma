@@ -93,6 +93,7 @@ final class Stage6ContractTests: XCTestCase {
             configuration: demoConfiguration,
             fixtureName: nil,
             accessToken: nil,
+            installationID: "test-installation",
             mockScenarioName: "standard-proposal-flow"
         )
         XCTAssertTrue(
@@ -124,6 +125,7 @@ final class Stage6ContractTests: XCTestCase {
             configuration: configured,
             fixtureName: nil,
             accessToken: "token",
+            installationID: "test-installation",
             mockScenarioName: "standard-proposal-flow"
         )
 

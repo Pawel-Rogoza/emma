@@ -105,7 +105,8 @@ public final class AppDependencies: ObservableObject {
         clock: Clock? = nil,
         repository: (any EmmaRepository)? = nil,
         fixtureName: String? = nil,
-        accessTokenProvider: (@MainActor @Sendable () -> String?)? = nil
+        accessTokenProvider: (@MainActor @Sendable () -> String?)? = nil,
+        currentUserProvider: (@MainActor @Sendable () -> User?)? = nil
     ) {
         self.configuration = configuration
         self.fixtureName = fixtureName
@@ -136,9 +137,10 @@ public final class AppDependencies: ObservableObject {
             self.repository = BackendRepository(
                 baseURL: baseURL,
                 accessTokenProvider: { await accessTokenProvider?() },
-                // Użytkownika dostarczy sesja mobilna. Dopóki repozytorium nie ma
-                // go skąd wziąć, zgłasza brak sesji zamiast podstawiać konto demo.
-                currentUser: { nil }
+                // Użytkownik pochodzi z sesji mobilnej (odtworzonej albo świeżo
+                // zalogowanej). Bez niej repozytorium zgłasza brak sesji zamiast
+                // podstawiać konto demo.
+                currentUser: { await currentUserProvider?() }
             )
         } else {
             self.repository = MockRepository(
@@ -148,11 +150,28 @@ public final class AppDependencies: ObservableObject {
             )
         }
 
-        self.currentUser = dataset.user
+        // Sesja głosu to osobny, wąski kontrakt. Poza Demo rozmawia z prawdziwym
+        // backendem; w Demo i przy wstrzykniętym repozytorium (testy/podglądy)
+        // zostaje to samo repozytorium, którego używa reszta aplikacji.
+        let voiceRepository: VoiceSessionRepository
+        if let repository {
+            voiceRepository = repository
+        } else if !configuration.usesMockServices, let baseURL = configuration.apiBaseURL {
+            voiceRepository = BackendVoiceSessionRepository(
+                baseURL: baseURL,
+                accessTokenProvider: { await accessTokenProvider?() }
+            )
+        } else {
+            voiceRepository = self.repository
+        }
+
+        // Bieżący użytkownik: najpierw sesja mobilna, a dopiero gdy jej nie ma —
+        // konto demo. W Demo provider jest `nil`, więc zostaje konto przykładowe.
+        self.currentUser = currentUserProvider?() ?? dataset.user
         self.fixtureNotice = resolution.notice
 
         self.voice = VoiceSessionCoordinator(
-            sessionRepository: self.repository,
+            sessionRepository: voiceRepository,
             actionRepository: self.repository,
             clock: resolvedClock,
             // Uzgodnienie z backendem: przejęcie sesji przez inne urządzenie kończy
@@ -193,6 +212,7 @@ public final class AppDependencies: ObservableObject {
             configuration: self.configuration,
             fixtureName: fixtureName,
             accessToken: accessToken,
+            installationID: InstallationIdentifier.current,
             mockScenarioName: voiceScenarioName
         )
     }
@@ -416,6 +436,31 @@ public final class AppDependencies: ObservableObject {
         refreshUnreadTotal()
         dataChanged()
         showToast("Przywrócono dane przykładowe.")
+    }
+
+    // MARK: Użytkownik z sesji mobilnej
+
+    /// Zamiana użytkownika z odpowiedzi logowania (`MobileAuthUser`) na model
+    /// aplikacji. Robimy to w jednym miejscu, żeby powłoka i repozytorium nie
+    /// mogły się rozjechać w interpretacji pól.
+    public static func mapRemoteUser(_ remote: MobileAuthUser) -> User {
+        User(
+            id: UserID(remote.id),
+            displayName: remote.displayName,
+            initials: remote.initials,
+            // Kontrakt dopuszcza kody, których `LanguageCode` nie zna; wtedy
+            // zostaje język kancelarii (interfejs) albo dotychczasowa reguła
+            // języka rozmowy (rosyjski), zamiast pustego kodu.
+            interfaceLanguage: LanguageCode(lenient: remote.interfaceLanguage) ?? .pl,
+            assistantLanguage: LanguageCode(lenient: remote.assistantLanguage) ?? .ru
+        )
+    }
+
+    /// Przyjęcie użytkownika z udanego logowania (albo z odtworzonej sesji).
+    /// `nil` nie kasuje konta: po wylogowaniu powłoka i tak wraca do logowania.
+    public func adoptRemoteUser(_ remote: MobileAuthUser?) {
+        guard let remote else { return }
+        currentUser = Self.mapRemoteUser(remote)
     }
 
     // MARK: Formatowanie

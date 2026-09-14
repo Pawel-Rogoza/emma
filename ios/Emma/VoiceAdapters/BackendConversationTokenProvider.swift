@@ -8,15 +8,19 @@ import Foundation
 // miejscem, w którym aplikacja prosi o taki token.
 //
 // Kontrakt backendu (zweryfikowany na SDK 3.3.1):
-//   `GET /v1/voice/conversation-token` → `{ "token": "<conversation token>", "expiresAt": "<ISO-8601>" }`
+//   `POST /api/mobile/v1/voice/conversation-token`
+//   → `{ "token": …, "conversation_id": …, "context_version": …, "session_id": … }`
 //
-// Sam ElevenLabs wystawia `GET https://api.elevenlabs.io/v1/convai/conversation/token`,
-// którego pole `token` trafia do LiveKit jako `participantToken`. Nasz backend jest
-// pośrednikiem: przechowuje klucz API, wiąże sesję z użytkownikiem i sprawdza
-// kontekst sprawy przed wydaniem tokenu.
+// Kontrakt **nie** zwraca `expires_at`: dostawca nie podaje potwierdzonego czasu
+// wygaśnięcia, więc aplikacja go nie wymyśla. Prefiks `/api/mobile/v1` jest
+// obowiązkowy — trasa bez niego nie istnieje i nginx jej nie przepuszcza.
 //
-// Status: **niezweryfikowane na koncie produkcyjnym** (`blocked_external` — brak
-// konta dostawcy). Kod nie deklaruje, że integracja działa; patrz
+// Ścieżka normalna prowadzi przez `BackendVoiceSessionRepository` (`create` wydaje
+// token razem z sesją). Ten typ istnieje wyłącznie po to, by transport umiał
+// domknąć brak tokenu, i sam nigdy nie używa klucza API.
+//
+// Status: nadal **niezweryfikowane na koncie produkcyjnym** (`blocked_external` —
+// brak konta dostawcy). Kod nie deklaruje, że integracja działa; patrz
 // docs/ios/PROVIDER_CONTRACT_TESTS.md.
 
 /// Pojedynczy token rozmowy wydany przez backend.
@@ -76,18 +80,30 @@ actor BackendConversationTokenProvider {
     func fetchToken(
         sessionID: VoiceSessionID,
         contextVersion: Version,
+        installationID: String,
         accessToken: String?
     ) async throws -> BackendConversationToken {
         guard let baseURL else { throw ConversationTokenError.backendNotConfigured }
 
-        var request = URLRequest(url: baseURL.appendingPathComponent("v1/voice/conversation-token"))
+        var request = URLRequest(
+            url: baseURL.appendingPathComponent("api/mobile/v1/voice/conversation-token")
+        )
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // Zapis wymaga klucza idempotencji; pochodny od sesji, operacji i wersji.
+        request.setValue(
+            "emma-voice-token-\(sessionID.rawValue)-v\(contextVersion.value)",
+            forHTTPHeaderField: "Idempotency-Key"
+        )
         if let accessToken {
             request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         }
         request.httpBody = try JSONEncoder().encode(
-            TokenRequest(sessionID: sessionID.rawValue, contextVersion: contextVersion.value)
+            TokenRequest(
+                sessionID: sessionID.rawValue,
+                contextVersion: contextVersion.value,
+                installationID: installationID
+            )
         )
         request.timeoutInterval = 15
 
@@ -116,6 +132,13 @@ actor BackendConversationTokenProvider {
     private struct TokenRequest: Encodable {
         let sessionID: String
         let contextVersion: Int
+        let installationID: String
+
+        enum CodingKeys: String, CodingKey {
+            case sessionID = "session_id"
+            case contextVersion = "context_version"
+            case installationID = "installation_id"
+        }
     }
 }
 #endif

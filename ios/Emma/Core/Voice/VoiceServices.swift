@@ -336,6 +336,11 @@ public enum DomainError: Error, Equatable, Sendable {
     case notConfigured(String)
     case transportFailure(String)
     case unknownOutcome(String)
+    /// Komunikat backendu przeniesiony bez zmian. Używany, gdy kontrakt zna
+    /// przypadki, których domena nie modeluje osobno (np. 403 na cudzą sesję
+    /// albo 409 z bieżącą wersją kontekstu) — wtedy liczy się polskie zdanie
+    /// z `BackendRepositoryError.safeMessage`, a nie własne zgadywanie.
+    case backend(String)
 
     public var safeMessage: String {
         switch self {
@@ -349,6 +354,7 @@ public enum DomainError: Error, Equatable, Sendable {
         case .notConfigured(let what): return "Nie skonfigurowano: \(what)."
         case .transportFailure(let what): return "Błąd komunikacji: \(what)."
         case .unknownOutcome(let what): return "Nieznany wynik operacji: \(what). Bez automatycznego ponowienia."
+        case .backend(let message): return message
         }
     }
 

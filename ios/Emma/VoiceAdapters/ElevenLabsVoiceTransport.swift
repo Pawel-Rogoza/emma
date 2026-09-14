@@ -31,6 +31,9 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
 
     private let tokenProvider: BackendConversationTokenProvider
     private let accessToken: String?
+    /// Identyfikator instalacji wymagany przez kontrakt, gdy token trzeba pobrać
+    /// bezpośrednio (ścieżka awaryjna). Normalnie token jest już w konfiguracji.
+    private let installationID: String
     private var conversation: Conversation?
     private var continuation: AsyncStream<VoiceEvent>.Continuation?
     private var configuration: VoiceSessionConfiguration?
@@ -41,9 +44,10 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
 
     /// Inicjalizacja jest wewnętrzna, bo dostawca tokenu (`BackendConversationTokenProvider`)
     /// nie jest typem publicznym — transport powstaje wyłącznie przez `VoiceServicesFactory`.
-    init(tokenProvider: BackendConversationTokenProvider, accessToken: String?) {
+    init(tokenProvider: BackendConversationTokenProvider, accessToken: String?, installationID: String) {
         self.tokenProvider = tokenProvider
         self.accessToken = accessToken
+        self.installationID = installationID
     }
 
     // MARK: Połączenie
@@ -53,6 +57,8 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
         generation += 1
 
         // Token rozmowy pochodzi z backendu; aplikacja nigdy nie wysyła klucza API.
+        // Normalnie jest już w konfiguracji sesji (wydał go `VoiceSessionRepository`),
+        // a poniższa gałąź to tylko awaryjne domknięcie, gdyby go brakło.
         let token: String
         if !session.conversationToken.isEmpty {
             token = session.conversationToken
@@ -60,6 +66,7 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
             let issued = try await tokenProvider.fetchToken(
                 sessionID: session.sessionID,
                 contextVersion: session.context.version,
+                installationID: installationID,
                 accessToken: accessToken
             )
             token = issued.token

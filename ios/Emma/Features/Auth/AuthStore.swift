@@ -66,6 +66,11 @@ final class AuthStore: ObservableObject {
     /// a koordynator nie zna logowania — łączy ich to jedno złącze.
     @MainActor var onSessionEnded: ((SessionEndReason) async -> Void)?
 
+    /// Wywoływane, gdy zmienia się tożsamość użytkownika: po udanym logowaniu
+    /// z prawdziwego backendu (`user`) albo po wylogowaniu (`nil`). Powłoka
+    /// używa tego, żeby nie pokazywać konta demo w trybie produkcyjnym.
+    @MainActor var onUserChanged: (@MainActor (MobileAuthUser?) -> Void)?
+
     init(
         configuration: AppConfiguration = .current,
         authenticator: BiometricAuthenticating = LocalAuthenticationAuthenticator(),
@@ -78,7 +83,8 @@ final class AuthStore: ObservableObject {
         self.defaults = defaults
         self.session = session ?? AuthStore.makeSession(configuration: configuration, defaults: defaults, deviceName: deviceName)
         self.accessToken = nil
-        self.remoteUser = nil
+        // Odtworzona sesja zna użytkownika od razu; świeże logowanie ustawi go później.
+        self.remoteUser = self.session?.restoredUser
 
         // Testy interfejsu i zrzuty ekranu startują z `--skip-auth`: dzięki temu
         // nie zależą od biometrii symulatora ani od zapamiętanej sesji. To jedyne
@@ -143,6 +149,7 @@ final class AuthStore: ObservableObject {
             notice = nil
             defaults.set(true, forKey: Self.signedInKey)
             state = .unlocked
+            onUserChanged?(result.user)
             return true
         } catch let error as MobileAuthError {
             notice = error.userMessage
@@ -188,6 +195,7 @@ final class AuthStore: ObservableObject {
         accessToken = nil
         remoteUser = nil
         state = .signedOut
+        onUserChanged?(nil)
         let session = self.session
         let notify = onSessionEnded
         Task {
@@ -205,6 +213,7 @@ final class AuthStore: ObservableObject {
         accessToken = nil
         remoteUser = nil
         state = .signedOut
+        onUserChanged?(nil)
         await onSessionEnded?(.loggedOut)
     }
 
@@ -218,6 +227,7 @@ final class AuthStore: ObservableObject {
         accessToken = nil
         remoteUser = nil
         state = .signedOut
+        onUserChanged?(nil)
     }
 
     // MARK: Blokada i Face ID

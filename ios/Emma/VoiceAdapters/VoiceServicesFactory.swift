@@ -29,17 +29,22 @@ public enum VoiceServicesFactory {
     /// - Parameters:
     ///   - configuration: konfiguracja aplikacji (Demo nie ma backendu).
     ///   - fixtureName: nazwa scenariusza mocka; używana wyłącznie w Demo.
+    ///   - installationID: identyfikator instalacji; potrzebny tylko wtedy, gdy
+    ///     transport musiałby sam poprosić backend o token rozmowy (ścieżka
+    ///     awaryjna — normalnie token przychodzi już w konfiguracji sesji).
     public static func makeTransport(
         configuration: AppConfiguration,
         fixtureName: String?,
         accessToken: String?,
+        installationID: String,
         mockScenarioName: String
     ) -> VoiceTransport {
         #if canImport(ElevenLabs)
         if providerIsAvailable(configuration: configuration), let baseURL = configuration.apiBaseURL {
             return ElevenLabsVoiceTransport(
                 tokenProvider: BackendConversationTokenProvider(baseURL: baseURL),
-                accessToken: accessToken
+                accessToken: accessToken,
+                installationID: installationID
             )
         }
         #endif

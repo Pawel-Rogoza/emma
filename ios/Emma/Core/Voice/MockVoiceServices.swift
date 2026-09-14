@@ -48,6 +48,20 @@ public struct VoiceScenario: Hashable, Sendable {
 
 public extension VoiceScenario {
 
+    /// Czysty start rozmowy z Emmą: łączy i włącza mikrofon, ale **nie odtwarza**
+    /// żadnej scenki klienta. Przycisk „Rozmawiaj” ma otwierać nową rozmowę,
+    /// więc mock nie może wstrzykiwać cudzego wątku (np. Oleny) ani historii.
+    static func emmaConversationStart() -> VoiceScenario {
+        VoiceScenario(
+            name: "emma-conversation-start",
+            steps: [
+                .init(.connectionChanged(.connecting), delay: 0.10),
+                .init(.microphoneChanged(.capturing), delay: 0.05),
+                .init(.connectionChanged(.connected), delay: 0.10)
+            ]
+        )
+    }
+
     /// Scenariusz podstawowy z §etap 06:
     /// start → listening → partial/final → thinking → speaking → barge-in →
     /// korekta → nowa propozycja → potwierdzenie → wykonanie.
@@ -311,6 +325,8 @@ public enum MockVoiceScenarios {
     /// Argument `--fixture=voice-…` albo nazwa scenariusza z kodu.
     public static func named(_ name: String) -> VoiceScenario {
         switch name {
+        case "emma-conversation-start":
+            return .emmaConversationStart()
         case "permission-denied":
             return .permissionDenied()
         case "reconnect":
@@ -330,6 +346,7 @@ public enum MockVoiceScenarios {
     }
 
     public static let allNames = [
+        "emma-conversation-start",
         "standard-proposal-flow",
         "barge-in",
         "permission-denied",

@@ -24,7 +24,13 @@ struct EmmaApp: App {
         let dependencies = AppDependencies(
             configuration: configuration,
             fixtureName: AppConfiguration.fixtureName(),
-            accessTokenProvider: { [weak authStore] in authStore?.accessToken }
+            accessTokenProvider: { [weak authStore] in authStore?.accessToken },
+            // Użytkownik pochodzi z sesji mobilnej (świeżo zalogowanej albo
+            // odtworzonej z kluczyka), a nie z danych demo.
+            currentUserProvider: { [weak authStore] in
+                guard let remote = authStore?.remoteUser else { return nil }
+                return AppDependencies.mapRemoteUser(remote)
+            }
         )
         // Rozmowa głosowa nie może przeżyć wylogowania ani zmiany konta: jedno
         // złącze łączy logowanie z koordynatorem, więc żaden ekran nie musi
@@ -37,6 +43,10 @@ struct EmmaApp: App {
             case .accountSwitched:
                 await dependencies.voice.handleAccountSwitched()
             }
+        }
+        // Po zalogowaniu powłoka ma używać prawdziwego użytkownika, a nie konta demo.
+        authStore.onUserChanged = { [weak dependencies] remote in
+            dependencies?.adoptRemoteUser(remote)
         }
         _auth = StateObject(wrappedValue: authStore)
         _dependencies = StateObject(wrappedValue: dependencies)

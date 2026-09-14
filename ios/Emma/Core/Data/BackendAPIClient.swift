@@ -77,6 +77,10 @@ public struct BackendAPIClient: Sendable {
         case cases = "api/mobile/v1/cases"
         case tasks = "api/mobile/v1/tasks"
         case events = "api/mobile/v1/events"
+        /// Prefiks `/api/mobile/v1/voice` jest obowiązkowy — trasa bez niego
+        /// nie istnieje i nginx jej nie przepuszcza.
+        case voiceSessions = "api/mobile/v1/voice/sessions"
+        case voiceConversationToken = "api/mobile/v1/voice/conversation-token"
     }
 
     /// Domyślny rozmiar strony z kontraktu (`limit`, maks. 100). Repozytorium
@@ -177,6 +181,82 @@ public struct BackendAPIClient: Sendable {
         ]
         let response: BackendItems<BackendEventDTO> = try await get(Endpoint.events.rawValue, query: items)
         return response.items
+    }
+
+    // MARK: Głos (M5)
+    //
+    // Trasy sesji głosu. `Idempotency-Key` pochodzi od wywołującego (repozytorium),
+    // bo to on wie, co jest „tym samym logicznym żądaniem” — tutaj tylko go wysyłamy.
+
+    /// `POST /api/mobile/v1/voice/sessions`. Powtórzenie tego samego `session_id`
+    /// zwraca istniejącą sesję, nie zakłada drugiej.
+    func createVoiceSession(
+        sessionID: VoiceSessionID,
+        installationID: String,
+        contextVersion: Int,
+        idempotencyKey: String
+    ) async throws -> BackendVoiceSessionDTO {
+        let body = BackendVoiceSessionCreateBody(
+            sessionID: sessionID.rawValue,
+            installationID: installationID,
+            contextVersion: contextVersion
+        )
+        return try await send(
+            "POST",
+            path: Endpoint.voiceSessions.rawValue,
+            body: body,
+            idempotencyKey: idempotencyKey
+        )
+    }
+
+    /// `POST /api/mobile/v1/voice/conversation-token`. Zwraca wyłącznie token
+    /// rozmowy — klucz API dostawcy nigdy nie opuszcza backendu.
+    func voiceConversationToken(
+        sessionID: VoiceSessionID,
+        installationID: String,
+        contextVersion: Int,
+        idempotencyKey: String
+    ) async throws -> BackendConversationTokenDTO {
+        let body = BackendVoiceConversationTokenBody(
+            sessionID: sessionID.rawValue,
+            installationID: installationID,
+            contextVersion: contextVersion
+        )
+        return try await send(
+            "POST",
+            path: Endpoint.voiceConversationToken.rawValue,
+            body: body,
+            idempotencyKey: idempotencyKey
+        )
+    }
+
+    /// `PATCH /api/mobile/v1/voice/sessions/{id}/context` — wersja może tylko rosnąć.
+    func updateVoiceContext(
+        sessionID: VoiceSessionID,
+        contextVersion: Int,
+        idempotencyKey: String
+    ) async throws -> BackendVoiceSessionDTO {
+        let body = BackendVoiceContextBody(contextVersion: contextVersion)
+        return try await send(
+            "PATCH",
+            path: "\(Endpoint.voiceSessions.rawValue)/\(sessionID.rawValue)/context",
+            body: body,
+            idempotencyKey: idempotencyKey
+        )
+    }
+
+    /// `GET /api/mobile/v1/voice/sessions/{id}/status`.
+    func voiceSessionStatus(sessionID: VoiceSessionID) async throws -> BackendVoiceSessionDTO {
+        try await get("\(Endpoint.voiceSessions.rawValue)/\(sessionID.rawValue)/status", query: [])
+    }
+
+    /// `DELETE /api/mobile/v1/voice/sessions/{id}` → 204.
+    func endVoiceSession(sessionID: VoiceSessionID, idempotencyKey: String) async throws {
+        try await sendNoContent(
+            "DELETE",
+            path: "\(Endpoint.voiceSessions.rawValue)/\(sessionID.rawValue)",
+            idempotencyKey: idempotencyKey
+        )
     }
 
     // MARK: Żądanie i odpowiedź
@@ -547,5 +627,76 @@ struct BackendCaseDetail: Decodable {
     enum CodingKeys: String, CodingKey {
         case tasks, events, notes, activity
         case legalCase = "case"
+    }
+}
+
+// MARK: - Kształty JSON-a sesji głosu (M5)
+
+/// Odpowiedź na otwarcie/zmianę/odczyt sesji głosu. `ended_at` jest `null`,
+/// dopóki sesja żyje, a `provider_conversation_id` — dopóki nie wydano tokenu.
+struct BackendVoiceSessionDTO: Decodable {
+    let id: String
+    let state: String
+    let contextVersion: Int
+    let installationID: String
+    let startedAt: String
+    let endedAt: String?
+    let providerConversationID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, state
+        case contextVersion = "context_version"
+        case installationID = "installation_id"
+        case startedAt = "started_at"
+        case endedAt = "ended_at"
+        case providerConversationID = "provider_conversation_id"
+    }
+}
+
+/// Odpowiedź `POST /voice/conversation-token`. **Bez** `expires_at`: dostawca go
+/// nie podaje, a wymyślona data kazałaby aplikacji ufać zegarowi zamiast sesji.
+struct BackendConversationTokenDTO: Decodable {
+    let token: String
+    let conversationID: String
+    let contextVersion: Int
+    let sessionID: String
+
+    enum CodingKeys: String, CodingKey {
+        case token
+        case conversationID = "conversation_id"
+        case contextVersion = "context_version"
+        case sessionID = "session_id"
+    }
+}
+
+struct BackendVoiceSessionCreateBody: Encodable {
+    let sessionID: String
+    let installationID: String
+    let contextVersion: Int
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case installationID = "installation_id"
+        case contextVersion = "context_version"
+    }
+}
+
+struct BackendVoiceConversationTokenBody: Encodable {
+    let sessionID: String
+    let installationID: String
+    let contextVersion: Int
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case installationID = "installation_id"
+        case contextVersion = "context_version"
+    }
+}
+
+struct BackendVoiceContextBody: Encodable {
+    let contextVersion: Int
+
+    enum CodingKeys: String, CodingKey {
+        case contextVersion = "context_version"
     }
 }

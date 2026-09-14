@@ -877,6 +877,22 @@ public final class VoiceSessionCoordinator {
         await end(reason: .takenOverByAnotherDevice, preserveDraft: true, revokedCapability: true)
     }
 
+    /// Odrzucenie szkicu i propozycji poprzedniej sesji.
+    ///
+    /// „Rozmawiaj” otwiera **nową** rozmowę, więc nie może wskrzeszać cudzej
+    /// propozycji: `end` domyślnie zachowuje szkic (§5.6) i przy zakończeniu
+    /// publikuje ostatnią propozycję, co po czyszczeniu prezentacji wróciłoby
+    /// do historii. To jedyne miejsce, które kasuje zachowany stan bez kończenia
+    /// sesji — celowo osobne od `handleUserLoggedOut`, które zeruje całość.
+    public func discardPreservedPresentation() {
+        actionState = ActionEngine.State()
+        var mutable = state
+        mutable.activeProposal = nil
+        mutable.lastExecution = nil
+        mutable.action = .none
+        state = mutable
+    }
+
     // MARK: - Zakończenie
 
     /// „Zakończ”: odłącza transport, zwalnia mikrofon, zamyka strumienie

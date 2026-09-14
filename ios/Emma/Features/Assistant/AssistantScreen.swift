@@ -6,8 +6,10 @@ import SwiftUI
 // koordynatora, a opuszczenie ekranu **nie** kończy rozmowy (§5.6). Nie ma tu
 // drugiego transportu, drugiego subskrybenta ani drugiego silnika audio.
 //
-// Demo działa na deterministycznych mockach i mówi o tym wprost: nie ma kont
-// dostawców, nie ma integracji z ElevenLabs ani z WhatsApp, wysyłka jest symulowana.
+// Nota `.demo-foot` mówi prawdę o bieżącym środowisku: w Demo nie ma ani kont
+// dostawców, ani integracji z ElevenLabs; poza Demo rozmowa idzie do prawdziwego
+// backendu i dostawcy, a demonstracyjne pozostają tylko te czynności, które
+// naprawdę są symulowane (np. wysyłka wiadomości).
 
 
 @MainActor
@@ -453,21 +455,35 @@ struct AssistantScreen: View {
     }
 
     // MARK: Uczciwa nota o demo (`.demo-foot`)
+    //
+    // W Demo to mock i nie ma integracji z dostawcą. Poza Demo rozmowa głosowa
+    // naprawdę idzie przez backend do ElevenLabs, więc stara nota „nie ma
+    // integracji z ElevenLabs” byłaby nieprawdą. Nadal mówimy wprost, co jest
+    // demonstracyjne: wysyłka wiadomości i odsłuch tekstu (syntezator systemu,
+    // nie głos Emmy); WhatsApp pozostaje niepodłączony.
 
     private var demoFoot: some View {
-        Text(
-            "Emma działa na przykładowych scenariuszach. Głos jest demonstracyjny: "
+        Text(demoFootText)
+            .font(EmmaTypography.caption())
+            .foregroundStyle(EmmaTheme.emmaDemoFootText)
+            .multilineTextAlignment(.center)
+            .lineSpacing(4)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 19)
+    }
+
+    private var demoFootText: String {
+        if dependencies.configuration.usesMockServices {
+            return "Emma działa na przykładowych scenariuszach. Głos jest demonstracyjny: "
                 + "nie ma kont dostawców, więc nie ma integracji z ElevenLabs ani z WhatsApp, "
                 + "a wysyłka wiadomości jest symulowana. Odsłuch w demo jest scenariuszowy "
                 + "(bez dźwięku); poza demo czyta go syntezator systemu, nie głos Emmy."
-        )
-        .font(EmmaTypography.caption())
-        .foregroundStyle(EmmaTheme.emmaDemoFootText)
-        .multilineTextAlignment(.center)
-        .lineSpacing(4)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity)
-        .padding(.top, 19)
+        }
+        return "Rozmowa głosowa łączy się z ElevenLabs przez serwer kancelarii "
+            + "(klucz dostawcy nigdy nie trafia do aplikacji). Nadal demonstracyjne: "
+            + "wysyłka wiadomości i zapisy akcji są symulowane, WhatsApp nie jest podłączony, "
+            + "a odsłuch tekstu czyta syntezator systemu, nie głos Emmy."
     }
 
     // MARK: Kompozytor (`.assistant-compose`)
@@ -480,7 +496,7 @@ struct AssistantScreen: View {
         VStack(spacing: 8) {
             if store.voiceState.sessionID == nil {
                 Button {
-                    Task { await store.toggleListening() }
+                    Task { await store.startNewConversation() }
                 } label: {
                     HStack(spacing: 9) {
                         Image(systemName: "mic.fill")

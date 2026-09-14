@@ -164,3 +164,24 @@ awarii dostawcy i braku `conversation_id`). `npx astro check` → 0 błędów.
 3. **Rozmowa naprawdę przez WebRTC** — sprawdziliśmy, że backend wydaje token
    i zapisuje powiązanie; nie sprawdziliśmy jeszcze, że aplikacja wchodzi z nim
    do pokoju i że Emma odpowiada głosem.
+
+---
+
+# Wymagania dodatkowe (od użytkownika, 2026-09-14)
+
+1. **Repozytorium sesji głosu ma pokrywać pełny lifecycle**: `create`
+   (otwarcie sesji + token), `updateContext` (zmiana kontekstu), `fetchStatus`
+   (stan) i `end` (zakończenie) — wszystkie wołane z realnej ścieżki aplikacji,
+   nie jako nieużywane metody.
+2. **`EMMA_API_BASE_URL` wyłącznie z `.xcconfig`**, nigdy jako literał w Swift:
+   `Local.xcconfig` (w `.gitignore`, dla dewelopera) i `Staging.xcconfig`,
+   `Production.xcconfig` dla builda produkcyjnego. `AppConfiguration` tylko
+   odczytuje wartość wstrzykniętą.
+3. **Test na urządzeniu dopiero po prawdziwym tokenie zalogowanego
+   użytkownika.** `accessToken = nil` ani ciche zejście na dane demo nie są
+   rozwiązaniem produkcyjnym: brak sesji ma być widoczny jako błąd.
+4. **Oznaczenie Demo zostaje** do potwierdzenia przez użytkownika na urządzeniu:
+   głos Qwen, polski STT/TTS, przerwanie wypowiedzi, mute, zakończenie sesji,
+   brak kluczy w aplikacji i logach. Agent nie może tego potwierdzić za
+   użytkownika — raport musi rozdzielać „sprawdzone przeze mnie" od „do
+   sprawdzenia na urządzeniu".

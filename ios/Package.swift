@@ -52,6 +52,7 @@ let package = Package(
                 "Core/Data",
                 "Core/Voice/VoiceEvents.swift",
                 "Core/Voice/VoiceServices.swift",
+                "Core/Voice/BackendVoiceSessionRepository.swift",
                 "Core/Voice/VoiceStateReducer.swift",
                 "Core/Voice/VoiceSessionCoordinator.swift",
                 "Core/Voice/MockVoiceServices.swift",
