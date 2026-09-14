@@ -185,3 +185,35 @@ awarii dostawcy i braku `conversation_id`). `npx astro check` → 0 błędów.
    brak kluczy w aplikacji i logach. Agent nie może tego potwierdzić za
    użytkownika — raport musi rozdzielać „sprawdzone przeze mnie" od „do
    sprawdzenia na urządzeniu".
+
+---
+
+# Wynik testu na urządzeniu (2026-09-14, iPhone 16 Pro)
+
+Potwierdzone realnym użyciem — nie mockiem:
+
+- Aplikacja wydała `POST /voice/sessions` → **201** i `POST /voice/conversation-token` → **200**;
+  backend zapisał powiązanie z prawdziwymi rozmowami u dostawcy
+  (`conv_6801m2gxd9cyfb0s49h877pwv6f6`, `conv_8701m2gxd91fe6ar7jr1m9qt7wty`).
+- Użytkownik **słyszy głos Emmy** — czyli mikrofon → token → ElevenLabs → odpowiedź działa
+  end-to-end. To pierwszy moment, w którym wolno mówić o realnym głosie.
+- Log serwera: `GET /clients`, `/tasks`, `/events`, `/cases` → **200** z prawdziwą datą
+  `2026-09-14` (wcześniej błędnie `2026-09-11` z `DemoClock`).
+- `installation_id` jest jeden i trwały (`620A227E-1F35-41E4-8DAE-987CC3532340`) — 403 zniknął.
+
+Nadal niepotwierdzone (do sprawdzenia przez użytkownika): polskie STT/TTS, przerwanie
+wypowiedzi, mute oraz **zakończenie sesji** — obie sesje w bazie pozostają `active`,
+brak wpisu `mobile.voice_session_end`. Oznaczenia Demo zostają do czasu potwierdzenia
+tych punktów.
+
+## Czego brakuje do „Jarvira"
+
+Agent ElevenLabs nie ma narzędzi podłączonych do backendu, dlatego odpowiada, że nie ma
+dostępu do funkcji kancelarii. Kierunek: **jedno kanoniczne narzędziowe źródło prawdy**
+(ten sam rejestr narzędzi i ten sam action engine, którego używa panel) wystawione
+agentowi jako narzędzia serwerowe (webhooki), z uwierzytelnieniem usługowym
+(`EMMA_GATEWAY_SERVICE_SECRET`) i bez kopiowania danych do promptu.
+
+Etapy: (1) odczyt — klienci, sprawy, zadania, terminy, notatki, wątki; (2) działanie —
+wnioski o akcję z potwierdzeniem człowieka, idempotencją i audytem; (3) kontekst sprawy
+w rozmowie (już mamy `context_version` w sesji).
