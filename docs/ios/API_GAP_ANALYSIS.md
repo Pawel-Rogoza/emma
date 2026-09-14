@@ -1,10 +1,16 @@
 # Analiza luk: co aplikacja wymaga od backendu i dostawców
 
 Ten dokument spisuje **kontrakt**, którego aplikacja iOS potrzebuje od świata zewnętrznego,
-oraz uczciwie oznacza, co jest już spełnione, a co zablokowane. Powstał, ponieważ
-repozytorium backendu jest prywatne i nie było dostępne w tym środowisku
-(`blocked_external`) — historycznego opisu backendu z poprzedniego planu **nie potwierdzono**
-na żadnym SHA i nie przepisano bezkrytycznie.
+oraz uczciwie oznacza, co jest już spełnione, a co zablokowane.
+
+**Aktualizacja 2026-09-14 — repozytorium backendu jest już dostępne.** Backend to
+`github.com/Pawel-Rogoza/adwokat-app-project` (nazwa pakietu `advokat-varshava`,
+Astro 7 + adapter Node + SQLite, produkcja: panel `majkuny.pl`, strona
+`advokat-varshava.pl`). Potwierdzone na SHA `029444a`: `npm test` = **110 plików /
+836 testów PASS**, `npx astro check` = 7 błędów, 110 tras API, 40 migracji.
+Pełna analiza luki i plan etapów M0–M6: `docs/emma/MOBILE_API_GAP_2026-09-14.md`
+w repozytorium backendu. Poniższe tabele zaktualizowano tam, gdzie stan kodu
+przeczy wcześniejszemu „brak dostępu".
 
 Legenda: **Gotowe** (aplikacja to obsługuje) · **Wymagane** (potrzebne od backendu) ·
 **Blocked** (wymaga konta/dostępu/decyzji).
@@ -16,14 +22,14 @@ Legenda: **Gotowe** (aplikacja to obsługuje) · **Wymagane** (potrzebne od back
 | Adres backendu z konfiguracji builda | Gotowe | `EMMA_API_BASE_URL` z `.xcconfig`, brak wartości w Demo |
 | Brak sekretów w aplikacji | Gotowe | żadnego klucza API w kodzie, w `Info.plist` ani w repozytorium |
 | Token dostępu użytkownika | Wymagane | aplikacja umie go przekazać, backend musi go wydać |
-| Logowanie / sesja użytkownika | Blocked | brak kontraktu; dziś użytkownik demo jest wybierany lokalnie |
+| Logowanie / sesja użytkownika | Wymagane | kontrakt istnieje (`/auth/login|refresh|revoke`), backend ma na razie tylko WebAuthn + ciasteczko dla panelu i `fallback-login` (admin + TOTP) — mobilnych bearerów nie ma |
 | Przełączenie użytkownika w Demo | Gotowe | `switchUser(to:)` czyści stan głosu i odczytów |
 
 ## 2. Głos
 
 | Element | Stan | Uwaga |
 | --- | --- | --- |
-| Token rozmowy | Gotowe (klient) / Wymagane (backend) | `GET` lub `POST v1/voice/conversation-token` → pole `token` + wygaśnięcie |
+| Token rozmowy | Gotowe (klient) / Częściowo (backend) | backend ma `POST /api/crm/assistant/voice/session` (token aplikacyjny + signed URL ElevenLabs, tabela `voice_sessions`, granty z 040); brak jeszcze wariantu mobilnego o kształcie `ConversationToken{token, expires_at, session_id, capabilities}` |
 | Adapter oficjalnego SDK | Gotowe | `#if canImport(ElevenLabs)`, wersja przypięta 3.3.1 |
 | Brak klucza dostawcy w iOS | Gotowe | klucz wyłącznie po stronie backendu |
 | Weryfikacja na koncie | Blocked | brak konta u dostawcy |
@@ -39,20 +45,21 @@ podany modelowi językowemu **nie jest** zgodą — aplikacja odrzuca taką pró
 
 | Element | Stan | Uwaga |
 | --- | --- | --- |
-| Jeden silnik akcji dla UI i głosu | Gotowe (klient) / Wymagane (backend) | ten sam kontrakt po obu stronach |
-| Klucz idempotencji | Gotowe | powtórzenie żądania nie tworzy drugiego zapisu |
-| Blokada optymistyczna (`Version`) | Gotowe | konflikt wersji jest zgłaszany, nie nadpisywany po cichu |
-| Trwały outbox | Wymagane | przetrwanie restartu aplikacji po stronie backendu |
+| Jeden silnik akcji dla UI i głosu | Gotowe (klient) / Wymagane (backend) | backend ma `actions` i `assistant_actions`, ale **bez** wersji, `payload_hash`, `presentation_id` i terminu ważności — zgoda na zmienioną treść jest dziś nierozróżnialna od zgody na treść aktualną |
+| Klucz idempotencji | Gotowe (klient) / Wymagane (backend) | kontrakt ma schemat `IdempotencyKey`; w backendzie `case_actions` nie ma kolumny wersji ani klucza idempotencji |
+| Blokada optymistyczna (`Version`) | Gotowe (klient) / Wymagane (backend) | `case_actions` (migracja 037) nie ma kolumny `version` |
+| Trwały outbox | Wymagane | backend nie ma tabeli outboxu ani stanów wykonania (`queued/claimed/dispatching/accepted/failed/unknown`) |
 | Niepewny wynik bez ponowienia | Gotowe | `ExecutionState.unknown` nigdy nie jest raportowany jako sukces |
-| Rozstrzyganie niepewnych wykonań | Wymagane | endpoint do sprawdzenia stanu akcji po identyfikatorze |
+| Rozstrzyganie niepewnych wykonań | Wymagane | brak trasy `GET /actions/{id}/execution` po stronie backendu |
 
 ## 4. Wiadomości i WhatsApp
 
 | Element | Stan | Uwaga |
 | --- | --- | --- |
-| Wysyłka wiadomości | Gotowe (klient) / Wymagane (backend) | idempotencja po kluczu |
+| Wysyłka wiadomości | Gotowe (klient) / Wymagane (backend) | w backendzie WhatsApp istnieje wyłącznie jako powiadomienie wychodzące (`sendWhatsAppLeadNotification`, fire-and-forget, bez `wamid` i statusu) |
+| Wątki i wiadomości (`/threads`) | Wymagane | brak jakiejkolwiek trasy i tabeli wątków/wiadomości klienta — `assistant_messages` to historia czatu Emmy, nie korespondencja |
 | Statusy dostarczenia | Gotowe (model) / Blocked | brak realnego dostawcy; demo mówi o tym w interfejsie |
-| Odbiór wiadomości (webhook) | Wymagane | podpis `X-Hub-Signature-256`, deduplikacja po identyfikatorze dostawcy |
+| Odbiór wiadomości (webhook) | Wymagane | brak webhooka; wymagany podpis `X-Hub-Signature-256` i deduplikacja po identyfikatorze dostawcy |
 | Koegzystencja z WhatsApp Business | Blocked | wymaga Solution Partnera / Tech Providera i Embedded Signup |
 | Zachowanie numeru właściciela | Wymóg | **nie zmieniać ani nie wyrejestrowywać używanego numeru** w trakcie implementacji |
 
@@ -63,7 +70,7 @@ oraz `docs/ios/WHATSAPP_ONBOARDING.md`.
 
 | Element | Stan | Uwaga |
 | --- | --- | --- |
-| Kontrakt wywołania | Blocked | brak dostępu do backendu — kształt żądania i odpowiedzi niepotwierdzony |
+| Kontrakt wywołania | Częściowo potwierdzony | w backendzie istnieje abstrakcja providerów `openai.ts` / `qwen.ts` (+ testy), więc aplikacja nie woła modelu bezpośrednio; **brak** potwierdzenia na koncie dostawcy |
 | Wynik jako propozycja | Gotowe | cokolwiek zwróci model, trafia do propozycji wymagającej zgody |
 | Zakaz wykonywania z modelu | Gotowe | model nie ma ścieżki wykonania |
 
@@ -78,6 +85,8 @@ integracja z nim pozostaje `blocked_external` i nie jest opisywana jako działaj
 | Repozytorium demo | Gotowe | jedno źródło danych dla Demo, działa bez sieci |
 | Zapytania zakresowe (terminy klienta) | Wymagane | demo używa okna ±3 lata (odstępstwo D-08) |
 | Zdalne repozytorium | Wymagane | ten sam protokół co `MockRepository`, podmiana w jednym miejscu |
+| Synchronizacja przyrostowa (`/sync/changes`) | Wymagane | brak trasy po stronie backendu; bez niej nie da się odróżnić „brak zmian" od „nie udało się pobrać" |
+| Push na iOS (APNs) | Wymagane | backend ma wyłącznie web-push (VAPID) dla panelu; brak tokenu urządzenia i klucza APNs |
 | Wersjonowanie i konflikty | Gotowe | `DomainError.versionConflict` z czytelnym komunikatem |
 
 ## 7. Bezpieczeństwo i prywatność
@@ -88,17 +97,22 @@ integracja z nim pozostaje `blocked_external` i nie jest opisywana jako działaj
 | Uprawnienia mikrofonu i mowy opisane w `Info.plist` | spełnione |
 | Rozpoznawanie mowy na urządzeniu, gdy dostępne | spełnione (`requiresOnDeviceRecognition`) |
 | Brak logowania treści rozmów | do potwierdzenia przy podłączeniu backendu |
-| Prawo do usunięcia danych klienta | Wymagane — brak kontraktu |
+| Prawo do usunięcia danych klienta | backend ma `clients/{id}/anonymize`, `clients/{id}/export`, `clients/{id}/merge` i `retention.ts`; brakuje mobilnej trasy i potwierdzenia, że aplikacja korzysta z tej samej ścieżki |
 
 ## 8. Podsumowanie luk
 
 **Do zrobienia po stronie backendu (wymagane, nie zablokowane technicznie):**
-token rozmowy, sesja użytkownika, trwały outbox, rozstrzyganie niepewnych wykonań,
-webhook wiadomości z podpisem, zapytania zakresowe, prawo do usunięcia danych.
+logowanie bearer (access + refresh + rewokacja per urządzenie), mobilne DTO
+(`Client`/`Task`/`Event`/`Note`/`Case`/`Briefing` + `version`), pliki w kontrakcie
+(upload/download z ACL), wersje i `payload_hash` w silniku akcji, trwały outbox
+ze stanami wykonania, `GET /actions/{id}/execution`, `GET /sync/changes`.
+Szczegółowe mapowanie 29 operacji i plan etapów M0–M6:
+`docs/emma/MOBILE_API_GAP_2026-09-14.md` w repozytorium backendu.
 
 **Zablokowane zewnętrznie:**
-konto dostawcy głosu, koegzystencja WhatsApp (Tech Provider + Embedded Signup),
-potwierdzenie kontraktu Qwen na działającym backendzie, dostęp do repozytorium backendu.
+konto dostawcy głosu (ElevenLabs), koegzystencja WhatsApp (Tech Provider +
+Embedded Signup), klucz APNs, potwierdzenie kontraktu Qwen na koncie dostawcy.
+Dostęp do repozytorium backendu **nie jest już** blokerem — uzyskano go 2026-09-14.
 
 Żadna z pozycji `Blocked` nie jest powodem do porzucenia pracy niezależnej od kont —
 i żadna nie jest opisywana jako działająca, dopóki nie zostanie udowodniona.
