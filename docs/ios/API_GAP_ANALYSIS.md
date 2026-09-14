@@ -24,6 +24,10 @@ Legenda: **Gotowe** (aplikacja to obsługuje) · **Wymagane** (potrzebne od back
 | Token dostępu użytkownika | Gotowe (klient) / Gotowe (backend) | aplikacja pobiera i przechowuje parę tokenów (`MobileSessionKeeper`, kluczyk), backend wydaje ją przez `/api/mobile/v1/auth/login`; token trafia do `AppDependencies.accessToken` |
 | Logowanie / sesja użytkownika | Gotowe (klient) / Gotowe (backend, M1) | backend: `POST /api/mobile/v1/auth/login\|refresh\|revoke` (bearer, rotacja z oknem propagacji, rewokacja per urządzenie, TOTP gdy konto go ma — migracja 041, `docs/emma/MOBILE_API_M1_LOGIN.md`); aplikacja: `AuthStore` + `MobileAuthClient` + kluczyk. **Uwaga:** po zalogowaniu dane nadal pochodzą z `MockRepository` — podłączenie repozytorium to M2 |
 | Przełączenie użytkownika w Demo | Gotowe | `switchUser(to:)` czyści stan głosu i odczytów |
+| Klienci i leady (`/clients`, `/clients/{id}`) | Gotowe (backend, M2) / Wymagane (iOS) | backend scala leady z kartoteką w jeden ciąg etapów (`new`/`in_contact`/`client`), karta klienta zawiera sprawę, terminy, zadania, notatki i aktywność z dziennika audytu; `incoming_message`/`needs_reply` są puste do M6 (`docs/emma/MOBILE_API_M2_READ.md` w repo backendu) |
+| Sprawy, zadania, terminy (`/cases/{id}`, `/tasks`, `/events`) | Gotowe (backend, M2) / Wymagane (iOS) | `version` z migracji 042, priorytet `high`→`urgent`, godziny w strefie kancelarii, termin całodniowy bez godziny |
+| Briefing dnia (`/briefing`) | Częściowo (backend, M2) / Wymagane (iOS) | backend składa zdanie z policzonych faktów (terminy + zadania, w tym po terminie); prawdziwe streszczenie asystenta wymaga modelu i kontekstu sprawy (M5) |
+| Zapis danych (nowy klient, zadanie, notatka) | Wymagane | backend ma na razie tylko odczyt; zapis wymaga wersji i klucza idempotencji (M4) |
 
 ## 2. Głos
 
@@ -47,7 +51,7 @@ podany modelowi językowemu **nie jest** zgodą — aplikacja odrzuca taką pró
 | --- | --- | --- |
 | Jeden silnik akcji dla UI i głosu | Gotowe (klient) / Wymagane (backend) | backend ma `actions` i `assistant_actions`, ale **bez** wersji, `payload_hash`, `presentation_id` i terminu ważności — zgoda na zmienioną treść jest dziś nierozróżnialna od zgody na treść aktualną |
 | Klucz idempotencji | Gotowe (klient) / Wymagane (backend) | kontrakt ma schemat `IdempotencyKey`; w backendzie `case_actions` nie ma kolumny wersji ani klucza idempotencji |
-| Blokada optymistyczna (`Version`) | Gotowe (klient) / Wymagane (backend) | `case_actions` (migracja 037) nie ma kolumny `version` |
+| Blokada optymistyczna (`Version`) | Gotowe (klient) / Częściowo (backend, M2) | `clients/cases/tasks/events/notes` mają `version` z triggerem (migracja 042), ale `case_actions` (037) nadal nie ma kolumny ani klucza idempotencji |
 | Trwały outbox | Wymagane | backend nie ma tabeli outboxu ani stanów wykonania (`queued/claimed/dispatching/accepted/failed/unknown`) |
 | Niepewny wynik bez ponowienia | Gotowe | `ExecutionState.unknown` nigdy nie jest raportowany jako sukces |
 | Rozstrzyganie niepewnych wykonań | Wymagane | brak trasy `GET /actions/{id}/execution` po stronie backendu |
