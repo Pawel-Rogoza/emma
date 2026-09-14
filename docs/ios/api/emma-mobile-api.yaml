@@ -236,7 +236,6 @@ paths:
                 expected_version: { $ref: "#/components/schemas/Version" }
                 display_name: { type: string }
                 stage: { type: string, enum: [new, in_contact, client] }
-                owner_id: { type: [string, "null"] }
                 needs_reply: { type: boolean }
       responses:
         "200":
@@ -271,9 +270,6 @@ paths:
             type: string
             enum: [open, done, all]
             default: open
-        - name: owner_id
-          in: query
-          schema: { type: string }
         - name: due_on_or_before
           in: query
           schema: { $ref: "#/components/schemas/LocalDate" }
@@ -325,9 +321,6 @@ paths:
           in: query
           required: true
           schema: { $ref: "#/components/schemas/LocalDate" }
-        - name: owner_id
-          in: query
-          schema: { type: string }
       responses:
         "200":
           description: Terminy
@@ -622,7 +615,6 @@ paths:
                 time: { $ref: "#/components/schemas/TimeOfDay" }
                 duration_minutes: { type: integer }
                 status: { type: string, enum: [to_confirm, confirmed, finished] }
-                owner_id: { type: [string, "null"] }
       responses:
         "200":
           description: Termin po zmianie
@@ -984,12 +976,11 @@ components:
 
     NewClient:
       type: object
-      required: [display_name, topic, language, owner_id]
+      required: [display_name, topic, language]
       properties:
         display_name: { type: string, minLength: 2 }
         topic: { type: string, minLength: 3 }
         language: { $ref: "#/components/schemas/LanguageCode" }
-        owner_id: { type: [string, "null"] }
         stage:
           type: string
           enum: [new, in_contact, client]
@@ -1001,22 +992,24 @@ components:
 
     NewCase:
       type: object
-      required: [client_id, title, summary, owner_id]
+      required: [client_id, title, summary]
       properties:
         client_id: { type: string }
         title: { type: string, minLength: 3 }
         summary: { type: string, minLength: 3 }
-        owner_id: { type: string }
 
     NewTask:
       type: object
-      required: [title, due_date, priority]
+      required: [title, priority]
       properties:
         title: { type: string, minLength: 1 }
         client_id: { type: [string, "null"] }
         case_id: { type: [string, "null"] }
-        owner_id: { type: [string, "null"] }
-        due_date: { $ref: "#/components/schemas/LocalDate" }
+        due_date:
+          oneOf:
+            - $ref: "#/components/schemas/LocalDate"
+            - type: "null"
+          description: Termin można pominąć — patrz `Task.due_date`.
         priority:
           type: string
           enum: [normal, urgent]
@@ -1041,7 +1034,6 @@ components:
         day: { $ref: "#/components/schemas/LocalDate" }
         time: { $ref: "#/components/schemas/TimeOfDay" }
         duration_minutes: { type: integer, minimum: 5, maximum: 480 }
-        owner_id: { type: [string, "null"] }
         kind: { type: string, enum: [consultation, case_deadline] }
         place: { type: [string, "null"] }
 
@@ -1078,7 +1070,6 @@ components:
         language: { $ref: "#/components/schemas/LanguageCode" }
         topic: { type: string }
         stage: { type: string, enum: [new, in_contact, client] }
-        owner_id: { type: [string, "null"] }
         source: { type: string, enum: [manual, web_form, whatsapp, import] }
         created_at: { $ref: "#/components/schemas/LocalDate" }
         briefing: { type: [string, "null"] }
@@ -1096,13 +1087,12 @@ components:
 
     LegalCase:
       type: object
-      required: [id, number, title, client_id, owner_id, status, created_at, version]
+      required: [id, number, title, client_id, status, created_at, version]
       properties:
         id: { type: string, example: case-041 }
         number: { type: string }
         title: { type: string }
         client_id: { type: string }
-        owner_id: { type: string }
         status: { type: string, enum: [in_progress, awaiting_client, closed] }
         summary: { type: string }
         created_at: { $ref: "#/components/schemas/LocalDate" }
@@ -1131,7 +1121,6 @@ components:
             jako `events.all_day`; aplikacja nie ma jeszcze osobnej prezentacji
             dla terminu całodniowego — patrz ograniczenia etapu M2b.
         duration_minutes: { type: integer, minimum: 0, maximum: 480 }
-        owner_id: { type: [string, "null"] }
         kind: { type: string, enum: [consultation, case_deadline] }
         status: { type: string, enum: [to_confirm, confirmed, finished] }
         place: { type: [string, "null"] }
@@ -1139,14 +1128,21 @@ components:
 
     Task:
       type: object
-      required: [id, title, due_date, is_done, priority, version]
+      required: [id, title, is_done, priority, version]
       properties:
         id: { type: string }
         title: { type: string }
         client_id: { type: [string, "null"] }
         case_id: { type: [string, "null"] }
-        owner_id: { type: [string, "null"] }
-        due_date: { $ref: "#/components/schemas/LocalDate" }
+        due_date:
+          oneOf:
+            - $ref: "#/components/schemas/LocalDate"
+            - type: "null"
+          description: >-
+            Termin bywa nieustalony (`null`) i to nie jest brak danych: kancelaria
+            prowadzi zadania „do zrobienia, kiedy będzie termin”. Panel widzi je
+            od zawsze, więc aplikacja też musi — z datą zastępczą kłamałaby
+            o pilności.
         is_done: { type: boolean }
         priority: { type: string, enum: [normal, urgent] }
         version: { $ref: "#/components/schemas/Version" }
@@ -1320,7 +1316,6 @@ components:
         actor_user_id: { type: string }
         text: { type: string, minLength: 1 }
         context: { $ref: "#/components/schemas/AssistantContext" }
-        task_owner_id: { type: [string, "null"] }
         task_due_date: { $ref: "#/components/schemas/LocalDate" }
         origin: { type: string, enum: [ui, voice, assistant_text] }
 

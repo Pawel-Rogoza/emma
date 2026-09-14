@@ -343,7 +343,6 @@ struct BackendTaskDTO: Decodable {
     let title: String
     let clientID: String?
     let caseID: String?
-    let ownerID: String?
     let dueDate: String?
     let isDone: Bool
     let priority: String
@@ -353,7 +352,6 @@ struct BackendTaskDTO: Decodable {
         case id, title, priority, version
         case clientID = "client_id"
         case caseID = "case_id"
-        case ownerID = "owner_id"
         case dueDate = "due_date"
         case isDone = "is_done"
     }
