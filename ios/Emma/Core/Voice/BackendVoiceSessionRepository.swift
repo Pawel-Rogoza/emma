@@ -65,8 +65,9 @@ public struct BackendVoiceSessionRepository: VoiceSessionRepository, Sendable {
         }
         try Self.verifySessionID(opened.id, matches: sessionID)
 
-        let issued = try await call {
-            try await api.voiceConversationToken(
+        let issued: BackendConversationTokenDTO
+        do {
+            issued = try await api.voiceConversationToken(
                 sessionID: sessionID,
                 installationID: request.installationID,
                 contextVersion: opened.contextVersion,
@@ -76,6 +77,13 @@ public struct BackendVoiceSessionRepository: VoiceSessionRepository, Sendable {
                     version: opened.contextVersion
                 )
             )
+        } catch let backendError as BackendRepositoryError {
+            throw Self.domainError(
+                from: backendError,
+                fallbackExpected: Version(opened.contextVersion)
+            )
+        } catch {
+            throw error
         }
         try Self.verifySessionID(issued.sessionID, matches: sessionID)
 
@@ -107,8 +115,9 @@ public struct BackendVoiceSessionRepository: VoiceSessionRepository, Sendable {
             request.expectedContextVersion.next().value,
             request.context.version.value
         )
-        let updated = try await call {
-            try await api.updateVoiceContext(
+        let updated: BackendVoiceSessionDTO
+        do {
+            updated = try await api.updateVoiceContext(
                 sessionID: request.sessionID,
                 contextVersion: newVersion,
                 idempotencyKey: Self.idempotencyKey(
@@ -117,6 +126,15 @@ public struct BackendVoiceSessionRepository: VoiceSessionRepository, Sendable {
                     version: newVersion
                 )
             )
+        } catch let backendError as BackendRepositoryError {
+            // 409 niesie `current_version` z kontraktu — pokazujemy je wprost,
+            // żeby użytkownik wiedział, o jaką wersję się rozjechało.
+            throw Self.domainError(
+                from: backendError,
+                fallbackExpected: request.expectedContextVersion
+            )
+        } catch {
+            throw error
         }
         try Self.verifySessionID(updated.id, matches: request.sessionID)
 
@@ -189,7 +207,13 @@ public struct BackendVoiceSessionRepository: VoiceSessionRepository, Sendable {
         }
     }
 
-    static func domainError(from error: BackendRepositoryError) -> DomainError {
+    /// Mapowanie błędów backendu na domenę. `fallbackExpected` służy wyłącznie
+    /// konfliktom wersji: kontrakt podaje `current_version`, a gdyby go nie było,
+    /// pokazujemy wersję, którą sami uważaliśmy za bieżącą.
+    static func domainError(
+        from error: BackendRepositoryError,
+        fallbackExpected: Version = .initial
+    ) -> DomainError {
         switch error {
         case .unauthorized:
             return .unauthorized
@@ -197,7 +221,12 @@ public struct BackendVoiceSessionRepository: VoiceSessionRepository, Sendable {
             return .notFound(resource: "sesja głosowa", id: "")
         case .transport:
             return .transportFailure(error.safeMessage)
-        case .forbidden, .conflict, .server, .notAvailableInBackend, .decoding:
+        case .conflict(let currentVersion, _):
+            return .versionConflict(
+                expected: fallbackExpected,
+                current: Version(currentVersion ?? fallbackExpected.value)
+            )
+        case .forbidden, .server, .notAvailableInBackend, .decoding:
             // Te przypadki niosą zdanie z backendu (albo zdanie tego pliku),
             // którego domena nie modeluje osobno — przekazujemy je bez zmian.
             return .backend(error.safeMessage)
