@@ -3,6 +3,28 @@
 Ten dokument mówi wyłącznie o tym, **co zostało faktycznie sprawdzone**, a czego nie.
 Powstał w środowisku bez macOS i bez Xcode, więc nie może zawierać deklaracji kompilacji.
 
+## 2026-09-15 — drugi dostawca głosu (Gemini Live): co dokładnie zmierzono
+
+Nowy przebieg na macOS (Xcode 26.6, Swift 6.3.3), gałąź `feat/gemini-live-voice`:
+
+| Bramka | Wynik | Dowód |
+| --- | --- | --- |
+| Kompilacja projektu Xcode ze ścieżką Gemini Live | **wykonana** | `** BUILD SUCCEEDED **` (`-scheme Emma-Demo`, iPhone 17 Pro) |
+| Testy logiki (`swift test`) | **323/323** | `Executed 323 tests, with 0 failures` |
+| Testy jednostkowe w Xcode (`-only-testing:EmmaTests`) | **410/410** | `Executed 410 tests, with 0 failures` |
+| Skrypt `verify-linux-logic.sh` | **9/9 kroków** | 122 pliki, 0 błędów składni; 1167 odwołań bez braków; 0 martwego API (649 składowych) |
+| Kontrakt Live API na żywym kluczu | **niewykonany** | spike `GEMINI_LIVE_SPIKE=1` czeka na `GEMINI_API_KEY` w `.env` |
+| Realna rozmowa Gemini Live na urządzeniu | **niewykonana** | wymaga iPhone'a i oceny polskiego przez człowieka |
+
+Szczegóły przełącznika i rollbacku: `docs/ios/RUNBOOK_GEMINI_LIVE.md`.
+Analiza wyboru dostawcy (ceny, ograniczenia, brak SDK Swift): `docs/ios/research/gemini-3-8-live-vs-elevenlabs.md`.
+
+**Naprawa zastanej usterki (niezwiązana z Gemini).** `swift test` **nie przechodził**
+przed tą zmianą: `EmmaTests/Logic/EmmaOrbTests.swift` testował `EmmaOrb`, który jest
+widokiem SwiftUI z warstwy wykluczonej z pakietu logiki. Plik przeniesiono do
+`EmmaTests/App/` (ten sam cel co inne testy widoków). Bez tego żadna bramka logiczna
+nie dawała się uruchomić, więc nie dało się zmierzyć niczego powyżej.
+
 ## Stan bieżący — macOS, Xcode 26.6 (12 września 2026)
 
 Bramki, które wcześniej były „niewykonane z braku macOS”, są **wykonane**:

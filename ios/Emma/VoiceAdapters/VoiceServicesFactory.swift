@@ -17,14 +17,26 @@ public enum VoiceServicesFactory {
 
     /// Czy w tym buildzie i konfiguracji można w ogóle użyć dostawcy.
     public static func providerIsAvailable(configuration: AppConfiguration) -> Bool {
-        #if canImport(ElevenLabs)
-        return configuration.apiBaseURL != nil
-        #else
-        return false
-        #endif
+        switch configuration.voiceProvider {
+        case .geminiLive:
+            // Gemini Live nie potrzebuje żadnego SDK — wystarczy backend, który
+            // wyda poświadczenie sesji.
+            return configuration.apiBaseURL != nil
+        case .elevenlabs:
+            #if canImport(ElevenLabs)
+            return configuration.apiBaseURL != nil
+            #else
+            return false
+            #endif
+        }
     }
 
     /// Transport dla nowej sesji rozmowy.
+    ///
+    /// Wybór dostawcy jest **jawny** (`EMMA_VOICE_PROVIDER`), a nie „spróbujmy
+    /// zapasowego, gdy główny zawiedzie”. Cicha zmiana dostawcy zmieniałaby też
+    /// to, kto przetwarza treść rozmowy. Gdy wybrany dostawca jest niedostępny
+    /// (brak backendu), zostaje deterministyczny mock Demo.
     ///
     /// - Parameters:
     ///   - configuration: konfiguracja aplikacji (Demo nie ma backendu).
@@ -40,17 +52,29 @@ public enum VoiceServicesFactory {
         mockScenarioName: String,
         audioSession: AudioSessionController? = nil
     ) -> VoiceTransport {
-        #if canImport(ElevenLabs)
         if providerIsAvailable(configuration: configuration), let baseURL = configuration.apiBaseURL {
-            return ElevenLabsVoiceTransport(
-                tokenProvider: BackendConversationTokenProvider(baseURL: baseURL),
-                accessToken: accessToken,
-                installationID: installationID,
-                // Sesję audio dla rozmowy ustawia transport: SDK tego nie robi.
-                audioSession: audioSession
-            )
+            switch configuration.voiceProvider {
+            case .geminiLive:
+                return GeminiLiveTransport(
+                    tokenProvider: BackendConversationTokenProvider(baseURL: baseURL),
+                    toolExecutor: BackendVoiceToolExecutor(baseURL: baseURL, accessToken: accessToken),
+                    accessToken: accessToken,
+                    installationID: installationID,
+                    model: configuration.voiceModel,
+                    audioSession: audioSession
+                )
+            case .elevenlabs:
+                #if canImport(ElevenLabs)
+                return ElevenLabsVoiceTransport(
+                    tokenProvider: BackendConversationTokenProvider(baseURL: baseURL),
+                    accessToken: accessToken,
+                    installationID: installationID,
+                    // Sesję audio dla rozmowy ustawia transport: SDK tego nie robi.
+                    audioSession: audioSession
+                )
+                #endif
+            }
         }
-        #endif
         // Ścieżka domyślna: deterministyczny mock bez sieci i bez mikrofonu.
         return MockVoiceTransport(
             scenario: MockVoiceScenarios.named(mockScenarioName),

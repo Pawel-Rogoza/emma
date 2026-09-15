@@ -817,19 +817,34 @@ struct BackendVoiceSessionDTO: Decodable {
     }
 }
 
-/// Odpowiedź `POST /voice/conversation-token`. **Bez** `expires_at`: dostawca go
-/// nie podaje, a wymyślona data kazałaby aplikacji ufać zegarowi zamiast sesji.
+/// Odpowiedź `POST /voice/conversation-token`. Kształt zależy od dostawcy:
+///   • ElevenLabs zwraca `conversation_id` i **nie** podaje `expires_at`,
+///   • Gemini Live zwraca `expires_at`/`model` i **nie ma** identyfikatora
+///     rozmowy (Live API go nie wydaje).
+/// Dlatego oba pola są opcjonalne: brak wartości znaczy „dostawca tego nie
+/// podaje”, a nie „udało się wypełnić zerem”.
 struct BackendConversationTokenDTO: Decodable {
     let token: String
-    let conversationID: String
+    let conversationID: String?
     let contextVersion: Int
     let sessionID: String
+    /// Nazwa dostawcy, który wydał token (`elevenlabs` / `gemini_live`).
+    let provider: String?
+    /// Model wskazany przez backend — aplikacja ma go odesłać w `setup`.
+    let model: String?
+    /// Czas wygaśnięcia **jako tekst ISO-8601**. Świadomie nie `Date`: wspólny
+    /// dekoder klienta nie ma strategii dat, a jeden format daty dostawcy nie
+    /// może zmieniać dekodowania wszystkich pozostałych odpowiedzi.
+    let expiresAt: String?
 
     enum CodingKeys: String, CodingKey {
         case token
         case conversationID = "conversation_id"
         case contextVersion = "context_version"
         case sessionID = "session_id"
+        case provider
+        case model
+        case expiresAt = "expires_at"
     }
 }
 

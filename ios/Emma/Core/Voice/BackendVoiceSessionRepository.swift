@@ -103,10 +103,21 @@ public struct BackendVoiceSessionRepository: VoiceSessionRepository, Sendable {
             endpoint: nil,
             transport: request.requestedTransport,
             providerConversationID: issued.conversationID,
-            // Backend nie wysyła `expires_at`, więc nie wymyślamy daty.
-            expiresAt: nil,
+            // ElevenLabs nie podaje `expires_at` (zostaje `nil`); Gemini Live
+            // podaje realny czas, więc go przenosimy — ale wciąż o żywotności
+            // rozstrzyga stan sesji na backendzie, nie zegar telefonu.
+            expiresAt: Self.parseExpiry(issued.expiresAt),
             capabilities: .providerUnverified
         )
+    }
+
+    /// ISO-8601 z milisekundami i bez nich — dostawcy piszą oba warianty.
+    static func parseExpiry(_ raw: String?) -> Date? {
+        guard let raw, !raw.isEmpty else { return nil }
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = withFraction.date(from: raw) { return date }
+        return ISO8601DateFormatter().date(from: raw)
     }
 
     /// `PATCH /voice/sessions/{id}/context`. Wersja może tylko rosnąć, więc nowa
