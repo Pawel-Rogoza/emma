@@ -31,14 +31,27 @@ public struct EmmaOrb: View {
             }
         }
 
+        /// Skala obrazu zapasowego.
+        ///
+        /// Dla rozmiarów reliefowych musi być **taka sama jak w renderze 3D**.
+        /// Inaczej przełączenie na obrazek (np. „Reduce Motion”, zejście aplikacji
+        /// do tła) zmienia widoczną wielkość postaci — a wtedy ikonka, która ma
+        /// tylko mrugać, sprawia wrażenie, że rośnie i maleje.
+        /// Wartość zmierzona na zrzutach: obwiednia postaci w reliefie to
+        /// `reliefCoverage` ramki, a obrazek w skali 1 zajmuje `1.033` tej obwiedni.
         var portraitScale: CGFloat {
             switch self {
             case .inline, .small: return 1.34
             case .medium, .card, .compact: return 1.18
-            case .hero, .stage: return 1
+            case .hero, .stage: return EmmaOrb.reliefMatchScale
             }
         }
     }
+
+    /// Ile ramki zajmuje postać w renderze 3D (relief) — patrz `portraitScale`.
+    nonisolated static let reliefCoverage: CGFloat = 0.968
+    /// Skala, przy której obrazek zapasowy pokrywa się z reliefem.
+    nonisolated static let reliefMatchScale: CGFloat = 1 / reliefCoverage
 
     private let size: Size
     private let isActive: Bool
@@ -47,7 +60,6 @@ public struct EmmaOrb: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
-    @State private var appeared = false
 
     public init(size: Size = .card, isActive: Bool = false, breathing: Bool = false, state: TurnState? = nil) {
         self.size = size
@@ -73,12 +85,16 @@ public struct EmmaOrb: View {
                     .scaleEffect(1.24)
             }
 
-            if size.usesRelief, !reduceMotion, scenePhase == .active, appeared {
+            // Render 3D trzymamy także wtedy, gdy aplikacja jest tylko nieaktywna
+            // (alert systemowy, Centrum sterowania, połączenie przychodzące).
+            // Wcześniej każde takie zdarzenie podmieniało postać na obrazek
+            // i z powrotem — czyli ikonka „rosła i malała” zamiast mrugać.
+            // Do tła schodzimy normalnie: wtedy i tak nikt na nią nie patrzy.
+            if size.usesRelief, !reduceMotion, scenePhase != .background {
                 TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
                     EmmaReliefView(
                         time: context.date.timeIntervalSinceReferenceDate,
-                        state: resolvedState,
-                        breathes: breathing || isActive
+                        state: resolvedState
                     )
                 }
             } else {
@@ -92,13 +108,13 @@ public struct EmmaOrb: View {
         .frame(width: size.diameter, height: size.diameter)
         .contentShape(Circle())
         .accessibilityHidden(true)
-        // The avatar is a fixed-size status indicator. Do not inherit a
-        // surrounding screen's transition animation when voice state changes.
+        // Postać ma stały rozmiar i jest wskaźnikiem stanu: nie dziedziczy
+        // animacji otaczającego ekranu ani nie przenika między obrazkiem
+        // a reliefem. Przenikanie dwóch różnych renderów wyglądało jak
+        // powiększanie i zmniejszanie zamiast mrugania.
         .transaction { transaction in
             transaction.animation = nil
         }
-        .onAppear { appeared = true }
-        .onDisappear { appeared = false }
     }
 }
 
@@ -223,15 +239,20 @@ private enum EmmaReliefFactory {
         return morpher
     }
 
-    static func update(_ view: SCNView, time: Double, state: TurnState, breathes: Bool) {
+    static func update(_ view: SCNView, time: Double, state: TurnState) {
         guard let portrait = view.scene?.rootNode.childNode(withName: "emmaPortrait", recursively: false) else { return }
-        let pose = EmmaPortraitMotion.pose(time: time, state: state, breathes: breathes)
+        let pose = EmmaPortraitMotion.pose(time: time, state: state)
+        // Zerowa animacja niejawna jest tu istotna: gdy SwiftUI wykonuje tę
+        // aktualizację w swoim bloku animacji, SceneKit interpolowałby transform
+        // węzła, a interpolacja macierzy obrotu potrafi przejść przez stan
+        // nieortogonalny — czyli postać na chwilę się rozciąga. Stąd „czasami
+        // się buguje”: zamiast mrugania widać było rośnięcie i zmniejszanie.
+        SCNTransaction.begin()
+        SCNTransaction.animationDuration = 0
+        defer { SCNTransaction.commit() }
         portrait.eulerAngles = pose.angles
-        // Keep the avatar's outer bounds completely stable.  The previous
-        // breathing scale was only a fraction of a percent, but SceneKit can
-        // interpolate that transform during SwiftUI updates and make the
-        // whole icon appear to jump larger for a frame.  Breathing is now
-        // conveyed by the existing eye/ear and lighting motion only.
+        // Obwiednia postaci jest stała. Oddychanie niosą wyłącznie ruch głowy,
+        // uszy i światło — nigdy skala (patrz DESIGN_CONTRACT, „Animacja").
         portrait.scale = SCNVector3(1, 1, 1)
         portrait.morpher?.setWeight(CGFloat(pose.leftEar), forTargetAt: 0)
         portrait.morpher?.setWeight(CGFloat(pose.rightEar), forTargetAt: 1)
@@ -253,14 +274,13 @@ private enum EmmaReliefFactory {
 private enum EmmaPortraitMotion {
     struct Pose {
         let angles: SCNVector3
-        let scale: Float
         let leftEar: Double
         let rightEar: Double
         let blink: Double
         let speak: Double
     }
 
-    static func pose(time: Double, state: TurnState, breathes: Bool) -> Pose {
+    static func pose(time: Double, state: TurnState) -> Pose {
         func pulse(_ phase: Double, _ start: Double, _ duration: Double) -> Double {
             let value = (phase - start) / duration
             guard value >= 0, value < 1 else { return 0 }
@@ -285,7 +305,6 @@ private enum EmmaPortraitMotion {
         let z = sin(time * 0.58) * 0.012 + (listening ? -0.052 : thinking ? 0.026 : interrupted ? 0.018 : 0)
         return Pose(
             angles: SCNVector3(Float(x), Float(y), Float(z)),
-            scale: 1,
             leftEar: leftEar,
             rightEar: rightEar,
             blink: blink,
@@ -297,7 +316,6 @@ private enum EmmaPortraitMotion {
 private struct EmmaReliefView: UIViewRepresentable {
     let time: Double
     let state: TurnState
-    let breathes: Bool
 
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView()
@@ -306,7 +324,7 @@ private struct EmmaReliefView: UIViewRepresentable {
     }
 
     func updateUIView(_ view: SCNView, context: Context) {
-        EmmaReliefFactory.update(view, time: time, state: state, breathes: breathes)
+        EmmaReliefFactory.update(view, time: time, state: state)
     }
 
     static func dismantleUIView(_ view: SCNView, coordinator: ()) {

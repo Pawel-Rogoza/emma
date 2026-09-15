@@ -415,3 +415,56 @@ byłoby nieodwracalne.
 **Instalacja na telefonie:** build produkcyjny (`Emma-Production`) kompiluje się
 bez błędów, ale iPhone jest teraz niewidoczny dla Xcode (`unavailable`), więc
 instalacja czeka na podłączenie urządzenia.
+
+---
+
+## Ikonka Emmy: mruganie bez zmiany rozmiaru — 2026-09-15
+
+**Objaw (Tomasz):** ikonka Emmy „czasami się buguje, powiększa i zmniejsza, zamiast
+tylko mrugać”.
+
+**Co pokazał kod.** Emmę rysuje wyłącznie `EmmaOrb` (6 miejsc). W całej aplikacji nie
+ma **żadnej** animacji skali (`scaleEffect` tylko dwa, oba statyczne; brak transformacji
+UIKit). Mruga wyłącznie wariant reliefowy (`hero`/`stage`). Skala `breathe 1.08` z
+kontraktu już wcześniej zniknęła z kodu — został po niej martwy parametr `breathes`
+(ignorowany w `pose`), co maskowało prawdziwą przyczynę.
+
+**Prawdziwy mechanizm.** Orb przełącza się w locie między renderem 3D (SceneKit,
+mruganie) a **obrazkiem zapasowym** — przy pierwszym pojawieniu, przy zmianie
+`scenePhase` i przy „Reduce Motion”. Te dwa rendery mają różną widoczną wielkość
+(zmierzone na zrzutach: relief **292×300 px**, obrazek **282×291 px**, czyli 3,55%
+szerokości i 3,09% wysokości) i inny wygląd (płaski kontra wypukły). Przełączenie
+bywa przenikaniem dwóch gałęzi, więc wygląda jak rośnięcie i zmniejszanie, a w
+gałęzi obrazkowej mruganie w ogóle ustaje — stąd „zamiast tylko mrugać”.
+Drugi, „czasami” mechanizm: gdy `updateUIView` trafia w blok animacji SwiftUI,
+SceneKit interpoluje transform węzła, a interpolacja macierzy obrotu przechodzi
+przez stan nieortogonalny, czyli chwilowe rozciągnięcie postaci.
+
+**Poprawka** (`ios/Emma/DesignSystem/EmmaOrb.swift`):
+1. Render 3D trzymamy, gdy aplikacja jest tylko nieaktywna (`scenePhase != .background`)
+   — alert systemowy, Centrum sterowania czy połączenie nie podmieniają już postaci.
+2. Usunięta bramka `appeared`: relief startuje od pierwszej klatki, więc nie ma
+   podmiany obrazka na relief tuż po wejściu na ekran.
+3. Obrazek zapasowy dla `hero`/`stage` używa skali dopasowanej do reliefu
+   (`reliefCoverage`/`reliefMatchScale`) — przełączenie nie zmienia wielkości.
+4. `SCNTransaction` z zerowym czasem trwania blokuje niejawną interpolację.
+5. Usunięty martwy `breathes`; `DESIGN_CONTRACT.md` mówi wprost: oddychanie bez zmiany skali.
+
+**Dowód.** `ios/scripts/verify-orb-size.py` mierzy obwiednię postaci na dwóch zrzutach
+(relief i „Reduce Motion”) i przerywa przy różnicy ponad 2%. Na zrzutach **sprzed**
+poprawki zgłasza błąd (3,55% / 3,09%), na zrzutach **po** poprawce jest OK
+(0,34% / 0,00%). Nowy `EmmaOrbTests` (4 testy) pilnuje, żeby rozmiary reliefowe znów
+nie wróciły do skali 1.
+
+**Ograniczenia.**
+- Nie oglądam obrazów na obecnym modelu, więc ocena wizualna jest **liczbowa**
+  (obwiednia pikseli), a nie „na oko” — wygląd na telefonie potwierdza człowiek.
+- Oba rendery nadal różnią się stylem (płaski kontra wypukły); zgadza się **wielkość**,
+  nie piksel w piksel.
+- Relief chodzi też, gdy aplikacja jest nieaktywna (alert, Centrum sterowania) —
+  kosztem odrobiny baterii; do tła schodzimy jak dotąd.
+- Obrazek zapasowy dla `hero`/`stage` jest teraz ~3,3% większy niż wcześniej
+  (widać na ekranie blokady/logowania przy włączonym „Reduce Motion”).
+- Jeden przebieg pełnego zestawu padł na `testCaptureStage5MeetingForm` („signal kill”);
+  po restarcie symulatora ten sam test przechodzi, więc była to wina zmęczonego
+  symulatora, nie kodu.
