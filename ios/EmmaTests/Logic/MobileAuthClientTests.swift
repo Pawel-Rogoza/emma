@@ -11,7 +11,7 @@ import XCTest
 
 final class MobileAuthClientTests: XCTestCase {
 
-    private var baseURL: URL { URL(string: "https://majkuny.pl")! }
+    private var baseURL: URL { URL(string: "https://advokat-varshava.pl")! }
 
     private func makeClient() -> MobileAuthClient {
         let configuration = URLSessionConfiguration.ephemeral
@@ -32,7 +32,7 @@ final class MobileAuthClientTests: XCTestCase {
     func testLoginSendsCredentialsToMobileEndpoint() async throws {
         StubURLProtocol.respond(json: Self.sessionJSON, status: 200)
         _ = try await makeClient().login(
-            email: "pawel@majkuny.pl",
+            email: "pawel@advokat-varshava.pl",
             password: "tajne-haslo",
             totp: "123456",
             installationID: "instalacja-1",
@@ -40,14 +40,14 @@ final class MobileAuthClientTests: XCTestCase {
         )
 
         let request = try XCTUnwrap(StubURLProtocol.lastRequest)
-        XCTAssertEqual(request.url?.absoluteString, "https://majkuny.pl/api/mobile/v1/auth/login")
+        XCTAssertEqual(request.url?.absoluteString, "https://advokat-varshava.pl/api/mobile/v1/auth/login")
         XCTAssertEqual(request.httpMethod, "POST")
         XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
         // Hasło musi iść w ciele, nigdy w adresie (adres trafia do logów proxy).
         XCTAssertFalse(request.url?.absoluteString.contains("tajne-haslo") ?? true)
 
         let body = try XCTUnwrap(StubURLProtocol.lastBody)
-        XCTAssertEqual(body["email"] as? String, "pawel@majkuny.pl")
+        XCTAssertEqual(body["email"] as? String, "pawel@advokat-varshava.pl")
         XCTAssertEqual(body["password"] as? String, "tajne-haslo")
         XCTAssertEqual(body["totp"] as? String, "123456")
         XCTAssertEqual(body["installation_id"] as? String, "instalacja-1")
@@ -57,7 +57,7 @@ final class MobileAuthClientTests: XCTestCase {
     func testLoginOmitsEmptyTotpInsteadOfSendingEmptyString() async throws {
         StubURLProtocol.respond(json: Self.sessionJSON, status: 200)
         _ = try await makeClient().login(
-            email: "pawel@majkuny.pl",
+            email: "pawel@advokat-varshava.pl",
             password: "tajne-haslo",
             totp: "",
             installationID: "instalacja-1",
@@ -74,7 +74,7 @@ final class MobileAuthClientTests: XCTestCase {
         _ = try await makeClient().refreshSession(refreshToken: "odswiezacz", installationID: "instalacja-1")
 
         let request = try XCTUnwrap(StubURLProtocol.lastRequest)
-        XCTAssertEqual(request.url?.absoluteString, "https://majkuny.pl/api/mobile/v1/auth/refresh")
+        XCTAssertEqual(request.url?.absoluteString, "https://advokat-varshava.pl/api/mobile/v1/auth/refresh")
         XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
         XCTAssertEqual(try XCTUnwrap(StubURLProtocol.lastBody)["refresh_token"] as? String, "odswiezacz")
     }
@@ -88,7 +88,7 @@ final class MobileAuthClientTests: XCTestCase {
         )
 
         let request = try XCTUnwrap(StubURLProtocol.lastRequest)
-        XCTAssertEqual(request.url?.absoluteString, "https://majkuny.pl/api/mobile/v1/auth/revoke")
+        XCTAssertEqual(request.url?.absoluteString, "https://advokat-varshava.pl/api/mobile/v1/auth/revoke")
         XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer token-dostepu")
         XCTAssertEqual(try XCTUnwrap(StubURLProtocol.lastBody)["reason"] as? String, "logout")
     }
@@ -108,7 +108,7 @@ final class MobileAuthClientTests: XCTestCase {
     func testDecodesSessionWithMillisecondDate() async throws {
         StubURLProtocol.respond(json: Self.sessionJSON, status: 200)
         let session = try await makeClient().login(
-            email: "pawel@majkuny.pl",
+            email: "pawel@advokat-varshava.pl",
             password: "x",
             totp: "",
             installationID: "instalacja-1",

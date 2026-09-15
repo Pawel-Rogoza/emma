@@ -170,7 +170,7 @@ final class MobileAuthStoreTests: XCTestCase {
 
     func testSuccessfulRemoteSignInUnlocksAndKeepsToken() async {
         let (auth, client, store) = makeRemoteStore()
-        let ok = await auth.signIn(email: "pawel@majkuny.pl", password: "haslo", totp: "123456")
+        let ok = await auth.signIn(email: "pawel@advokat-varshava.pl", password: "haslo", totp: "123456")
 
         XCTAssertTrue(ok)
         XCTAssertEqual(auth.state, .unlocked)
@@ -187,7 +187,7 @@ final class MobileAuthStoreTests: XCTestCase {
         client.result = .failure(.unauthorized("Nieprawidłowe dane logowania."))
         let (auth, _, store) = makeRemoteStore(client: client)
 
-        let ok = await auth.signIn(email: "pawel@majkuny.pl", password: "zle", totp: "")
+        let ok = await auth.signIn(email: "pawel@advokat-varshava.pl", password: "zle", totp: "")
 
         XCTAssertFalse(ok)
         XCTAssertEqual(auth.state, .signedOut)
@@ -209,7 +209,7 @@ final class MobileAuthStoreTests: XCTestCase {
         client.result = .failure(.rateLimited(retryAfterSeconds: 600, message: nil))
         let (auth, _, _) = makeRemoteStore(client: client)
 
-        let ok = await auth.signIn(email: "pawel@majkuny.pl", password: "haslo", totp: "")
+        let ok = await auth.signIn(email: "pawel@advokat-varshava.pl", password: "haslo", totp: "")
         XCTAssertFalse(ok)
         XCTAssertEqual(auth.notice, "Zbyt wiele prób logowania. Odczekaj chwilę i spróbuj ponownie.")
     }
@@ -282,7 +282,7 @@ final class MobileAuthStoreTests: XCTestCase {
 
     func testSignOutClearsTokenImmediately() async {
         let (auth, _, store) = makeRemoteStore()
-        _ = await auth.signIn(email: "pawel@majkuny.pl", password: "haslo", totp: "")
+        _ = await auth.signIn(email: "pawel@advokat-varshava.pl", password: "haslo", totp: "")
         auth.signOut()
 
         XCTAssertEqual(auth.state, .signedOut)
@@ -292,7 +292,7 @@ final class MobileAuthStoreTests: XCTestCase {
 
     func testSignOutAndRevokeTellsServerWhy() async {
         let (auth, client, store) = makeRemoteStore()
-        _ = await auth.signIn(email: "pawel@majkuny.pl", password: "haslo", totp: "")
+        _ = await auth.signIn(email: "pawel@advokat-varshava.pl", password: "haslo", totp: "")
 
         await auth.signOutAndRevoke()
 
@@ -314,7 +314,7 @@ final class MobileAuthStoreTests: XCTestCase {
     /// o końcu sesji z jednego złącza, nie z obserwowania ekranu.
     func testSignOutNotifiesVoiceLayer() async {
         let (auth, _, _) = makeRemoteStore()
-        _ = await auth.signIn(email: "pawel@majkuny.pl", password: "haslo", totp: "")
+        _ = await auth.signIn(email: "pawel@advokat-varshava.pl", password: "haslo", totp: "")
 
         var reasons: [AuthStore.SessionEndReason] = []
         let notified = expectation(description: "zakończenie sesji")
@@ -368,7 +368,7 @@ final class AppDependenciesTokenTests: XCTestCase {
     func testProductionUsesRealClockAndNotFixtureDay() {
         let production = AppConfiguration(
             environment: .production,
-            apiBaseURL: URL(string: "https://majkuny.pl")!,
+            apiBaseURL: URL(string: "https://advokat-varshava.pl")!,
             defaultLocale: "pl"
         )
         let dependencies = AppDependencies(configuration: production, fixtureName: "today-default")

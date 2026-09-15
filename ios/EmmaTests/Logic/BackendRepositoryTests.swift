@@ -10,7 +10,7 @@ import XCTest
 
 final class BackendRepositoryTests: XCTestCase {
 
-    private var baseURL: URL { URL(string: "https://majkuny.pl")! }
+    private var baseURL: URL { URL(string: "https://advokat-varshava.pl")! }
 
     private func makeRepository(user: User? = User(
         id: UserID("user-1"),

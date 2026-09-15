@@ -114,7 +114,7 @@ final class MobileSessionKeeperTests: XCTestCase {
         let store = InMemoryMobileSessionStore()
         let keeper = makeKeeper(client: client, store: store)
 
-        let session = try await keeper.signIn(email: "pawel@majkuny.pl", password: "haslo", totp: "123456")
+        let session = try await keeper.signIn(email: "pawel@advokat-varshava.pl", password: "haslo", totp: "123456")
         XCTAssertEqual(session.accessToken, "access-1")
         XCTAssertEqual(try store.load()?.accessToken, "access-1")
         let user = await keeper.currentUser

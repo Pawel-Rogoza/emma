@@ -12,7 +12,7 @@ import XCTest
 
 final class BackendAPIClientTests: XCTestCase {
 
-    private var baseURL: URL { URL(string: "https://majkuny.pl")! }
+    private var baseURL: URL { URL(string: "https://advokat-varshava.pl")! }
 
     private func makeClient(token: String? = "token-dostepu") -> BackendAPIClient {
         let configuration = URLSessionConfiguration.ephemeral

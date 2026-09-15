@@ -10,7 +10,7 @@ EMMA_ENVIRONMENT = staging
 // Osobne środowisko staging jeszcze nie istnieje, więc wskazujemy ten sam host
 // co Production. Gdy powstanie odrębny backend staging, podmieniamy tylko tę linię.
 // `$()` łamie `//`, bo w xcconfig rozpoczyna ono komentarz.
-EMMA_API_BASE_URL = https:/$()/majkuny.pl
+EMMA_API_BASE_URL = https:/$()/advokat-varshava.pl
 
 EMMA_DEVELOPMENT_TEAM = QZ25N94YZ8
 EMMA_DEFAULT_LOCALE = pl
