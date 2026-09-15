@@ -99,6 +99,41 @@ final class Stage4VoicePanelUITests: XCTestCase {
         application.buttons["Zakończ"].tap()
     }
 
+    /// Ekran rozmowy ma **jedną** czynność i **żadnych** dodatkowych kontrolek.
+    ///
+    /// Ten test jest strażnikiem układu: gdyby na ekran Emmy wróciło wyciszanie,
+    /// przerwanie, dyktowanie, przełącznik głosu albo drugi przycisk startu,
+    /// tutaj zapali się czerwiec. Celowo nie sprawdzamy tylko „coś się pokazało”,
+    /// a jawnie nieobecność każdej z usuniętych kontrolek.
+    func testConversationScreenHasNoExtraControls() {
+        guard startVoiceSession() else { return }
+
+        // Jedna czynność: zakończenie. „Rozmawiaj” w trakcie sesji znaczyłoby
+        // drugi przycisk startu, a dock ma ich mieć dokładnie jeden.
+        XCTAssertTrue(application.buttons["Zakończ"].exists, "Brak jedynego przycisku zakończenia")
+        XCTAssertFalse(
+            application.buttons["Rozmawiaj"].exists,
+            "Na ekranie rozmowy jest drugi przycisk startu"
+        )
+
+        // Kontrolki usunięte z tego ekranu na wniosek użytkownika.
+        XCTAssertFalse(panelMuteButton.exists, "Wyciszanie mikrofonu wróciło na ekran rozmowy")
+        XCTAssertFalse(panelUnmuteButton.exists, "Włączanie mikrofonu wróciło na ekran rozmowy")
+        XCTAssertFalse(application.buttons["Przerwij"].exists, "Przerwanie wróciło na ekran rozmowy")
+        XCTAssertFalse(
+            application.buttons["Dyktuj tekst do pola"].exists,
+            "Dyktowanie wróciło na ekran rozmowy"
+        )
+
+        // Stan rozmowy nadal musi być czytelny — sam przycisk to za mało.
+        let state = application.staticTexts.matching(
+            NSPredicate(format: "label BEGINSWITH[c] 'Stan rozmowy'")
+        ).firstMatch
+        XCTAssertTrue(state.exists, "Brak czytelnego stanu rozmowy nad przyciskiem")
+
+        application.buttons["Zakończ"].tap()
+    }
+
     /// Wyciszenie i zakończenie działają z innej zakładki, na tej samej sesji.
     func testMiniPanelMutesAndEndsSessionFromAnotherTab() {
         guard startVoiceSession() else { return }
