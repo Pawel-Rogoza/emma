@@ -29,6 +29,9 @@ public final class SystemSpeechPlaybackService: NSObject, SpeechPlaybackService 
     private let synthesizer = AVSpeechSynthesizer()
     private var continuation: AsyncStream<PlaybackEvent>.Continuation?
     private var current: SpeechPlaybackRequest?
+    /// Czy to my włączyliśmy sesję audio. W trakcie rozmowy z dostawcą sesję
+    /// trzyma WebRTC, więc nie przełączamy jej i nie dezaktywujemy.
+    private var ownsAudioSession = false
     public init(audioSession: AudioSessionController) {
         self.audioSession = audioSession
         super.init()
@@ -45,7 +48,15 @@ public final class SystemSpeechPlaybackService: NSObject, SpeechPlaybackService 
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
-        _ = audioSession.activate(.playback)
+        // W trakcie rozmowy z dostawcą sesję audio trzyma WebRTC. Przełączenie jej
+        // na `.playback` i późniejsza dezaktywacja odebrałyby dźwięk oraz mikrofon
+        // trwającej rozmowie, więc mówimy przez sesję dostawcy i nic nie zmieniamy.
+        if audioSession.providerOwnsAudioSession {
+            ownsAudioSession = false
+        } else {
+            _ = audioSession.activate(.playback)
+            ownsAudioSession = true
+        }
         current = request
         continuation?.yield(.started(sourceID: request.sourceID, approximate: false))
 
@@ -69,7 +80,7 @@ public final class SystemSpeechPlaybackService: NSObject, SpeechPlaybackService 
         }
         continuation?.yield(.finished(sourceID: current.sourceID, reason: .interrupted))
         self.current = nil
-        audioSession.deactivate()
+        releaseAudioSessionIfOwned()
     }
 
     /// Zdarzenie dla odczytu, którego dotyczy — tylko dla bieżącego żądania.
@@ -77,6 +88,13 @@ public final class SystemSpeechPlaybackService: NSObject, SpeechPlaybackService 
         guard let current else { return }
         continuation?.yield(.finished(sourceID: current.sourceID, reason: reason))
         self.current = nil
+        releaseAudioSessionIfOwned()
+    }
+
+    /// Oddajemy sesję audio tylko wtedy, gdy sami ją włączyliśmy.
+    private func releaseAudioSessionIfOwned() {
+        guard ownsAudioSession else { return }
+        ownsAudioSession = false
         audioSession.deactivate()
     }
 

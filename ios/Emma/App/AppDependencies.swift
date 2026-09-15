@@ -284,6 +284,13 @@ public final class AppDependencies: ObservableObject {
             // Jedno lustro stanu dla powłoki: pasek zakładek i arkusze czytają
             // `voiceState`, a nie subskrybują koordynatora po swojemu (F06).
             self.voiceState = state
+            // W produkcyjnej rozmowie sesję audio trzyma WebRTC dostawcy. Odsłuch
+            // i dyktowanie muszą o tym wiedzieć, żeby nie przełączać kategorii ani
+            // nie dezaktywować sesji w trakcie rozmowy (to zabiłoby mikrofon Emmy).
+            self.audioSession.setProviderOwnsAudioSession(
+                !self.configuration.usesMockServices
+                    && (state.connection == .connected || state.connection == .connecting)
+            )
             guard state.connection == .ended else { return }
             guard let reason = self.voice.lastEndReason else { return }
             guard reason == .idleTimeout || reason == .sessionExpired else { return }

@@ -381,8 +381,12 @@ public final class VoiceSessionCoordinator {
         do {
             try await service.start(DictationRequest(target: target, language: language))
         } catch {
+            // Nie zgadujemy przyczyny: adapter mówi, czy to brak zgody, brak
+            // rozpoznawania, czy niewydana sesja audio. Wcześniej każdy błąd
+            // pokazywał się jako „rozpoznawanie niedostępne", czyli kłamał.
+            let failure = (error as? any DictationStartFailureMapping)?.dictationFailure ?? .unknown
             handle(
-                dictation: .failed(.recognizerUnavailable),
+                dictation: .failed(failure),
                 frozenTarget: frozenTarget
             )
         }
@@ -859,7 +863,10 @@ public final class VoiceSessionCoordinator {
     /// Aplikacja w tle. Domyślnie kończy możliwość wykonywania zapisów głosem,
     /// zachowując szkic (§5.8). M2b rozszerza to zachowanie osobno.
     public func handleApplicationBackgrounded() async {
-        guard state.connection == .connected else { return }
+        // Liczy się samo istnienie sesji, nie stan połączenia: sesja założona
+        // u dostawcy (albo jeszcze w trakcie łączenia) też musi zostać zamknięta,
+        // inaczej zostaje po stronie backendu jako `active`.
+        guard state.sessionID != nil else { return }
         state.lastError = "Rozmowa wstrzymana. Wróć do aplikacji."
         await end(reason: .applicationBackgrounded, preserveDraft: true, revokedCapability: true)
     }
@@ -927,8 +934,15 @@ public final class VoiceSessionCoordinator {
 
         if let sessionID = state.sessionID {
             // Backend wygasza sesję także według lease/heartbeat; końcowy request
-            // telefonu nie jest jedynym mechanizmem.
-            try? await sessionRepository.end(sessionID: sessionID)
+            // telefonu nie jest jedynym mechanizmem. Czekamy na `DELETE` **ze
+            // stałym limitem**: bez sieci `URLSession` trzymałby „Zakończ" przez
+            // pełny timeout, a przejście w tło i tak zawiesiłoby proces przed
+            // wysłaniem żądania. Lokalne rozłączenie nie może zależeć od sieci.
+            await Self.endRemoteSession(
+                sessionID: sessionID,
+                repository: sessionRepository,
+                timeout: 3
+            )
         }
         if let transport {
             await transport.disconnect(reason: reason)
@@ -1082,6 +1096,26 @@ public final class VoiceSessionCoordinator {
     private func refreshExecutionStatesForOpenActions() async {
         for actionID in actionState.executions.keys {
             await refreshExecutionState(actionID: actionID)
+        }
+    }
+
+    /// Zamknięcie sesji po stronie backendu z ograniczeniem czasu.
+    ///
+    /// `sessionRepository.end` to żądanie sieciowe; bez tego limitu pojedynczy
+    /// brak sieci blokowałby zakończenie rozmowy na cały timeout klienta.
+    /// Lokalny stan i tak jest już rozłączony — wysyłka jest najlepszą próbą.
+    private static func endRemoteSession(
+        sessionID: VoiceSessionID,
+        repository: VoiceSessionRepository,
+        timeout: TimeInterval
+    ) async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { try? await repository.end(sessionID: sessionID) }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+            }
+            await group.next()
+            group.cancelAll()
         }
     }
 }

@@ -26,6 +26,15 @@ public protocol DictationService: AnyObject {
     func cancel() async
 }
 
+/// Zamiana błędu startu dyktowania na rodzaj pokazywany użytkownikowi.
+///
+/// Protokół żyje w `Core`, bo koordynator nie zna adapterów (pakiet logiki nie
+/// kompiluje warstwy `VoiceAdapters`). Dzięki temu nie musimy zgadywać przyczyny:
+/// adapter mówi wprost, czy to brak zgody, brak rozpoznawania, czy sesja audio.
+public protocol DictationStartFailureMapping {
+    var dictationFailure: DictationFailure { get }
+}
+
 @MainActor
 public protocol SpeechPlaybackService: AnyObject {
     func play(_ request: SpeechPlaybackRequest) async throws

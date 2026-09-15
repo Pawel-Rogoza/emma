@@ -269,10 +269,16 @@ final class AssistantStore: ObservableObject {
             if origin == .typed, hasActiveSession {
                 if let turnID { localAnswerTurnID = turnID }
                 await forwardTypedTurn(text)
-            } else {
-                if let turnID { localAnswerTurnID = turnID }
-                await answer(unrecognizedMessage)
+                return
             }
+            if origin == .voice, providerOwnsVoice {
+                // W produkcyjnej rozmowie dostawca usłyszał tę turę i odpowiada.
+                // Lokalne „nie rozumiem" dopisywałoby drugą odpowiedź na to samo
+                // pytanie i odbierało Emmie prawo do odpowiedzi (localAnswerTurnID).
+                return
+            }
+            if let turnID { localAnswerTurnID = turnID }
+            await answer(unrecognizedMessage)
             return
 
         case .reply, .note, .task, .event:
@@ -290,7 +296,7 @@ final class AssistantStore: ObservableObject {
         if let awaiting = awaitingInput {
             awaitingInput = nil
             let kind = intent.commandKind ?? awaiting.kind
-            if await newAction(kind: kind, clientID: awaiting.clientID, text: text) != nil, speaksReplies {
+            if await newAction(kind: kind, clientID: awaiting.clientID, text: text) != nil, speaksReplies, !providerOwnsVoice {
                 await speak("Przygotowałam treść do zatwierdzenia.", language: .pl, isSummary: false, sourceID: nextSourceID("emma-note"))
             }
             return
@@ -436,13 +442,21 @@ final class AssistantStore: ObservableObject {
     }
 
     private var unrecognizedMessage: String {
-        "W prototypie mogę omówić dzień lub sprawę, przygotować wiadomość, notatkę, zadanie i spotkanie. Wybierz skrót albo podaj klienta i polecenie."
+        "Nie rozpoznałam tego polecenia. Powiedz na przykład: „jakie mam dzisiaj terminy”, „przygotuj odpowiedź do Oleny” albo „dodaj zadanie na jutro”."
     }
 
     private var hasActiveSession: Bool {
         guard let dependencies else { return false }
         let state = dependencies.voice.state
         return state.sessionID != nil && state.connection == .connected
+    }
+
+    /// Czy w aktywnej rozmowie mówi Emma od dostawcy. Wtedy lokalny syntezator
+    /// systemowy musi milczeć: jedna sesja ma jeden głos. W Demo transport jest
+    /// mockiem bez własnego audio, więc systemowy odsłuch pozostaje jedynym głosem.
+    private var providerOwnsVoice: Bool {
+        guard let dependencies, !dependencies.configuration.usesMockServices else { return false }
+        return hasActiveSession
     }
 
     /// Pytanie odczytowe o dzień. „A jutro?” zmienia zakres daty, nie rodzaj.
@@ -696,7 +710,7 @@ final class AssistantStore: ObservableObject {
     func prepareReply(_ clientID: ClientID) async {
         guard let client = client(id: clientID) else { return }
         guard let turn = await newAction(kind: .reply, clientID: clientID, text: await draftText(clientID)) else { return }
-        if speaksReplies {
+        if speaksReplies, !providerOwnsVoice {
             await speak(
                 "Przygotowałam wiadomość do \(client.displayName). Sprawdź treść lub odsłuchaj ją przed zatwierdzeniem.",
                 language: .pl,
@@ -1289,9 +1303,14 @@ final class AssistantStore: ObservableObject {
     }
 
     /// `answer(text, read)` z referencji.
+    ///
+    /// Automatyczna odpowiedź nie jest czytana na głos, gdy trwa rozmowa
+    /// z Emmą od dostawcy: wtedy mówi Emma, a systemowy syntezator byłby
+    /// drugim, obcym głosem w tej samej sesji (zgłoszenie „prototyp gada").
+    /// Świadomy odsłuch („Odsłuchaj", `readTurn`/`speakAction`) nadal działa.
     private func answer(_ text: String, isSummary: Bool = false, read: Bool = true) async {
         let id = appendAssistantTurn(text, isSummary: isSummary)
-        guard read, speaksReplies else { return }
+        guard read, speaksReplies, !providerOwnsVoice else { return }
         await speak(text, language: .pl, isSummary: isSummary, sourceID: "emma-turn-\(id)")
     }
 

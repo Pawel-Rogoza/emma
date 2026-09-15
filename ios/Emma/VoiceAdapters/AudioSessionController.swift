@@ -21,6 +21,17 @@ public final class AudioSessionController {
     }
 
     public private(set) var mode: Mode = .idle
+    /// Czy sesję audio trzyma dostawca rozmowy (WebRTC LiveKit/ElevenLabs).
+    ///
+    /// Wtedy odsłuch i dyktowanie **nie przełączają** kategorii ani nie
+    /// dezaktywują sesji: zrobiwszy to, odebrałyby mikrofon i dźwięk trwającej
+    /// rozmowie. Sam syntezator/rozpoznawanie i tak korzystają z aktywnej sesji
+    /// dostawcy. Ustawiane przez `AppDependencies` z obserwacji stanu rozmowy.
+    public private(set) var providerOwnsAudioSession = false
+
+    public func setProviderOwnsAudioSession(_ owned: Bool) {
+        providerOwnsAudioSession = owned
+    }
     /// Obserwatory NotificationCenter. `nonisolated(unsafe)`, bo w Swift 6 `deinit`
     /// jest nieizolowany, a jedynym miejscem, które je czyta poza `@MainActor`,
     /// jest sam `deinit` (obiekt nie ma wtedy żadnych innych referencji).

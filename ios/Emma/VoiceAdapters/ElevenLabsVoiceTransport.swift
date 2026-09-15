@@ -40,6 +40,10 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
     /// Generacja połączenia. SDK nie przekazuje jej wprost, a koordynator musi
     /// umieć odrzucić zdarzenia z poprzedniego połączenia — dlatego liczymy ją tutaj.
     private var generation: Int = 0
+    /// Stan mikrofonu po naszej stronie. SDK nie raportuje wyciszenia zdarzeniem,
+    /// więc pierwszy stan po połączeniu nadajemy sami. Bez tego UI zostawało na
+    /// `unavailable`, a przycisk mikrofonu „wyciszał" przez wysłanie „włącz".
+    private var microphoneMuted = false
     private var observedTasks: [Task<Void, Never>] = []
 
     /// Inicjalizacja jest wewnętrzna, bo dostawca tokenu (`BackendConversationTokenProvider`)
@@ -55,6 +59,9 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
     public func connect(_ session: VoiceSessionConfiguration) async throws {
         self.configuration = session
         generation += 1
+        // Nowe połączenie zaczyna z otwartym mikrofonem; stan wyciszenia nie
+        // przenosi się między sesjami.
+        microphoneMuted = false
 
         // Token rozmowy pochodzi z backendu; aplikacja nigdy nie wysyła klucza API.
         // Normalnie jest już w konfiguracji sesji (wydał go `VoiceSessionRepository`),
@@ -152,8 +159,13 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
             emit(.connectionChanged(.connecting))
         case .active:
             emit(.connectionChanged(.connected))
+            // Nowe połączenie startuje z otwartym mikrofonem (albo z wyciszeniem,
+            // o które poproszono jeszcze w fazie łączenia). Ten stan musi trafić do
+            // modelu, bo od niego zależy, czy przycisk mikrofonu wycisza, czy włącza.
+            emit(.microphoneChanged(microphoneMuted ? .muted : .capturing))
         case .ended:
             emit(.connectionChanged(.ended))
+            emit(.microphoneChanged(.unavailable))
         case .error(let error):
             emit(.fatalError(Self.fatalKind(for: error)))
         @unknown default:
@@ -209,6 +221,8 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
     public func setMicrophoneMuted(_ muted: Bool) async throws {
         guard let conversation else { return }
         try await conversation.setMicrophoneMuted(muted)
+        // SDK wycisza realny tor mikrofonu WebRTC (§5.5); to nasz stan do UI.
+        microphoneMuted = muted
         emit(.microphoneChanged(muted ? .muted : .capturing))
     }
 
