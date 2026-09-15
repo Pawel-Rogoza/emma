@@ -110,6 +110,18 @@ cd ios && xcodebuild test -project Emma.xcodeproj -scheme Emma-Demo \
 Atrapa **nie jest** emulatorem Live API i nie zwalnia z punktu 4: dowodzi naszej
 strony protokołu, nie zachowania Google.
 
+### Co jeszcze zostało sprawdzone bez klucza
+
+Uruchomienie spike'u z **celowo nieprawidłowym** kluczem (`GEMINI_API_KEY=INVALID_KEY_PROBE`)
+potwierdza, że harness jest sprawny, a nie że rozmowa działa:
+
+- sieć do `generativelanguage.googleapis.com` działa (HTTP 400 `API_KEY_INVALID`,
+  nie 404 — czyli ścieżka i host są właściwe),
+- spike kończy się w ~1,3 s czytelnym błędem (`Gemini API odrzuciło żądanie
+  poświadczenia (status 400)`), a nie zawieszeniem,
+- w komunikacie nie ma klucza ani treści odpowiedzi dostawcy,
+- bez `GEMINI_LIVE_SPIKE=1` testy są pomijane, więc `npm test` nie woła sieci.
+
 ### Czego jeszcze nie wiemy (jawne ryzyka)
 
 1. **Blokada konfiguracji w tokenie.** Czy Live API przyjmie `systemInstruction`
