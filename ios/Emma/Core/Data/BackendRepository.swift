@@ -17,6 +17,12 @@ import Foundation
 public struct BackendRepository: EmmaRepository, Sendable {
 
     private let api: BackendAPIClient
+    /// Górny limit stron przy domykaniu stronicowania listy kontaktów.
+    /// Dziesięć stron po 30 pozycji to 300 kontaktów — więcej niż kancelaria
+    /// ma dzisiaj, a jednocześnie granica, która nie pozwala zapętlić się
+    /// w nieskończoność, gdyby serwer zwracał sprzeczne `has_more`.
+    private static let maxClientPages = 10
+
     /// Bieżący użytkownik pochodzi z zewnątrz (sesja mobilna), a nie z danych
     /// kancelarii. Gdy go nie ma, repozytorium to zgłasza — nie podstawia konta.
     private let currentUserProvider: @Sendable () async -> User?
@@ -53,9 +59,25 @@ public struct BackendRepository: EmmaRepository, Sendable {
 
     // MARK: ClientRepository
 
+    /// Lista kontaktów. Pobiera **wszystkie strony**, a nie tylko pierwszą.
+    ///
+    /// Wcześniej brana była pierwsza strona i reszta po cichu ginęła: serwer
+    /// oddawał `has_more: true`, a ekran pokazywał 30 z 37 pozycji (na produkcji
+    /// brakowało 7 klientów). Stronicowanie domykamy tutaj, żeby każdy ekran —
+    /// lista klientów, dzień, zadania, formularze — dostał pełny zbiór.
     public func clients(matching query: String, stage: ClientStage?) async throws -> [Client] {
-        let page = try await api.clients(query: query, stage: stage)
-        return try page.items.map(Self.mapClient)
+        var collected: [BackendClientDTO] = []
+        var cursor: String?
+        var pages = 0
+        repeat {
+            let page = try await api.clients(query: query, stage: stage, cursor: cursor)
+            collected.append(contentsOf: page.items)
+            // Zabezpieczenie: gdyby serwer powiedział `has_more` bez kursora,
+            // kończymy, zamiast zapętlić się w nieskończoność.
+            cursor = page.hasMore ? page.nextCursor : nil
+            pages += 1
+        } while cursor != nil && pages < Self.maxClientPages
+        return try collected.map(Self.mapClient)
     }
 
     public func client(id: ClientID) async throws -> Client? {

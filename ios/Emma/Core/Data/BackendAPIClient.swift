@@ -120,8 +120,16 @@ public struct BackendAPIClient: Sendable {
 
     // MARK: Odczyt zgodny z kontraktem
 
-    /// `GET /api/mobile/v1/clients?query=&stage=&limit=`.
-    func clients(query: String, stage: ClientStage?, limit: Int = Self.defaultPageLimit) async throws -> BackendClientPage {
+    /// `GET /api/mobile/v1/clients?query=&stage=&limit=&cursor=`.
+    ///
+    /// `cursor` to przesunięcie kolejnej strony listy; podajemy je tylko wtedy,
+    /// gdy poprzednia odpowiedź powiedziała `has_more`.
+    func clients(
+        query: String,
+        stage: ClientStage?,
+        limit: Int = Self.defaultPageLimit,
+        cursor: String? = nil
+    ) async throws -> BackendClientPage {
         var items: [URLQueryItem] = []
         if !query.isEmpty {
             items.append(URLQueryItem(name: "query", value: query))
@@ -130,6 +138,9 @@ public struct BackendAPIClient: Sendable {
             items.append(URLQueryItem(name: "stage", value: Self.stageToken(stage)))
         }
         items.append(URLQueryItem(name: "limit", value: String(limit)))
+        if let cursor, !cursor.isEmpty {
+            items.append(URLQueryItem(name: "cursor", value: cursor))
+        }
         return try await get(Endpoint.clients.rawValue, query: items)
     }
 

@@ -70,3 +70,50 @@ a nie nowy magazyn.
   powtórne uruchomienie zatrzymuje się na 45.
 - Aplikacja iOS na urządzeniu: rozmowa dwukierunkowa działa, narzędzia agenta
   wołane w trakcie rozmowy (audyt: `get_today_overview`, `search_clients` — 200).
+
+## Naprawa listy klientów: ucięta lista i brak kursora (2026-09-15)
+
+Zgłoszenie: „lista klientów ma działać, leady mają być zaciągane ze strony, gdy
+ktoś zarezerwuje konsultację".
+
+**Potwierdzone w kodzie i na produkcji — droga rezerwacji działa:** publiczny
+formularz (`src/components/islands/BookingRequest.tsx`) strzela w
+`/api/booking/request`, a ta trasa woła `recordPublicLead` → `createLead` ze
+statusem `new` i `booking_ref`. W bazie produkcyjnej jest **21 leadów
+z rezerwacji** (7 nowych, 7 w kontakcie, 6 klientów, 1 zamknięty), najnowszy
+z 2026-09-15 13:09. Leady **są** więc zaciągane.
+
+**Błąd był w liście:** trasa `/clients` oddawała `has_more: true` razem
+z `next_cursor: null`, a aplikacja pobierała pierwsze 30 pozycji i ignorowała
+resztę. Na produkcji lista ma 37 pozycji, więc **7 z 21 klientów było
+niewidocznych** (nowi i w kontakcie mieścili się w limicie). Drugie, głębsze
+źródło tego samego błędu: funkcja listy pobierała z każdego źródła tylko
+`limit * 3` wierszy, a filtr etapu działał dopiero po scaleniu — oba te miejsca
+uniemożliwiały poprawne stronicowanie (przy `limit = 1` lista urywała się na
+12 z 37 pozycji).
+
+**Naprawa:**
+- `src/lib/crm/mobile/read.ts` — parametr `offset`, pobranie `offset + limit`
+  z obu źródeł, filtr etapu przeniesiony do SQL, kartoteka czytana tylko dla
+  etapu `client`.
+- `src/pages/api/mobile/v1/clients/index.ts` — `cursor`, `next_cursor`
+  i `has_more` liczone z pobrania o jedną pozycję więcej, niż oddajemy.
+- iOS `BackendRepository.clients` — domyka stronicowanie (do 10 stron, czyli
+  300 kontaktów), więc pełny zbiór dostają wszystkie ekrany, nie tylko lista.
+
+**Wynik testów:** backend 117 plików / **928 testów, 0 porażek** (w tym 4 nowe
+testy stronicowania przechodzące wszystkie strony kursorami bez braków
+i duplikatów); `astro check` 0 błędów / 0 ostrzeżeń; panel 65/65 e2e; iOS
+`Emma-Demo` — **TEST SUCCEEDED**.
+
+**Ograniczenie — wymaga wdrożenia:** poprawka działa dopiero po wypchnięciu
+backendu. Produkcja nadal oddaje `next_cursor: null`, więc telefon pokazuje
+30 z 37 pozycji, dopóki nowa wersja nie trafi na serwer.
+
+**Odkrycie operacyjne:** `origin/main` **nie zawiera warstwy mobilnej**
+(`src/pages/api/mobile/v1/...` nie istnieje na `origin/main`), mimo że produkcja
+ją obsługuje — wdrożenie poszło ręcznym wyzwoleniem `deploy.yml`
+(`workflow_dispatch`), a nie pushem do `main`. Lokalny `main` jest 23 commity
+przed `origin/main` i **0 za**, czyli push do `main` jest fast-forward i kończy
+rozjazd. Do czasu pushu każda praca wychodząca z `main` na GitHubie gubi
+warstwę mobilną.
