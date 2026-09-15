@@ -341,7 +341,6 @@ public enum RecoverableErrorKind: String, Codable, Sendable {
     case audioRouteLost
     case microphoneBusy
     case providerThrottled
-    case echoCancellationUnavailable
     case unknown
 
     public var safeMessage: String {
@@ -351,7 +350,6 @@ public enum RecoverableErrorKind: String, Codable, Sendable {
         case .audioRouteLost: return "Zmieniła się trasa audio."
         case .microphoneBusy: return "Mikrofon jest używany przez inną aplikację."
         case .providerThrottled: return "Dostawca ogranicza tempo. Spróbuj ponownie za chwilę."
-        case .echoCancellationUnavailable: return "Brak kasowania echa w tej konfiguracji audio — załóż słuchawki, żeby Emma nie słyszała siebie."
         case .unknown: return "Wystąpił problem techniczny."
         }
     }

@@ -265,19 +265,13 @@ public final class GeminiLiveTransport: VoiceTransport {
     private func startAudio() throws {
         let engine = AVAudioEngine()
 
-        // Kasowanie echa (AEC). Bez tego mikrofon słyszy głośnik, a model
-        // odpowiada sam sobie — dokładnie ta pętla, którą zgłoszono po pierwszej
-        // udanej rozmowie („Emma słyszy samą siebie i próbuje sobie odpowiadać”).
-        // Ścieżka ElevenLabs dostaje AEC od LiveKit/WebRTC; przy własnym silniku
-        // trzeba o nie poprosić wprost, i to **przed** startem silnika, bo
-        // włączenie przetwarzania głosowego zmienia formaty węzłów wejścia.
-        let echoCancellation = enableEchoCancellation(on: engine)
-        if !echoCancellation {
-            // Nie udajemy, że jest dobrze: bez AEC rozmowa zamienia się w pętlę.
-            // Mówimy wprost, co zrobić, i zostawiamy rozmowę działającą.
-            emit(.recoverableError(.echoCancellationUnavailable))
-        }
-
+        // Kasowania echa **nie** włączamy: `setVoiceProcessingEnabled(true)`
+        // przepuszcza dźwięk przez tor telefoniczny (VoiceProcessingIO) i na
+        // urządzeniu skończyło się to wycięciem mowy użytkownika oraz
+        // „robotycznym” głosem modelu (zgłoszenie 2026-09-15). Zamiast tego
+        // pętlę zamyka półdupleks w `MicrophoneGate` — mikrofon jest zamknięty,
+        // gdy Emma mówi. Kosztuje to przerywanie w połowie jej zdania; wracamy
+        // do tematu tylko z pomiarem z urządzenia, nie zgadywaniem.
         let player = AVAudioPlayerNode()
         engine.attach(player)
 
@@ -351,6 +345,15 @@ public final class GeminiLiveTransport: VoiceTransport {
     private func enqueuePlayback(_ data: Data) {
         guard let player, let format = playerFormat,
               let buffer = Self.floatBuffer(from: data, format: format) else { return }
+        // Półdupleks: na czas tej porcji audio (plus ogon na pogłos) zamykamy
+        // mikrofon, żeby Emma nie usłyszała siebie z głośnika. To rozwiązanie
+        // wybrane **świadomie zamiast** kasowania echa na silniku: AEC
+        // (`setVoiceProcessingEnabled`) przepuszcza dźwięk przez tor telefoniczny
+        // i na tym urządzeniu wycinało mowę użytkownika oraz degradowało głos
+        // modelu (zgłoszenie 2026-09-15: „nie notuje mojego dźwięku”, „robotycznie”).
+        microphone.schedulePlayback(
+            seconds: Double(data.count / MemoryLayout<Int16>.size) / GeminiLiveDefaults.outputSampleRate
+        )
         player.scheduleBuffer(buffer, completionHandler: nil)
         if !player.isPlaying { player.play() }
     }
@@ -362,6 +365,9 @@ public final class GeminiLiveTransport: VoiceTransport {
 
     private func stopPlayback() {
         localPlaybackStopCount += 1
+        // Kolejka jest właśnie czyszczona, więc oddajemy mikrofon użytkownikowi
+        // od razu — inaczej zostałby niesłyszalny do końca wyliczonego ogona.
+        microphone.releasePlayback()
         guard let player else { return }
         player.stop()
         // `stop()` zwalnia kolejkę; `play()` przywraca węzeł do pracy, żeby
@@ -523,24 +529,6 @@ public final class GeminiLiveTransport: VoiceTransport {
 
     // MARK: Konwersje audio (bez stanu, wywoływane także z wątku tapu)
 
-    /// Włącza systemowe przetwarzanie głosowe na węźle wejścia: to ono daje
-    /// kasowanie echa akustycznego (AEC), redukcję szumu i automatyczne
-    /// wzmocnienie. Jedna jednostka VoiceProcessingIO obsługuje wtedy **oba**
-    /// kierunki, dlatego wołamy to tylko na wejściu — tak każe Apple i tak
-    /// wystarcza, żeby system miał sygnał odniesienia do odjęcia od mikrofonu.
-    ///
-    /// Zwraca `false`, gdy system odmówił (np. symulator bez trasy audio).
-    /// Wywołujący musi to pokazać użytkownikowi — z AEC włączonym „za darmo”
-    /// nie da się udawać, bo bez niego rozmowa wpada w pętlę.
-    private func enableEchoCancellation(on engine: AVAudioEngine) -> Bool {
-        do {
-            try engine.inputNode.setVoiceProcessingEnabled(true)
-            return engine.inputNode.isVoiceProcessingEnabled
-        } catch {
-            return false
-        }
-    }
-
     /// Buduje domknięcie tapu mikrofonu w kontekście **bez izolacji aktora**.
     ///
     /// Trzymamy je osobno, bo to obiekt, który faktycznie się wywracał: AVFAudio
@@ -638,19 +626,54 @@ final class ConversionSource: @unchecked Sendable {
 /// Bramka mikrofonu czytana z wątku tapu AVFAudio, który nie jest `@MainActor`.
 /// Bez tego wyciszenie wymagałoby sięgania do stanu aktora z wątku tła — czyli
 /// dokładnie tej pułapki, która wcześniej wywracała aplikację (M5, SIGTRAP).
+///
+/// Trzyma **dwa** powody wyciszenia, bo mają różne źródła:
+/// - `muted` — decyzja użytkownika (przycisk mikrofonu),
+/// - `playbackEndsAt` — półdupleks: gdy Emma mówi, mikrofon jest zamknięty,
+///   żeby nie usłyszała samej siebie przez głośnik.
 final class MicrophoneGate: @unchecked Sendable {
+    /// Ogon po ostatniej próbce: pogłos w pokoju dochodzi do mikrofonu jeszcze
+    /// chwilę po tym, jak głośnik zamilkł.
+    static let playbackTail: TimeInterval = 0.25
+
     private let lock = NSLock()
     private var muted = false
+    private var playbackEndsAt: Date?
 
     var isMuted: Bool {
         lock.lock()
         defer { lock.unlock() }
-        return muted
+        if muted { return true }
+        guard let end = playbackEndsAt else { return false }
+        return Date() < end
     }
 
+    /// Powód użytkownika (przycisk mikrofonu).
     func setMuted(_ value: Bool) {
         lock.lock()
         muted = value
+        lock.unlock()
+    }
+
+    /// Dopisuje odcinek odtwarzania do kolejki półdupleksu. Kolejne porcje audio
+    /// przychodzą z serwera szybciej niż realne odtwarzanie, więc liczymy koniec
+    /// **od końca kolejki**, a nie od „teraz” — inaczej bramka otworzyłaby się
+    /// w środku zdania Emmy.
+    func schedulePlayback(seconds: TimeInterval) {
+        guard seconds > 0 else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        let now = Date()
+        let start = max(playbackEndsAt ?? now, now)
+        playbackEndsAt = start.addingTimeInterval(seconds + Self.playbackTail)
+    }
+
+    /// Przerwanie/`interrupt`: kolejka odtwarzania jest czyszczona, więc bramka
+    /// wraca do użytkownika natychmiast — inaczej zostałby niesłyszalny do końca
+    /// wyliczonego ogona.
+    func releasePlayback() {
+        lock.lock()
+        playbackEndsAt = nil
         lock.unlock()
     }
 }

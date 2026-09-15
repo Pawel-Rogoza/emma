@@ -135,35 +135,47 @@ Dwie rzeczy warte zapamiętania:
   fabryce zestaw przestaje się kompilować (`main actor-isolated static method …
   cannot be called from outside of the actor`).
 
-### Pętla akustyczna: Emma słyszała samą siebie (naprawione 2026-09-15)
+### Pętla akustyczna: Emma słyszała samą siebie (półdupleks, 2026-09-15)
 
 Po naprawie zamknięcia aplikacji rozmowa ruszyła, ale wpadła w pętlę: model
 mówił „słucham, w czym mogę pomóc”, mikrofon odbierał to z głośnika i model
-zaczynał odpowiadać sam sobie. To brak **kasowania echa (AEC)**, a nie błąd
-protokołu.
+zaczynał odpowiadać sam sobie.
 
-Sesja audio była ustawiona poprawnie od początku (`.playAndRecord` +
-`.voiceChat`), ale to za mało: przy własnym `AVAudioEngine` trzeba włączyć
-**przetwarzanie głosowe** na węźle wejścia:
+**Pierwsza próba (AEC) — wycofana.** Włączyłem systemowe kasowanie echa
+(`engine.inputNode.setVoiceProcessingEnabled(true)`), bo to standardowa rada na
+ten objaw. Na urządzeniu wyszło jednak, że to lekarstwo jest gorsze od choroby:
+`VoiceProcessingIO` przepuszcza **oba** kierunki przez tor telefoniczny, co na
+tym sprzęcie:
 
-```swift
-try engine.inputNode.setVoiceProcessingEnabled(true)   // przed startem silnika
-```
+- wycięło mowę użytkownika („w ogóle nie notuje mojego dźwięku”),
+- zdegradowało głos modelu („odpowiada robotycznie”).
 
-Jedna jednostka `VoiceProcessingIO` obsługuje wtedy oba kierunki, więc system ma
-sygnał odniesienia i odejmuje go od mikrofonu. Ważne szczegóły:
+Wniosek: przy własnym `AVAudioEngine` AEC nie jest darmowe i nie wolno go
+włączać „na wiarę”. Ścieżka ElevenLabs ma je z LiveKit/WebRTC razem z całym
+stosem WebRTC — to różnica między cudzym SDK a własnym silnikiem, nie coś, co
+da się dopisać trzema linijkami.
 
-- włączać **przed** `engine.start()` i przed odczytem formatu wejścia — po
-  włączeniu format węzła się zmienia (nasz tap czyta format już po tej zmianie),
-- ścieżka ElevenLabs nie potrzebuje tego zabiegu, bo AEC dostaje od
-  LiveKit/WebRTC; to różnica między cudzym SDK a własnym silnikiem,
-- jeśli system odmówi (np. symulator bez trasy audio), transport emituje
-  `recoverableError(.echoCancellationUnavailable)` — rozmowa działa, ale
-  komunikat wprost mówi, żeby założyć słuchawki. Żadnego cichego fallbacku.
+**Rozwiązanie przyjęte: półdupleks w `MicrophoneGate`.** Na czas odtwarzania
+(plus 250 ms ogona na pogłos) mikrofon jest zamknięty, więc Emma fizycznie nie
+może usłyszeć samej siebie:
 
-Weryfikacja: 3/3 testy integracyjne transportu przechodzą z włączonym AEC
-(start audio, tap, barge-in, wznowienie), a efekt słychać dopiero na urządzeniu —
-trzeba sprawdzić, czy Emma przestaje odpowiadać sobie.
+- koniec odtwarzania liczymy **od końca kolejki**, a nie od „teraz” — porcje
+  audio przychodzą z serwera szybciej niż realne odtwarzanie,
+- `interrupt`/przerwanie zwalnia bramkę natychmiast (`releasePlayback`), więc
+  przerwanie z serwera nadal milknie natychmiast i oddaje mikrofon,
+- wyciszenie użytkownika jest nadrzędne i nie da się go zdjąć tą ścieżką.
+
+**Koszt, nazwany wprost:** nie da się przerwać Emmy głosem w połowie jej zdania
+(mikrofon jest wtedy zamknięty). Przerwanie działa po jej stronie i przyciskami
+w UI. To świadomy kompromis — kolejność była: najpierw rozmowa bez pętli.
+
+Testy: 4 przypadki bramki (`VoiceToolAndAudioTests`) — zamknięcie na czas
+odtwarzania, wydłużanie przy kolejce, natychmiastowe zwolnienie po przerwaniu,
+pierwszeństwo wyciszenia użytkownika. Razem 433/433.
+
+**Otwarte, do ewentualnego powrotu:** pełny dupleks (AEC) wymaga najpierw
+pomiaru na urządzeniu — czy tap dostarcza próbki i jaki jest poziom, z AEC i bez.
+Bez tego pomiaru każda kolejna próba jest zgadywaniem.
 
 > Przy okazji wyszedł **test-zombie**: atrapa Live API miała wpisaną na sztywno
 > datę `expires_at: 2026-09-15T21:30:00Z`, więc o 23:30 test wznowienia zaczął

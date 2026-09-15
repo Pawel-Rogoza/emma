@@ -230,4 +230,64 @@ final class VoiceToolAndAudioTests: XCTestCase {
         XCTAssertLessThanOrEqual(pcm.count, expected + 8, "tap oddał ponad 100 ms audio: \(pcm.count) B")
         XCTAssertEqual(pcm.count % MemoryLayout<Int16>.size, 0, "PCM16 musi mieć parzystą liczbę bajtów")
     }
+
+    // MARK: Półdupleks mikrofonu (pętla akustyczna)
+
+    /// Emma nie może słyszeć samej siebie z głośnika, więc na czas odtwarzania
+    /// mikrofon jest zamknięty. Testy pilnują trzech rzeczy, które łatwo zgubić:
+    /// że bramka faktycznie zamyka się na czas kolejki, że liczy koniec kolejki
+    /// (a nie „teraz”) i że przerwanie oddaje mikrofon natychmiast.
+    func testPlaybackSuppressesMicrophoneAndThenReleases() {
+        let gate = MicrophoneGate()
+        XCTAssertFalse(gate.isMuted, "na starcie mikrofon ma być otwarty")
+
+        gate.schedulePlayback(seconds: 0.2)
+        XCTAssertTrue(gate.isMuted, "w trakcie odtwarzania mikrofon musi być zamknięty")
+
+        // 0,2 s porcji + 0,25 s ogona na pogłos; czekamy z zapasem.
+        let released = expectation(description: "bramka wraca do użytkownika")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            XCTAssertFalse(gate.isMuted, "po odtworzeniu i ogonie mikrofon musi wrócić")
+            released.fulfill()
+        }
+        wait(for: [released], timeout: 2)
+    }
+
+    /// Porcje audio przychodzą z serwera szybciej niż realne odtwarzanie — koniec
+    /// liczymy więc od końca kolejki. Gdyby liczyć od „teraz”, bramka otworzyłaby
+    /// się w środku zdania Emmy i pętla wróciłaby.
+    func testQueuedPlaybackExtendsSuppressionInsteadOfResettingIt() {
+        let gate = MicrophoneGate()
+        for _ in 0..<3 {
+            gate.schedulePlayback(seconds: 0.2)
+        }
+        // Same porcje to 0,6 s. Po 0,5 s bramka musi być jeszcze zamknięta.
+        let checked = expectation(description: "bramka wciąż zamknięta po 0,5 s")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            XCTAssertTrue(gate.isMuted, "kolejka jeszcze gra, a mikrofon już się otworzył")
+            checked.fulfill()
+        }
+        wait(for: [checked], timeout: 3)
+    }
+
+    /// Przerwanie czyści kolejkę odtwarzania, więc mikrofon musi wrócić od razu —
+    /// inaczej użytkownik byłby niesłyszalny do końca wyliczonego ogona.
+    func testInterruptReleasesMicrophoneImmediately() {
+        let gate = MicrophoneGate()
+        gate.schedulePlayback(seconds: 5)
+        XCTAssertTrue(gate.isMuted)
+        gate.releasePlayback()
+        XCTAssertFalse(gate.isMuted, "po przerwaniu mikrofon wraca natychmiast")
+    }
+
+    /// Wyciszenie przez użytkownika jest nadrzędne i nie może zostać zdjęte
+    /// przez zwolnienie bramki odtwarzania.
+    func testUserMuteSurvivesPlaybackRelease() {
+        let gate = MicrophoneGate()
+        gate.setMuted(true)
+        gate.releasePlayback()
+        XCTAssertTrue(gate.isMuted)
+        gate.setMuted(false)
+        XCTAssertFalse(gate.isMuted)
+    }
 }
