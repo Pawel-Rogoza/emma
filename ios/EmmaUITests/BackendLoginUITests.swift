@@ -79,6 +79,21 @@ final class BackendLoginUITests: XCTestCase {
         application.buttons["Zaloguj się"].tap()
     }
 
+    /// Zamyka systemowe okno „Zachować hasło?" po zalogowaniu.
+    ///
+    /// iOS potrafi pokazać je nad aplikacją po wpisaniu hasła w polu
+    /// bezpiecznym. Wtedy trafia w nie pierwszy tap po zalogowaniu i test
+    /// sprawdza ekran, którego nie otworzył — a to fałszywy wynik, nie usterka.
+    private func dismissPasswordSavePromptIfPresent() {
+        for label in ["Nie teraz", "Nie zapisuj", "Not Now"] {
+            let button = application.buttons[label]
+            if button.waitForExistence(timeout: 3) {
+                button.tap()
+                return
+            }
+        }
+    }
+
     private func attachScreenshot(_ name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
@@ -97,6 +112,7 @@ final class BackendLoginUITests: XCTestCase {
         attachScreenshot("M1-01-ekran-logowania")
 
         typeCredentials(totp: TOTP.code(secret: totpSecret))
+        dismissPasswordSavePromptIfPresent()
 
         let tabBar = application.buttons["tab.today"]
         XCTAssertTrue(
@@ -114,6 +130,7 @@ final class BackendLoginUITests: XCTestCase {
         try XCTSkipIf(backendURL == nil, "Brak EMMA_UI_BACKEND_URL — test integracyjny pominięty")
         try launchAgainstBackend()
         typeCredentials(totp: TOTP.code(secret: totpSecret))
+        dismissPasswordSavePromptIfPresent()
 
         let clientsTab = application.buttons["tab.clients"]
         XCTAssertTrue(clientsTab.waitForExistence(timeout: 30), "Brak zakładki „Klienci” po zalogowaniu")

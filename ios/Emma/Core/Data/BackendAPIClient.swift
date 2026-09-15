@@ -586,7 +586,11 @@ struct BackendTaskDTO: Decodable {
 
 struct BackendEventDTO: Decodable {
     let id: String
-    let clientID: String
+    /// Kontrakt wymaga klienta w terminie, ale baza kancelarii zna też terminy
+    /// bez kartoteki (np. konsultację zapisaną z samego zgłoszenia). Pole jest
+    /// więc opcjonalne, żeby jeden taki rekord **nie wywracał dekodowania całej
+    /// odpowiedzi** — aplikacja pomija taki termin, zamiast gasić ekran.
+    let clientID: String?
     let caseID: String?
     let title: String
     let day: LocalDate
