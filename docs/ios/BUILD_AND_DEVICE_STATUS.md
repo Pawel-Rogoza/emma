@@ -11,9 +11,10 @@ Nowy przebieg na macOS (Xcode 26.6, Swift 6.3.3), gałąź `feat/gemini-live-voi
 | --- | --- | --- |
 | Kompilacja projektu Xcode ze ścieżką Gemini Live | **wykonana** | `** BUILD SUCCEEDED **` (`-scheme Emma-Demo`, iPhone 17 Pro) |
 | Testy logiki (`swift test`) | **330/330** | `Executed 330 tests, with 0 failures` |
-| Testy w Xcode (`-only-testing:EmmaTests`) | **428/428** | `Executed 428 tests, with 0 failures` (w tym 3 integracyjne transportu Gemini Live na prawdziwym gnieździe WebSocket: uścisk dłoni, obieg narzędzia, barge-in i wznowienie po `goAway`) |
+| Testy w Xcode (`-only-testing:EmmaTests`) | **429/429** | `Executed 429 tests, with 3 tests skipped and 0 failures` (w tym 3 integracyjne transportu Gemini Live na prawdziwym gnieździe WebSocket: uścisk dłoni, obieg narzędzia, barge-in i wznowienie po `goAway`; 429. test to `testInputTapBlockRunsOffMainThread`) |
 | Skrypt `verify-linux-logic.sh` | **9/9 kroków** | 125 plików, 0 błędów składni; 1167 odwołań bez braków; 0 martwego API (650 składowych) |
 | Kontrakt Live API **u Google** na żywym kluczu | **wykonany** | `GEMINI_LIVE_SPIKE=1` → `Test Files 1 passed`, `Tests 3 passed`: poświadczenie (`auth_tokens/…`, ~0,5 s), polska tura („Jestem Emma, asystentka w kancelarii adwokackiej. W czym mogę Ci dzisiaj pomóc?” + 250 562 B audio 24 kHz), obieg narzędzia (`get_today_overview` → po `FunctionResponse` głos + 253 442 B audio) |
+| Aplikacja na iPhonie: start rozmowy bez zamknięcia | **naprawione 2026-09-15** | trzy raporty `Emma-2026-09-15-231859/231915/231936.ips` → `_dispatch_assert_queue_fail` w `closure #1 in GeminiLiveTransport.startAudio()`; naprawa `@Sendable` + `makeInputTapBlock`, guard `testInputTapBlockRunsOffMainThread` |
 | Realna rozmowa Gemini Live na urządzeniu | **niewykonana** | wymaga iPhone'a i oceny polskiego przez człowieka (lista w `RUNBOOK_GEMINI_LIVE.md`, sekcja 5) |
 
 Szczegóły przełącznika i rollbacku: `docs/ios/RUNBOOK_GEMINI_LIVE.md`.

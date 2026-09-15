@@ -176,4 +176,58 @@ final class VoiceToolAndAudioTests: XCTestCase {
         XCTAssertGreaterThan(values.map { abs($0) }.max() ?? 0, 1000)
         XCTAssertGreaterThan(Set(values).count, 100, "Bufor musi nieść przebieg, nie stałą.")
     }
+
+    // MARK: Wątek tapu mikrofonu
+
+    /// Tap mikrofonu biegnie na wątku czasu rzeczywistego audio
+    /// (`RealtimeMessenger.mServiceQueue`), a nie na głównym aktorze. Ten test
+    /// woła **to samo domknięcie**, które dostaje AVFAudio — z kolejki w tle.
+    ///
+    /// Jeśli ktoś kiedyś zdejmie z niego `@Sendable`, domknięcie znów
+    /// odziedziczy izolację `@MainActor` i Swift 6 zatrzyma tu proces na
+    /// `_dispatch_assert_queue_fail` (EXC_BREAKPOINT/SIGTRAP) — dokładnie tak,
+    /// jak na urządzeniu w raporcie `Emma-2026-09-15-231936.ips`, gdzie
+    /// zamykało aplikację po dotknięciu „rozmawiaj”. Test nie potrzebuje
+    /// mikrofonu ani sieci, więc łapie to także na symulatorze.
+    func testInputTapBlockRunsOffMainThread() async throws {
+        let inputFormat = try XCTUnwrap(
+            AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 48000, channels: 1, interleaved: false)
+        )
+        let targetFormat = try XCTUnwrap(
+            AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)
+        )
+        let converter = try XCTUnwrap(AVAudioConverter(from: inputFormat, to: targetFormat))
+        let gate = MicrophoneGate()
+        let (stream, continuation) = AsyncStream<Data>.makeStream()
+
+        // 100 ms dźwięku przy 48 kHz — po konwersji na 16 kHz ma wyjść 1600 klatek.
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: 4800))
+        buffer.frameLength = 4800
+        let samples = try XCTUnwrap(buffer.floatChannelData?[0])
+        for frame in 0..<Int(buffer.frameLength) {
+            samples[frame] = sin(Float(frame) * 0.05) * 0.5
+        }
+
+        let tap = GeminiLiveTransport.makeInputTapBlock(
+            converter: converter,
+            targetFormat: targetFormat,
+            gate: gate,
+            continuation: continuation
+        )
+
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                tap(buffer, AVAudioTime(hostTime: 0))
+                done.resume()
+            }
+        }
+
+        var iterator = stream.makeAsyncIterator()
+        let next = await iterator.next()
+        let pcm = try XCTUnwrap(next, "tap nie oddał danych z mikrofonu")
+        let expected = 1600 * MemoryLayout<Int16>.size
+        XCTAssertGreaterThan(pcm.count, expected / 2, "tap oddał za mało audio: \(pcm.count) B")
+        XCTAssertLessThanOrEqual(pcm.count, expected + 8, "tap oddał ponad 100 ms audio: \(pcm.count) B")
+        XCTAssertEqual(pcm.count % MemoryLayout<Int16>.size, 0, "PCM16 musi mieć parzystą liczbę bajtów")
+    }
 }

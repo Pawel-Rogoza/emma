@@ -59,6 +59,14 @@ iOS — jedno z dwóch:
 dostawcy; rozjazd kończy się jawnym błędem (`provider_unavailable` /
 nieudane otwarcie gniazda), a nie cichym przełączeniem.
 
+> **Stan na 2026-09-15 23:12 (produkcja).** Przełącznik jest **włączony**:
+> `EMMA_VOICE_PROVIDER=gemini_live` w `/home/tomek/apps/website/adwokat-app-project/.env`
+> (kopia przed zmianą: `.env.bak-20260915-231200`, prawa 600). Klucz `GEMINI_API_KEY`
+> był tam już wcześniej i jest ten sam co lokalnie. Po restarcie proces ma
+> `EMMA_VOICE_PROVIDER=gemini_live`, wydanie `releases/f92634a3cb0b` zawiera kod
+> Gemini. Rollback to jedno słowo (`elevenlabs`) plus `sudo systemctl restart adwokat-app`.
+> Uwaga: przełącznik jest **globalny** — obejmuje wszystkich użytkowników aplikacji.
+
 ## 3. Jak wrócić (rollback)
 
 ```
@@ -89,8 +97,43 @@ obok, nie zamiast.
 | Projekt Xcode się kompiluje z nowym transportem | `xcodebuild build` → `** BUILD SUCCEEDED **` |
 | **Po barge-in lokalne audio jest wycofywane** (a nie tylko odnotowane) | `xcodebuild test` — `testServerBargeInStopsLocalPlaybackImmediately` + 2 testy reguł tury |
 | Żądanie `auth_tokens` ma właściwą ścieżkę, nagłówek i konfigurację | `npm test` — `gemini.authTokens.http.test.ts` (prawdziwe HTTP do atrapy) |
-| **Model odpowiada na żywym kluczu** (transkrypcja, audio, tool call, polski) | **brak dowodu** — spike `GEMINI_LIVE_SPIKE=1 npx vitest run src/lib/crm/voice/gemini.live.test.ts` nie został uruchomiony (brak klucza w `.env`) |
+| **Model odpowiada na żywym kluczu** (transkrypcja, audio, tool call, polski) | spike `GEMINI_LIVE_SPIKE=1 npx vitest run src/lib/crm/voice/gemini.live.test.ts` — 3/3 przechodzi; szczegóły i czasy poniżej |
+| **Aplikacja nie zamyka się po dotknięciu „rozmawiaj”** | raporty awarii `Emma-2026-09-15-231859/231915/231936.ips` (identyczny podpis) → naprawa `@Sendable` w tle tapu + test `testInputTapBlockRunsOffMainThread` |
 | Rozmowa na urządzeniu brzmi dobrze | **brak dowodu** — wymaga iPhone'a i uszu człowieka |
+
+### Dlaczego aplikacja zamykała się przy „rozmawiaj” (naprawione 2026-09-15)
+
+Trzy raporty awarii z 23:18–23:19 mają **ten sam podpis**, więc to jeden błąd, a nie
+trzy:
+
+```
+EXC_BREAKPOINT (SIGTRAP) → _dispatch_assert_queue_fail   (Swift Concurrency)
+  closure #1 in GeminiLiveTransport.startAudio()
+  ← AVAudioNodeTap::TapMessage::RealtimeMessenger_Perform()   (wątek audio)
+```
+
+Tap mikrofonu biegnie na wątku czasu rzeczywistego (`RealtimeMessenger.mServiceQueue`).
+Domknięcie tapu było tworzone wewnątrz metody `@MainActor`, więc **dziedziczyło
+izolację aktora** — Swift 6 sprawdzał wykonawcę przy pierwszym buforze i zatrzymywał
+proces. Samo nietykanie `self` w domknięciu nie wystarcza; liczy się izolacja samego
+domknięcia.
+
+Naprawa: domknięcie dostaje jawne `@Sendable` (to zdejmuje izolację) i powstaje
+w `nonisolated static func makeInputTapBlock(...)`, żeby dało się je wywołać z wątku
+tła w teście. **Ta sama pułapka została naprawiona dzień wcześniej w dyktowaniu
+tekstu** (`AppleSpeechDictationService`, raporty z 12:46 i 15:05) — wniosek z tamtej
+naprawy nie został wtedy zastosowany do nowego transportu.
+
+Dwie rzeczy warte zapamiętania:
+
+- **Symulator tego nie odtwarza.** Tam tap trafia na kolejkę główną, więc testy
+  integracyjne przechodziły, a telefon się zamykał. Wniosek: ścieżkę audio
+  weryfikujemy na urządzeniu, nie tylko w symulatorze.
+- **Guard działa w symulatorze**, bo `dispatch_assert_queue` pyta o wykonawcę,
+  a nie o platformę: `testInputTapBlockRunsOffMainThread` woła to samo domknięcie
+  z kolejki w tle. Sprawdzone doświadczalnie — po przywróceniu `@MainActor` na
+  fabryce zestaw przestaje się kompilować (`main actor-isolated static method …
+  cannot be called from outside of the actor`).
 
 ### Jak uruchomić testy integracyjne transportu
 

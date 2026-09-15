@@ -295,19 +295,25 @@ public final class GeminiLiveTransport: VoiceTransport {
         let (audioStream, audioContinuation) = AsyncStream<Data>.makeStream()
         self.audioContinuation = audioContinuation
 
-        // Domknięcie tapu celowo **nie chwyta `self`**: AVFAudio woła je z wątku
-        // tła, a `self` jest `@MainActor`. Chwytamy tylko wartości `Sendable`
-        // (konwerter, docelowy format, bramkę mikrofonu, kontynuację strumienia).
+        // Domknięcie tapu biegnie na wątku czasu rzeczywistego audio
+        // (`RealtimeMessenger.mServiceQueue`), a nie na głównym aktorze.
+        // Samo nietykanie `self` nie wystarcza: bez jawnego `@Sendable`
+        // domknięcie **dziedziczy izolację `@MainActor`** z tej metody i Swift 6
+        // zatrzymuje proces na sprawdzeniu wykonawcy (`_dispatch_assert_queue_fail`
+        // → EXC_BREAKPOINT/SIGTRAP) już przy pierwszym buforze z mikrofonu.
+        // To była rzeczywista przyczyna zamknięcia aplikacji przy „rozmawiaj”
+        // (raport `Emma-2026-09-15-231936.ips`); identyczna pułapka została
+        // wcześniej naprawiona w `AppleSpeechDictationService` przy „dyktuj tekst”.
+        // Konwerter i format są klasami bez `Sendable`, więc chwytamy je przez
+        // `nonisolated(unsafe)` — dokładnie tak, jak w tamtym miejscu.
         let gate = microphone
-        input.installTap(onBus: 0, bufferSize: 1600, format: inputFormat) { buffer, _ in
-            guard !gate.isMuted else { return }
-            guard let pcm = GeminiLiveTransport.convertToPCM16(
-                buffer,
-                converter: converter,
-                targetFormat: targetFormat
-            ) else { return }
-            audioContinuation.yield(pcm)
-        }
+        let tapBlock = GeminiLiveTransport.makeInputTapBlock(
+            converter: converter,
+            targetFormat: targetFormat,
+            gate: gate,
+            continuation: audioContinuation
+        )
+        input.installTap(onBus: 0, bufferSize: 1600, format: inputFormat, block: tapBlock)
 
         engine.prepare()
         try engine.start()
@@ -502,6 +508,34 @@ public final class GeminiLiveTransport: VoiceTransport {
     }
 
     // MARK: Konwersje audio (bez stanu, wywoływane także z wątku tapu)
+
+    /// Buduje domknięcie tapu mikrofonu w kontekście **bez izolacji aktora**.
+    ///
+    /// Trzymamy je osobno, bo to obiekt, który faktycznie się wywracał: AVFAudio
+    /// woła je z `RealtimeMessenger.mServiceQueue`, więc każde domknięcie
+    /// odziedziczone z `@MainActor` kończy proces na `_dispatch_assert_queue_fail`
+    /// (EXC_BREAKPOINT/SIGTRAP) — patrz `Emma-2026-09-15-231936.ips`. `@Sendable`
+    /// jest tu istotą naprawy, a nie ozdobnikiem.
+    nonisolated static func makeInputTapBlock(
+        converter: AVAudioConverter,
+        targetFormat: AVAudioFormat,
+        gate: MicrophoneGate,
+        continuation: AsyncStream<Data>.Continuation
+    ) -> AVAudioNodeTapBlock {
+        // Konwerter i format są w tym SDK `Sendable`, więc wchodzą do domknięcia
+        // wprost — obejścia z `nonisolated(unsafe)` są tu zbędne (kompilator je
+        // zgłasza jako niepotrzebne). W dyktowaniu tekstu były konieczne, bo tam
+        // chwytamy `AVAudioRecognitionRequest`.
+        return { @Sendable buffer, _ in
+            guard !gate.isMuted else { return }
+            guard let pcm = convertToPCM16(
+                buffer,
+                converter: converter,
+                targetFormat: targetFormat
+            ) else { return }
+            continuation.yield(pcm)
+        }
+    }
 
     /// Int16 PCM mono 24 kHz → bufor Float32 dla węzła odtwarzania.
     nonisolated static func floatBuffer(from data: Data, format: AVAudioFormat) -> AVAudioPCMBuffer? {
