@@ -112,10 +112,43 @@ cd ios && xcodebuild test -project Emma.xcodeproj -scheme Emma-Demo \
 Atrapa **nie jest** emulatorem Live API i nie zwalnia z punktu 4: dowodzi naszej
 strony protokołu, nie zachowania Google.
 
-### Co jeszcze zostało sprawdzone bez klucza
+### Co potwierdził żywy klucz (2026-09-15)
 
-Uruchomienie spike'u z **celowo nieprawidłowym** kluczem (`GEMINI_API_KEY=INVALID_KEY_PROBE`)
-potwierdza, że harness jest sprawny, a nie że rozmowa działa:
+Spike z prawdziwym kluczem (`GEMINI_LIVE_SPIKE=1 … gemini.live.test.ts`) przechodzi
+w trzech punktach:
+
+- `auth_tokens` przyjmuje blokadę sesji razem z `systemInstruction` i `tools`
+  (~0,5 s), czyli persona Emmy naprawdę jest zablokowana po stronie serwera,
+- tura tekstowa wraca jako polska transkrypcja **i** audio 24 kHz
+  („Jestem Emma, asystentka w kancelarii adwokackiej. W czym mogę Ci dzisiaj
+  pomóc?” + 250 562 B),
+- model wywołuje prawdziwe narzędzie (`get_today_overview`) i po
+  `FunctionResponse` odpowiada głosem („Na dzisiaj masz zaplanowane spotkanie
+  z klientem o godzinie dziesiątej trzydzieści.” + 253 442 B).
+
+Trzy rzeczy, które przechodziły wszystkie testy i atrapę, a **nie działały** na
+prawdziwym API (opis napraw i źródeł: `docs/emma/GEMINI_LIVE_KONTRAKT.md`
+w repo backendu):
+
+1. blokada jedzie w `bidiGenerateContentSetup` + `fieldMask`, a nie
+   w `liveConnectConstraints` — bieżące `v1beta` nie zna tego drugiego pola,
+2. schematy narzędzi muszą mieścić się w polach `Schema` z v1beta
+   (`additionalProperties` z JSON Schema kończy się `400`),
+3. `properties` trzeba konwertować jako mapę nazwa → schemat, inaczej `required`
+   wskazuje nieistniejące pola i sesja zamyka się kodem `1007` **przed**
+   `setupComplete` (z telefonu wygląda to jak „serwer milczy”).
+
+Do tego dwie rzeczy, które wynikają z protokołu i są już odzwierciedlone w kodzie:
+
+- aplikacja łączy się ze ścieżką **`BidiGenerateContentConstrained`**
+  i parametrem **`access_token`** (nie `key` — tym posługuje się klucz API);
+  test integracyjny sprawdza to na atrapie bez klucza,
+- o wznowienie trzeba **poprosić w pierwszym `setup`** (`sessionResumption: {}`),
+  bo serwer przysyła uchwyt tylko na życzenie; dlatego `sessionResumption` jest
+  poza maską tokenu — uchwyt zna tylko aplikacja.
+
+Uruchomienie spike'u z **celowo nieprawidłowym** kluczem
+(`GEMINI_API_KEY=INVALID_KEY_PROBE`) nadal jest przydatne jako próba harnessu:
 
 - sieć do `generativelanguage.googleapis.com` działa (HTTP 400 `API_KEY_INVALID`,
   nie 404 — czyli ścieżka i host są właściwe),
@@ -126,14 +159,15 @@ potwierdza, że harness jest sprawny, a nie że rozmowa działa:
 
 ### Czego jeszcze nie wiemy (jawne ryzyka)
 
-1. **Blokada konfiguracji w tokenie.** Czy Live API przyjmie `systemInstruction`
-   i `tools` wewnątrz `liveConnectConstraints` w kształcie, który wysyłamy —
-   rozstrzygnie spike. Jeśli nie, instrukcja i narzędzia przeniosą się do `setup`
-   po stronie aplikacji (osobna decyzja, bo osłabia „persona tylko z serwera”).
-2. **Wznowienie z uchwytem.** Przy zerwaniu łączymy się ponownie z
-   `sessionResumption.handle`, ale token ma zablokowane `sessionResumption: {}`.
-   Jeśli serwer odrzuci uchwyt, wznowienie padnie i zobaczymy
-   `recoverableError(.networkLost)` + `fatalError(.providerUnavailable)`.
+1. **Blokada konfiguracji w tokenie — rozstrzygnięte.** `systemInstruction`
+   i `tools` są przyjmowane i faktycznie obowiązują: spike dostał odpowiedź
+   w osobie Emmy, choć aplikacja nie wysyła ani instrukcji, ani narzędzi.
+   Persona zostaje „tylko z serwera”.
+2. **Wznowienie z uchwytem — częściowo rozstrzygnięte.** Serwer przysyła
+   `sessionResumptionUpdate` z uchwytem, gdy klient o niego poprosi w `setup`
+   (sprawdzone na żywym API). Sama **podmiana** uchwytu po `goAway` jest
+   sprawdzona tylko na atrapie (`GeminiLiveTransportIntegrationTests`) — na
+   żywym API wymaga dziesięciu minut rozmowy i jest w punkcie 5.7.
 3. **Transkrypcje.** Zakładamy przyrostowe `inputTranscription`/
    `outputTranscription`. Jeśli przyjdą tylko finalne, UI pokaże mniej niż
    obiecuje `capabilities.partialTranscripts` — wtedy trzeba to zmienić na `false`
@@ -170,7 +204,13 @@ identyczne niezależnie od tego, kto mówi.
 
 ## 5. Co sprawdzić na urządzeniu (pierwsze uruchomienie)
 
-1. Start rozmowy: czy `setupComplete` przychodzi i stan zmienia się na „połączono”.
+Czego **nie** sprawdzi spike: jakości polskiego głosu w słuchawce, latencji
+odczuwanej w rozmowie, pracy mikrofonu i wznowienia po dziesięciu minutach.
+To wymaga telefonu i ucha człowieka — poniżej lista.
+
+1. Start rozmowy: czy `setupComplete` przychodzi i stan zmienia się na „połączono”
+   (na żywym API `setupComplete` przychodzi ~0,8 s po otwarciu gniazda; spike to
+   potwierdza, telefon musi potwierdzić, że słychać to samo).
 2. Powiedz „Ile mam dzisiaj zadań?” — czy Emma odpowiada głosem i czy transkrypcja
    pojawia się na bieżąco.
 3. Przerwij w połowie zdania — czy dźwięk urywa się natychmiast (barge-in

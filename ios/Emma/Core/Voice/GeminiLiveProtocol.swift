@@ -96,8 +96,15 @@ public enum GeminiLiveCodec {
         switch message {
         case .setup(let model, let resumeHandle):
             var setup: [String: Any] = ["model": "models/\(model)"]
+            // Wznowienie trzeba włączyć **już w pierwszej ramce**: serwer
+            // przysyła uchwyt tylko wtedy, gdy klient o niego poprosi. Bez tego
+            // `goAway` nie ma do czego wrócić — a to jedyna droga, żeby długa
+            // rozmowa przetrwała dziesięciominutowe zamknięcie połączenia.
+            // Pusty obiekt znaczy „proszę o uchwyt”, a nie „wznów tę sesję”.
             if let resumeHandle, !resumeHandle.isEmpty {
                 setup["sessionResumption"] = ["handle": resumeHandle]
+            } else {
+                setup["sessionResumption"] = [String: Any]()
             }
             return ["setup": setup]
 

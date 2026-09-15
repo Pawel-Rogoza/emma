@@ -148,7 +148,9 @@ backendu (zasada „argument modelu nie jest zgodą” nie zmienia się).
 
 ## 6. Proponowany spike (1–2 dni, poza ścieżką produkcyjną)
 
-1. Backend: endpoint wydający ephemeral token z `liveConnectConstraints`
+1. Backend: endpoint wydający ephemeral token z `bidiGenerateContentSetup`
+   (dokumentacja pokazuje `liveConnectConstraints`, ale bieżące `v1beta` zna
+   tylko `bidiGenerateContentSetup` — sprawdzone na żywym API 2026-09-15)
    (`model: gemini-3.8-live`, `responseModalities: [AUDIO]`,
    `sessionResumption: {}`, `systemInstruction` zablokowana) — bez zmian w
    istniejących trasach M5.
@@ -158,6 +160,14 @@ backendu (zasada „argument modelu nie jest zgodą” nie zmienia się).
    użytkownika — dowód, że pętla `tool_call → FunctionResponse` działa.
 4. Pomiar: polski na nazwiskach/sygnaturach, latencja pierwszej odpowiedzi,
    przerwanie, reconnect po `GoAway`, zużycie tokenów na 10 min rozmowy.
+
+**Wynik spike'u (2026-09-15, klucz z `.env`, model `gemini-3.8-live`).**
+Punkty 1–3 wykonane: poświadczenie ~0,5 s, polska odpowiedź głosem z transkrypcją
+(250 562 B audio 24 kHz) i pełna pętla narzędzia (`get_today_overview` →
+`FunctionResponse` → odpowiedź głosem, 253 442 B). Punkt 4 **nie jest** zamknięty:
+latencja odczuwana w rozmowie, jakość na nazwiskach i sygnaturach oraz wznowienie
+po dziesięciu minutach wymagają telefonu i ucha człowieka. Koszt nadal wyliczany
+z cennika, nie z rachunku — spike szedł na tierze darmowym.
 
 **Kryteria go/no-go:** przerwanie wypowiedzi działa naturalnie; polski
 akceptowalny na nazwiskach i sygnaturach; koszt zmierzony < obecny koszt

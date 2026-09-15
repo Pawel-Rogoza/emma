@@ -12,12 +12,19 @@ Nowy przebieg na macOS (Xcode 26.6, Swift 6.3.3), gałąź `feat/gemini-live-voi
 | Kompilacja projektu Xcode ze ścieżką Gemini Live | **wykonana** | `** BUILD SUCCEEDED **` (`-scheme Emma-Demo`, iPhone 17 Pro) |
 | Testy logiki (`swift test`) | **330/330** | `Executed 330 tests, with 0 failures` |
 | Testy w Xcode (`-only-testing:EmmaTests`) | **428/428** | `Executed 428 tests, with 0 failures` (w tym 3 integracyjne transportu Gemini Live na prawdziwym gnieździe WebSocket: uścisk dłoni, obieg narzędzia, barge-in i wznowienie po `goAway`) |
-| Skrypt `verify-linux-logic.sh` | **9/9 kroków** | 122 pliki, 0 błędów składni; 1167 odwołań bez braków; 0 martwego API (649 składowych) |
-| Kontrakt Live API **u Google** na żywym kluczu | **niewykonany** | spike `GEMINI_LIVE_SPIKE=1` czeka na `GEMINI_API_KEY` w `.env` (atrapa Live API dowodzi tylko naszej strony protokołu) |
-| Realna rozmowa Gemini Live na urządzeniu | **niewykonana** | wymaga iPhone'a i oceny polskiego przez człowieka |
+| Skrypt `verify-linux-logic.sh` | **9/9 kroków** | 125 plików, 0 błędów składni; 1167 odwołań bez braków; 0 martwego API (650 składowych) |
+| Kontrakt Live API **u Google** na żywym kluczu | **wykonany** | `GEMINI_LIVE_SPIKE=1` → `Test Files 1 passed`, `Tests 3 passed`: poświadczenie (`auth_tokens/…`, ~0,5 s), polska tura („Jestem Emma, asystentka w kancelarii adwokackiej. W czym mogę Ci dzisiaj pomóc?” + 250 562 B audio 24 kHz), obieg narzędzia (`get_today_overview` → po `FunctionResponse` głos + 253 442 B audio) |
+| Realna rozmowa Gemini Live na urządzeniu | **niewykonana** | wymaga iPhone'a i oceny polskiego przez człowieka (lista w `RUNBOOK_GEMINI_LIVE.md`, sekcja 5) |
 
 Szczegóły przełącznika i rollbacku: `docs/ios/RUNBOOK_GEMINI_LIVE.md`.
 Analiza wyboru dostawcy (ceny, ograniczenia, brak SDK Swift): `docs/ios/research/gemini-3-8-live-vs-elevenlabs.md`.
+
+Żywy API odrzucił przy pierwszym uruchomieniu trzy rzeczy, które przechodziły testy
+jednostkowe i atrapę: nazwę pola blokady (`liveConnectConstraints` nie istnieje
+w bieżącym `v1beta`), `additionalProperties` w schematach narzędzi oraz
+`properties` potraktowane jak schemat (to ostatnie zamykało sesję kodem `1007`
+przed `setupComplete`). Wszystkie trzy naprawione i pokryte testami; opis wraz
+ze źródłami w `docs/emma/GEMINI_LIVE_KONTRAKT.md` w repo backendu.
 
 **Naprawa zastanej usterki (niezwiązana z Gemini).** `swift test` **nie przechodził**
 przed tą zmianą: `EmmaTests/Logic/EmmaOrbTests.swift` testował `EmmaOrb`, który jest

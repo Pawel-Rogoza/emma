@@ -39,10 +39,18 @@ public final class GeminiLiveTransport: VoiceTransport {
         reportsInterruptionReason: true
     )
 
-    /// Adres WebSocket Live API. Bez klucza — klucz dokładamy jako parametr
-    /// zapytania dopiero przy otwarciu połączenia, i nigdy nie logujemy adresu.
+    /// Adres WebSocket Live API dla poświadczenia sesji.
+    ///
+    /// Uwaga na dwa szczegóły, które łatwo pomylić i które kosztują pierwsze
+    /// nieudane połączenie: przy tokenie efemerycznym ścieżka ma końcówkę
+    /// **`Constrained`**, a token jedzie w parametrze **`access_token`**, nie
+    /// `key` (tym drugim posługuje się klucz API). Źródło: dokumentacja Live API
+    /// („Get started using raw WebSockets”) oraz referencyjny przykład Google
+    /// `gemini-live-ephemeral-tokens-websocket`.
+    ///
+    /// Adresu z tokenem nigdy nie logujemy.
     private static let defaultEndpoint = URL(
-        string: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+        string: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained"
     )!
 
     private let tokenProvider: BackendConversationTokenProvider
@@ -154,7 +162,8 @@ public final class GeminiLiveTransport: VoiceTransport {
         guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else {
             throw GeminiLiveProtocolError.websocketFailed("Nieprawidłowy adres Live API.")
         }
-        components.queryItems = [URLQueryItem(name: "key", value: token)]
+        // `access_token`, nie `key`: token efemeryczny nie jest kluczem API.
+        components.queryItems = [URLQueryItem(name: "access_token", value: token)]
         guard let url = components.url else {
             throw GeminiLiveProtocolError.websocketFailed("Nieprawidłowy adres Live API.")
         }

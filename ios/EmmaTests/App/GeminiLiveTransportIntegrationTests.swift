@@ -23,7 +23,9 @@ import XCTest
 @MainActor
 final class GeminiLiveTransportIntegrationTests: XCTestCase {
 
-    private static let livePath = "/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
+    /// Ścieżka z końcówką `Constrained` — właściwa dla poświadczenia sesji.
+    private static let livePath =
+        "/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained"
 
     private func baseURL(env: String) throws -> URL {
         guard let value = ProcessInfo.processInfo.environment[env], let url = URL(string: value) else {
@@ -104,6 +106,13 @@ final class GeminiLiveTransportIntegrationTests: XCTestCase {
         try await wait { try await self.state(from: base).setups.count == 1 }
         let stateAfterSetup = try await state(from: base)
         let setup = try XCTUnwrap(stateAfterSetup.setups.first)
+        // Token efemeryczny łączy się ze ścieżką `Constrained` i parametrem
+        // `access_token`. Gdyby ktoś wrócił do `key`, prawdziwe API odrzuciłoby
+        // połączenie — tu dowiadujemy się tego bez klucza.
+        let auth = try XCTUnwrap(stateAfterSetup.auth)
+        XCTAssertEqual(auth.path, Self.livePath)
+        XCTAssertEqual(auth.param, "access_token")
+        XCTAssertTrue(auth.present)
         XCTAssertEqual(setup.model, "models/gemini-3.8-live")
         XCTAssertNil(setup.handle, "Pierwsze połączenie nie ma jeszcze uchwytu wznowienia.")
         var seen = box.payloads
@@ -252,10 +261,20 @@ struct FakeLiveState: Decodable {
         let response: JSONValue?
     }
 
+    /// Jak atrapa została zaatakowana: ścieżka i parametr uwierzytelnienia.
+    /// To nie jest szczegół — pomylenie `Constrained`/`access_token` z
+    /// `BidiGenerateContent`/`key` to najczęstszy błąd pierwszego połączenia.
+    struct Auth: Decodable {
+        let path: String
+        let param: String
+        let present: Bool
+    }
+
     let connections: Int
     let setups: [Setup]
     let toolResponses: [ToolResponse]
     let tokenAuth: String?
+    let auth: Auth?
     let lastError: String?
 }
 

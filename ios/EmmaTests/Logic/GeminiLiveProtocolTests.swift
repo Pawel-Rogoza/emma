@@ -22,8 +22,11 @@ final class GeminiLiveProtocolTests: XCTestCase {
         XCTAssertNil(setup["generationConfig"])
         XCTAssertNil(setup["systemInstruction"])
         XCTAssertNil(setup["tools"])
-        // Bez wznowienia nie wysyłamy uchwytu — pusty nie znaczy „ten sam”.
-        XCTAssertNil(setup["sessionResumption"])
+        // Prosimy o wznowienie już na starcie: pusty obiekt to „daj mi uchwyt”,
+        // a nie „wznów tę sesję”. Bez tej prośby serwer nie przysyła uchwytu
+        // i `goAway` nie ma do czego wrócić (sprawdzone na żywym API).
+        let resumption = try XCTUnwrap(setup["sessionResumption"] as? [String: Any])
+        XCTAssertTrue(resumption.isEmpty)
     }
 
     func testSetupCarriesResumptionHandleWhenReconnecting() throws {
