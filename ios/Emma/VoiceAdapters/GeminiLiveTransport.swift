@@ -264,6 +264,20 @@ public final class GeminiLiveTransport: VoiceTransport {
 
     private func startAudio() throws {
         let engine = AVAudioEngine()
+
+        // Kasowanie echa (AEC). Bez tego mikrofon słyszy głośnik, a model
+        // odpowiada sam sobie — dokładnie ta pętla, którą zgłoszono po pierwszej
+        // udanej rozmowie („Emma słyszy samą siebie i próbuje sobie odpowiadać”).
+        // Ścieżka ElevenLabs dostaje AEC od LiveKit/WebRTC; przy własnym silniku
+        // trzeba o nie poprosić wprost, i to **przed** startem silnika, bo
+        // włączenie przetwarzania głosowego zmienia formaty węzłów wejścia.
+        let echoCancellation = enableEchoCancellation(on: engine)
+        if !echoCancellation {
+            // Nie udajemy, że jest dobrze: bez AEC rozmowa zamienia się w pętlę.
+            // Mówimy wprost, co zrobić, i zostawiamy rozmowę działającą.
+            emit(.recoverableError(.echoCancellationUnavailable))
+        }
+
         let player = AVAudioPlayerNode()
         engine.attach(player)
 
@@ -508,6 +522,24 @@ public final class GeminiLiveTransport: VoiceTransport {
     }
 
     // MARK: Konwersje audio (bez stanu, wywoływane także z wątku tapu)
+
+    /// Włącza systemowe przetwarzanie głosowe na węźle wejścia: to ono daje
+    /// kasowanie echa akustycznego (AEC), redukcję szumu i automatyczne
+    /// wzmocnienie. Jedna jednostka VoiceProcessingIO obsługuje wtedy **oba**
+    /// kierunki, dlatego wołamy to tylko na wejściu — tak każe Apple i tak
+    /// wystarcza, żeby system miał sygnał odniesienia do odjęcia od mikrofonu.
+    ///
+    /// Zwraca `false`, gdy system odmówił (np. symulator bez trasy audio).
+    /// Wywołujący musi to pokazać użytkownikowi — z AEC włączonym „za darmo”
+    /// nie da się udawać, bo bez niego rozmowa wpada w pętlę.
+    private func enableEchoCancellation(on engine: AVAudioEngine) -> Bool {
+        do {
+            try engine.inputNode.setVoiceProcessingEnabled(true)
+            return engine.inputNode.isVoiceProcessingEnabled
+        } catch {
+            return false
+        }
+    }
 
     /// Buduje domknięcie tapu mikrofonu w kontekście **bez izolacji aktora**.
     ///

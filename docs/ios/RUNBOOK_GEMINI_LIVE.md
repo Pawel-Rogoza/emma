@@ -135,6 +135,42 @@ Dwie rzeczy warte zapamiętania:
   fabryce zestaw przestaje się kompilować (`main actor-isolated static method …
   cannot be called from outside of the actor`).
 
+### Pętla akustyczna: Emma słyszała samą siebie (naprawione 2026-09-15)
+
+Po naprawie zamknięcia aplikacji rozmowa ruszyła, ale wpadła w pętlę: model
+mówił „słucham, w czym mogę pomóc”, mikrofon odbierał to z głośnika i model
+zaczynał odpowiadać sam sobie. To brak **kasowania echa (AEC)**, a nie błąd
+protokołu.
+
+Sesja audio była ustawiona poprawnie od początku (`.playAndRecord` +
+`.voiceChat`), ale to za mało: przy własnym `AVAudioEngine` trzeba włączyć
+**przetwarzanie głosowe** na węźle wejścia:
+
+```swift
+try engine.inputNode.setVoiceProcessingEnabled(true)   // przed startem silnika
+```
+
+Jedna jednostka `VoiceProcessingIO` obsługuje wtedy oba kierunki, więc system ma
+sygnał odniesienia i odejmuje go od mikrofonu. Ważne szczegóły:
+
+- włączać **przed** `engine.start()` i przed odczytem formatu wejścia — po
+  włączeniu format węzła się zmienia (nasz tap czyta format już po tej zmianie),
+- ścieżka ElevenLabs nie potrzebuje tego zabiegu, bo AEC dostaje od
+  LiveKit/WebRTC; to różnica między cudzym SDK a własnym silnikiem,
+- jeśli system odmówi (np. symulator bez trasy audio), transport emituje
+  `recoverableError(.echoCancellationUnavailable)` — rozmowa działa, ale
+  komunikat wprost mówi, żeby założyć słuchawki. Żadnego cichego fallbacku.
+
+Weryfikacja: 3/3 testy integracyjne transportu przechodzą z włączonym AEC
+(start audio, tap, barge-in, wznowienie), a efekt słychać dopiero na urządzeniu —
+trzeba sprawdzić, czy Emma przestaje odpowiadać sobie.
+
+> Przy okazji wyszedł **test-zombie**: atrapa Live API miała wpisaną na sztywno
+> datę `expires_at: 2026-09-15T21:30:00Z`, więc o 23:30 test wznowienia zaczął
+> failować z `expiresInPast`, choć kod był bez zmian. Atrapa liczy teraz czas
+> względny (`scripts/fake-live-api.mjs` w repo backendu) — godzina w atrapie nie
+> ma prawa decydować o wyniku testu.
+
 ### Jak uruchomić testy integracyjne transportu
 
 ```bash
