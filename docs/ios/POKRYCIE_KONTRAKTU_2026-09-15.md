@@ -253,3 +253,7 @@ wykonalne — czeka na decyzję, bo to operacja nieodwracalna i zmienia kontrakt
   z aplikacji (kontrakt nie zna etapu wstecz).
 - Menu nie ma „Wymaga odpowiedzi”, choć backend to pole przyjmuje — czeka na
   decyzję, czy to ma być element listy, czy osobna akcja.
+
+**Zrzuty:** `docs/ios/screenshots/leady-2026-09-15/` — `produkcja-nowe-zgloszenia.png`
+(prawdziwe dane: liczniki i „Zgłoszono …”), `menu-po-przytrzymaniu.png` (menu etapów)
+oraz `demo-lista-nowe.png`.
