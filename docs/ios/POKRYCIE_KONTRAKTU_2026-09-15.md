@@ -106,14 +106,25 @@ testy stronicowania przechodzące wszystkie strony kursorami bez braków
 i duplikatów); `astro check` 0 błędów / 0 ostrzeżeń; panel 65/65 e2e; iOS
 `Emma-Demo` — **TEST SUCCEEDED**.
 
-**Ograniczenie — wymaga wdrożenia:** poprawka działa dopiero po wypchnięciu
-backendu. Produkcja nadal oddaje `next_cursor: null`, więc telefon pokazuje
-30 z 37 pozycji, dopóki nowa wersja nie trafi na serwer.
+**Wdrożone i potwierdzone na produkcji (2026-09-15):** push `main`
+`5fd657b..e576cca` (fast-forward) uruchomił wdrożenie; zaraz po nim produkcja
+zaczęła oddawać `next_cursor` przy 30 pozycjach, a przejście wszystkich stron
+kursorami dało **37 pozycji, 37 unikalnych** — zero braków i duplikatów.
+Aplikacja Production z tą poprawką zainstalowana na telefonie.
 
-**Odkrycie operacyjne:** `origin/main` **nie zawiera warstwy mobilnej**
-(`src/pages/api/mobile/v1/...` nie istnieje na `origin/main`), mimo że produkcja
-ją obsługuje — wdrożenie poszło ręcznym wyzwoleniem `deploy.yml`
-(`workflow_dispatch`), a nie pushem do `main`. Lokalny `main` jest 23 commity
-przed `origin/main` i **0 za**, czyli push do `main` jest fast-forward i kończy
-rozjazd. Do czasu pushu każda praca wychodząca z `main` na GitHubie gubi
-warstwę mobilną.
+**Ograniczenie:** kolumna `next_cursor` działa jako przesunięcie w scalonej
+liście, więc kolejność musi być deterministyczna między zapytaniami. Jest
+(etap, potem data), ale przy rosnącej bazie warto rozważyć prawdziwy kursor
+oparty na kluczu, gdyby doszło jednoczesne dodawanie rekordów w trakcie
+przewijania. Ostatnia strona listy mogła się przy tym przesunąć o nowy wpis —
+to znany kompromis przesunięcia liczbowego, nie błąd danych.
+
+**Odkrycie operacyjne i stan po pushu:** `origin/main` **nie zawierał
+warstwy mobilnej** (`src/pages/api/mobile/v1/...` nie istniał na `origin/main`),
+mimo że produkcja ją obsługiwała — wdrożenie poszło ręcznym wyzwoleniem
+`deploy.yml` (`workflow_dispatch`), a nie pushem do `main`. Lokalny `main` był
+23 commity przed `origin/main` i **0 za**, więc push był fast-forwardem.
+**Rozjazd zamknięty:** `origin/main` wskazuje teraz `e576cca`, czyli warstwa
+mobilna, akcje i poprawka listy są wreszcie w repozytorium, nie tylko na dysku.
+Osobno została gałąź `feat/akcje-mobilne` (`1a9a735`) jako punkt cofnięcia
+samych akcji.
