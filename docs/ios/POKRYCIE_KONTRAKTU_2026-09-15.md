@@ -377,3 +377,41 @@ podobnych zgłoszeniach łatwo skasować nie to.
   tombstone chroniący przed ponownym importem.
 - Telefon nie pojawia się w oknie „Wymaga odpowiedzi” ani inne znane braki
   kontraktu (`phone`, `email`) — bez zmian.
+
+---
+
+## Wdrożenie na produkcję — 2026-09-15
+
+Za zgodą Tomasza wypchnięte na `main` (`e576cca..f926d28`) — CI i Deploy
+uruchomiły się same. Na produkcję poszły **dwa** commity:
+
+1. `9cd892d` — terminy mobilne pomijają termin bez klienta (kontrakt wymaga
+   `client_id`). Ten commit czekał na decyzję od wcześniejszej rundy.
+2. `f926d28` — `DELETE /clients/{client_id}` (usuwanie zgłoszenia).
+
+**Dowód wdrożenia bez zapisu do produkcji.** Nowa trasa bez autoryzacji
+odpowiada inaczej niż brak trasy, więc da się to sprawdzić odczytem:
+
+| żądanie | przed wdrożeniem | po wdrożeniu |
+|---|---|---|
+| `DELETE /clients/lead-999999` (bez tokenu) | **404** | **401** |
+| `PATCH /clients/client-999999` (bez tokenu, kontrola) | 401 | 401 |
+
+Po potwierdzeniu trasy sprawdzone zostały dane:
+
+- `GET /events` (±3 lata) na produkcji: **19 terminów, 0 bez `client_id`**
+  (przed poprawką był tam właśnie ten jeden feralny termin) — filtr działa.
+- `GET /clients?stage=new`: każde zgłoszenie ma identyfikator.
+- Test aplikacji przeciw produkcji (`testRealNewLeadsAreDefaultView`) przechodzi
+  po wdrożeniu: filtr „Nowe” zaznaczony domyślnie, liczniki i realne wiersze.
+- Obie sesje weryfikacyjne (zakładane wyłącznie do odczytu) unieważnione przez
+  `POST /auth/revoke` → 204.
+
+**Czego nie zrobiłem na produkcji:** żadnego zapisu. Usuwanie leada i dodawanie
+zgłoszenia zostały sprawdzone na tymczasowej bazie lokalnej (pełny obieg
+z aplikacji), a nie na danych kancelarii — usunięcie prawdziwego zgłoszenia
+byłoby nieodwracalne.
+
+**Instalacja na telefonie:** build produkcyjny (`Emma-Production`) kompiluje się
+bez błędów, ale iPhone jest teraz niewidoczny dla Xcode (`unavailable`), więc
+instalacja czeka na podłączenie urządzenia.
