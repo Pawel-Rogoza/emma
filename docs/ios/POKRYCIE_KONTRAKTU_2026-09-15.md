@@ -128,3 +128,53 @@ mimo że produkcja ją obsługiwała — wdrożenie poszło ręcznym wyzwoleniem
 mobilna, akcje i poprawka listy są wreszcie w repozytorium, nie tylko na dysku.
 Osobno została gałąź `feat/akcje-mobilne` (`1a9a735`) jako punkt cofnięcia
 samych akcji.
+
+## „Nie udało się wczytać bazy kancelarii" — termin bez klienta (2026-09-15)
+
+Zgłoszenie po wdrożeniu poprawki listy: zakładka „Klienci" pokazuje
+„Nie udało się wczytać bazy kancelarii." z przyciskiem „Spróbuj ponownie",
+choć inne ekrany działają.
+
+**Jak to zostało ustalone (dowody, nie domysły):**
+1. Log serwera (`/var/log/nginx/advokat-varshava_access.log`) pokazał żądania
+   z telefonu (`Emma/1 CFNetwork…`): `/clients?limit=30`,
+   `/clients?limit=30&cursor=30`, `/cases`, `/tasks`, `/events` — **wszystkie
+   200**. Czyli serwer był zdrowy, a mimo to ekran pokazywał błąd.
+2. Skoro odpowiedzi były 200, winne było dekodowanie po stronie aplikacji.
+3. Uruchomienie istniejącego testu integracyjnego
+   (`BackendLoginUITests.testRealBackendDataAppearsInClientsAndCard`) przeciw
+   produkcji **odtworzyło błąd co do znaku** — na zrzucie ekranu (odczytanym
+   OCR-em) widać było dokładnie ten komunikat.
+4. Kontrola danych: w oknie terminów ±3 lata jest **20 terminów, z czego jeden
+   bez `client_id`** (konsultacja zapisana z samego zgłoszenia, zanim powstała
+   kartoteka). `events.client_id` w bazie jest opcjonalne, a kontrakt mobilny
+   (`NewEvent`/`Event`) wymaga go — więc backend wysyłał dane niezgodne
+   z kontraktem, a aplikacja deklarowała `clientID: String` (wymagane), więc
+   **JSON całej odpowiedzi się nie dekodował** i gasł cały ekran.
+5. Dlaczego „Dzisiaj" działało: ten ekran pyta o wąskie okno jednego dnia,
+   w którym feralnego terminu nie ma. „Klienci" pytają o ±3 lata.
+
+**Naprawa:**
+- Backend `listMobileEvents`: odsiewa `e.client_id IS NULL`. Panel nadal widzi
+  taki termin — mobilna warstwa nie wysyła tylko danych niezgodnych
+  z kontraktem. Test: termin bez klienta nie pojawia się, a każdy zwrócony ma
+  niepuste `client_id`.
+- Aplikacja: `BackendEventDTO.clientID` jest opcjonalne, a repozytorium
+  **pomija** termin bez klienta (`compactMap`) zamiast rzucać. Jeden rekord nie
+  ma prawa gasić całego ekranu — to obrona przed każdym przyszłym naruszeniem
+  kontraktu, nie tylko tym jednym.
+- Test integracyjny zamyka systemowe okno „Zachować hasło?", które
+  przechwytywało pierwszy tap po zalogowaniu i dawało fałszywy wynik
+  (na zrzucie widać było zakładkę „Dzisiaj" mimo próby wejścia w „Klienci").
+
+**Weryfikacja:** po poprawce aplikacji ten sam test przeciw **produkcji**
+(która wciąż wysyła feralny termin) wchodzi w „Klienci" i pokazuje realne
+wiersze: nagłówek „BAZA KANCELARII", filtry „Wszystkie / Nowe / W kontakcie"
+i prawdziwe zgłoszenia (w tym jedno po ukraińsku) — bez komunikatu błędu.
+Backend: 117 plików / 929 testów, 0 porażek.
+
+**Ograniczenie:** termin bez kartoteki nadal istnieje w bazie i w panelu, ale
+w aplikacji go nie widać — nie ma go do kogo przypiąć (model aplikacji wiąże
+termin z klientem i sprawą). Gdyby kancelaria chciała widzieć konsultacje osób
+będących jeszcze tylko leadami, trzeba najpierw rozstrzygnąć, czy w terminie
+mobilnym `client_id` może być puste (zmiana kontraktu + modelu aplikacji).
