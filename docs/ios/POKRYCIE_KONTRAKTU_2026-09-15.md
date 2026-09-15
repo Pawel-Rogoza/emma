@@ -61,6 +61,9 @@ a nie nowy magazyn.
 ## Weryfikacja, na której opiera się ten dokument
 
 - Pełny zestaw backendu: **116 plików / 924 testy, 0 porażek**.
+- Panel CRM **nie jest złamany** przez warstwę mobilną: `npm run test:e2e`
+  → **65/65 testów przechodzi** (przebieg po dodaniu akcji mobilnych, które
+  korzystają ze wspólnego przebiegu zapisu).
 - `npx astro check`: **0 błędów**.
 - `npm run build`: przechodzi.
 - Migracja `045` na istniejącej bazie: 44 → 45, tabele akcji powstały;
