@@ -139,3 +139,67 @@ Do Twojej decyzji, ale proponuję start zachowawczy:
 4. **Czy wykonanie ma zapisywać do CRM od razu**, czy najpierw trafiać do
    kolejki do zatwierdzenia w panelu. To zmienia sens całej funkcji, więc
    decyzja jest Twoja.
+
+---
+
+## Stan realizacji (2026-09-15)
+
+Zaimplementowane w backendzie `adwokat-app-project` (commit lokalny, **niepushowany**
+— wdrożenie czeka na decyzję):
+
+- `src/lib/crm/migrations/045_mobile_action_proposals.sql` — tabele
+  `mobile_action_proposals` i `mobile_action_outbox`.
+- `src/lib/crm/mobile/actions.ts` — cała maszyna: propozycja (suma treści,
+  identyfikator prezentacji, 15 minut ważności), korekta z rotacją prezentacji,
+  zgoda (jedyny punkt), kolejka wykonania, odczyt wykonania, anulowanie.
+- Trasy: `POST /actions`, `PATCH /actions/{id}`, `POST /actions/{id}/confirm`,
+  `GET /actions/{id}/execution`, `POST /actions/{id}/cancel`.
+- `src/lib/crm/mobile/actions.test.ts` — **15 testów**, wszystkie przechodzą.
+
+### Dwie zmiany względem pierwotnego planu (wymuszone przez kod i kontrakt)
+
+1. **Wykonanie jest kolejkowe, nie natychmiastowe.** Kontrakt opisuje
+   wykonanie jako `queued → claimed → dispatching → accepted/failed/unknown`
+   z `outbox_id` i `retryable`. Zgodę kończymy więc wpisem do kolejki
+   w stanie `queued`, a nie zapisem do CRM. To rozstrzyga też moją wcześniejszą
+   decyzję nr 4 z §6: kontrakt sam wybiera kolejkę.
+2. **Wygaśnięcia nie zapisujemy.** `runIdempotent` opakowuje obsługę żądania
+   w transakcję, więc nieudane potwierdzenie (410) wycofuje wszystko, co
+   próbowałoby zapisać. Stan liczymy z `expires_at`, a `proposalDTO` pokazuje
+   `expired`. Efekt uboczny jest przy tym pożądany: nieudane żądanie nie
+   zostawia po sobie żadnych śladów.
+
+### Zabezpieczenie kluczowe (dowiedzione testem)
+
+Rejestr wykonawców jest **pusty**, więc potwierdzenie akcji nie zmienia stanu
+kancelarii. Test `przyjmuje zgodę z przycisku i kolejkuje wykonanie, nie
+zapisując nic w CRM` porównuje liczbę wierszy w `notes` i `case_actions` przed
+i po `confirm` — są identyczne. Nic nie wykona się, dopóki nie wskażesz, które
+typy akcji dopuszczamy.
+
+### Weryfikacja
+
+- `npm test`: **116 plików / 924 testy, 0 porażek** (było 110 / 836).
+- `npx astro check`: **0 błędów**, 47 podpowiedzi.
+- `npm run build`: przechodzi.
+- Migracja na **istniejącej** bazie: 44 migracje → po dodaniu pliku 45,
+  tabele `mobile_action_proposals` i `mobile_action_outbox` powstały;
+  powtórne uruchomienie zatrzymuje się na 45 (idempotencja).
+
+### Ograniczenia (świadome)
+
+- **Brak wykonawców** — akcje trafiają do kolejki `queued` i tam zostają.
+  To nie „działa połowicznie", a celowe zatrzymanie przed Twoją decyzją.
+- **Brak rozdzielacza kolejki** (dispatcher) — nie ma jeszcze procesu, który
+  zabiera wpis z `queued`. Do zrobienia razem z pierwszym wykonawcą.
+- **Wątki WhatsApp nadal nie istnieją** w bazie, więc `kind: reply` odrzuca
+  propozycję z jasnym komunikatem, zamiast obiecywać wysyłkę.
+- `sync/changes` i `push/devices` z kontraktu **nie są** zaimplementowane
+  (poza zakresem tego etapu).
+- Niczego nie wdrożono na serwer: zmiany są wyłącznie w repozytorium lokalnym.
+
+### Otwarte decyzje (bez zmian, §6)
+
+Które typy akcji dopuszczamy, czy zgoda głosowa wystarcza dla nieodwracalnych,
+oraz czy wykonanie ma iść do CRM od razu, czy czekać na zatwierdzenie w panelu.
+Pierwsza i trzecia decydują o pierwszym wykonawcy.
