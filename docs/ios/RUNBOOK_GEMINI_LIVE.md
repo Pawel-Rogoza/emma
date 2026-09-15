@@ -87,6 +87,8 @@ obok, nie zamiast.
 | Backend domyślnie zostaje przy ElevenLabs, bez klucza nie woła Gemini | `npm test` — `voice.test.ts` (4 nowe przypadki) |
 | Narzędzia Live API są tylko czytające i audytowane | `npm test` — `voiceTools.test.ts` (6 testów) |
 | Projekt Xcode się kompiluje z nowym transportem | `xcodebuild build` → `** BUILD SUCCEEDED **` |
+| **Po barge-in lokalne audio jest wycofywane** (a nie tylko odnotowane) | `xcodebuild test` — `testServerBargeInStopsLocalPlaybackImmediately` + 2 testy reguł tury |
+| Żądanie `auth_tokens` ma właściwą ścieżkę, nagłówek i konfigurację | `npm test` — `gemini.authTokens.http.test.ts` (prawdziwe HTTP do atrapy) |
 | **Model odpowiada na żywym kluczu** (transkrypcja, audio, tool call, polski) | **brak dowodu** — spike `GEMINI_LIVE_SPIKE=1 npx vitest run src/lib/crm/voice/gemini.live.test.ts` nie został uruchomiony (brak klucza w `.env`) |
 | Rozmowa na urządzeniu brzmi dobrze | **brak dowodu** — wymaga iPhone'a i uszu człowieka |
 
@@ -144,12 +146,35 @@ potwierdza, że harness jest sprawny, a nie że rozmowa działa:
 5. **Tier Free** używa treści do ulepszania produktów Google. Do rozmów z danymi
    klientów wyłącznie tier płatny.
 
+## 4b. Dwa przełączniki: kto mówi i kto myśli
+
+To dwie **niezależne** osie i warto ich nie mieszać:
+
+| Pytanie | Przełącznik | Wartości | Domyślnie |
+| --- | --- | --- | --- |
+| Kto prowadzi rozmowę głosem? | `EMMA_VOICE_PROVIDER` | `elevenlabs` \| `gemini_live` | `elevenlabs` |
+| Kto myśli nad tekstem (agent, briefing)? | `ASSISTANT_PROVIDER` | `openai` \| `qwen` | `openai` |
+
+Włączenie Gemini Live **nie zmienia mózgu tekstowego** — i odwrotnie. Pilnuje tego
+test `przełącznik głosu nie przestawia mózgu tekstowego` w backendzie.
+
+Konsekwencja dla pytania „czy Gemini może być mózgiem kancelarii”: na dziś nie,
+bo `ASSISTANT_PROVIDER` zna tylko `openai` i `qwen`. Gemini Live jest dostawcą
+**głosu**. Żeby zrobić z niego mózg, trzeba osobnej zmiany (nowy provider tekstowy
++ dobór modelu i limitów) — to nie jest przełączenie tej samej flagi.
+
+Co pozostaje wspólne dla obu ścieżek: **dane**. Rozmowa Gemini Live i agent
+tekstowy czytają przez ten sam rejestr narzędzi (`emmaReadToolDefinitions`),
+z tą samą allowlistą tylko czytającą i tym samym audytem. Fakty o kancelarii są
+identyczne niezależnie od tego, kto mówi.
+
 ## 5. Co sprawdzić na urządzeniu (pierwsze uruchomienie)
 
 1. Start rozmowy: czy `setupComplete` przychodzi i stan zmienia się na „połączono”.
 2. Powiedz „Ile mam dzisiaj zadań?” — czy Emma odpowiada głosem i czy transkrypcja
    pojawia się na bieżąco.
-3. Przerwij w połowie zdania — czy dźwięk urywa się natychmiast.
+3. Przerwij w połowie zdania — czy dźwięk urywa się natychmiast (barge-in
+   po stronie serwera wycofuje lokalną kolejkę audio; sprawdzone testem).
 4. Wycisz mikrofon — czy Emma przestaje słyszeć i nie kończy sesji.
 5. Poczekaj ~10 minut — czy widać `recoverableError` i czy rozmowa wraca.
 6. Nazwiska i sygnatury: „I C 123/26”, „Rogoża”, „Kowalska-Nowak”.

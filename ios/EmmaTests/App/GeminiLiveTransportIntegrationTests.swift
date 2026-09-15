@@ -150,6 +150,48 @@ final class GeminiLiveTransportIntegrationTests: XCTestCase {
         XCTAssertTrue(box.payloads.contains(.connectionChanged(.ended)))
     }
 
+    func testServerBargeInStopsLocalPlaybackImmediately() async throws {
+        let base = try baseURL(env: "EMMA_FAKE_LIVE_BASE_URL")
+        try await reset(base)
+
+        let box = EventBox()
+        let transport = GeminiLiveTransport(
+            tokenProvider: BackendConversationTokenProvider(baseURL: URL(string: "https://example.test")!),
+            toolExecutor: RecordingToolExecutor(),
+            accessToken: "token-uzytkownika",
+            installationID: "instalacja-testowa",
+            model: "gemini-3.8-live",
+            endpoint: try endpoint(from: base)
+        )
+        let events = transport.events()
+        let collector = Task { @MainActor in
+            for await event in events { box.append(event.payload) }
+        }
+        defer { collector.cancel() }
+
+        try await transport.connect(makeSession(token: "auth_tokens/atrapa"))
+        try await wait { try await self.state(from: base).setups.count == 1 }
+
+        // Atrapa odpowiada audio, a potem zgłasza przerwanie tury (barge-in).
+        try await transport.sendTextTurn(AssistantTextInput(
+            text: "Przerwij to teraz",
+            language: .pl,
+            contextVersion: Version(1),
+            inputID: "wejscie-2"
+        ))
+        try await wait { box.containsInterruption }
+
+        let seen = box.payloads
+        XCTAssertTrue(seen.contains(.interruption(.userBargeIn)))
+        XCTAssertTrue(seen.contains(.playbackStopped(reason: .interrupted)))
+        // Sedno: po barge-in lokalna kolejka audio jest wycofana, a nie tylko
+        // odnotowana w stanie — inaczej Emma mówi dalej przez użytkownika.
+        XCTAssertEqual(transport.localPlaybackStopCount, 1)
+
+        await transport.disconnect(reason: .userRequested)
+        await collector.value
+    }
+
     // MARK: Wznowienie po zapowiedzianym zamknięciu
 
     func testGoAwayReconnectsWithResumptionHandleAndFreshToken() async throws {
@@ -290,4 +332,5 @@ final class EventBox {
     private(set) var payloads: [VoiceEventPayload] = []
     func append(_ payload: VoiceEventPayload) { payloads.append(payload) }
     func contains(_ payload: VoiceEventPayload) -> Bool { payloads.contains(payload) }
+    var containsInterruption: Bool { payloads.contains(.interruption(.userBargeIn)) }
 }

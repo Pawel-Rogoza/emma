@@ -194,6 +194,9 @@ public final class GeminiLiveTransport: VoiceTransport {
         for event in GeminiLiveCodec.decode(data) {
             let outcome = tracker.consume(event)
             if let audio = outcome.audio { enqueuePlayback(audio) }
+            // Przerwanie tury po stronie serwera: wycofujemy zbuforowane audio,
+            // żeby Emma nie mówiła dalej przez wypowiedź użytkownika.
+            if outcome.shouldStopPlayback { stopPlayback() }
             if let call = outcome.toolCall { executeToolCall(call) }
             for payload in outcome.payloads { emit(payload) }
             // `goAway` to zapowiedź zamknięcia (limit ~10 minut). Nie czekamy, aż
@@ -323,7 +326,13 @@ public final class GeminiLiveTransport: VoiceTransport {
         if !player.isPlaying { player.play() }
     }
 
+    /// Ile razy wycofaliśmy lokalne odtwarzanie. `AVAudioPlayerNode` nie mówi,
+    /// czy kolejka jest pusta, a twierdzenie „po barge-in audio milknie” musi mieć
+    /// dowód — to licznik dla testów, nie element logiki.
+    private(set) var localPlaybackStopCount = 0
+
     private func stopPlayback() {
+        localPlaybackStopCount += 1
         guard let player else { return }
         player.stop()
         // `stop()` zwalnia kolejkę; `play()` przywraca węzeł do pracy, żeby

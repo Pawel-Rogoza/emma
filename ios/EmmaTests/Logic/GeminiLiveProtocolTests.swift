@@ -201,12 +201,37 @@ final class GeminiLiveTurnTrackerTests: XCTestCase {
         ])
     }
 
+    func testBargeInTellsTransportToDropBufferedAudio() {
+        // `interrupted` znaczy, że użytkownik wszedł w słowo. Sama zmiana stanu nie
+        // wystarczy: zbuforowane fragmenty muszą zostać wycofane, inaczej Emma mówi
+        // dalej przez wypowiedź, którą rzekomo przerwała.
+        var tracker = GeminiLiveTurnTracker()
+        _ = tracker.consume(.audio(Data([1])))
+        let outcome = tracker.consume(.interrupted)
+        XCTAssertTrue(outcome.shouldStopPlayback)
+        XCTAssertEqual(outcome.payloads, [
+            .interruption(.userBargeIn),
+            .playbackStopped(reason: .interrupted),
+        ])
+    }
+
+    func testInterruptedWithoutAudioDoesNotClaimStoppingPlayback() {
+        // Nie było odtwarzania, więc nie ma czego wycofywać — i nie udajemy,
+        // że przerwaliśmy coś, co nie istniało.
+        var tracker = GeminiLiveTurnTracker()
+        let outcome = tracker.consume(.interrupted)
+        XCTAssertFalse(outcome.shouldStopPlayback)
+        XCTAssertFalse(outcome.payloads.contains(.interruption(.userBargeIn)))
+    }
+
     func testConnectionLostClosesSpeakingTurnWithoutClaimingSuccess() {
         var tracker = GeminiLiveTurnTracker()
         _ = tracker.consume(.audio(Data([1])))
         _ = tracker.consume(.outputTranscription("Zaczęłam mówić"))
         let outcome = tracker.connectionLost()
         XCTAssertTrue(outcome.shouldReconnect)
+        // Po zerwaniu też milkniemy: nie zostawiamy grania niedokończonej tury.
+        XCTAssertTrue(outcome.shouldStopPlayback)
         XCTAssertEqual(outcome.payloads, [
             .playbackStopped(reason: .failed),
             .agentTextFinal("Zaczęłam mówić"),

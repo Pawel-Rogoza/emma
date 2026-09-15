@@ -19,6 +19,10 @@ public struct GeminiLiveTurnOutcome: Sendable {
     public var goAwayIn: TimeInterval?
     /// Połączenie padło bez `goAway` — trzeba wznowić sesję z uchwytem.
     public var shouldReconnect = false
+    /// Zatrzymać **lokalne** odtwarzanie. Live API przerywa turę po swojej stronie,
+    /// ale zbuforowane fragmenty grają dalej, jeśli ich nie wycofamy — a wtedy
+    /// Emma mówi przez wypowiedź użytkownika, który właśnie ją przerwał.
+    public var shouldStopPlayback = false
 }
 
 /// Stan tury Emmy. Jedna instancja na połączenie — nie na sesję, bo po wznowieniu
@@ -70,6 +74,7 @@ public struct GeminiLiveTurnTracker: Sendable {
             // mówi użytkownikowi nic nowego, a udawanie zdarzenia zaciemnia stan.
             if isSpeaking {
                 isSpeaking = false
+                outcome.shouldStopPlayback = true
                 outcome.payloads.append(.interruption(.userBargeIn))
                 outcome.payloads.append(.playbackStopped(reason: .interrupted))
             }
@@ -119,6 +124,7 @@ public struct GeminiLiveTurnTracker: Sendable {
         outcome.shouldReconnect = true
         if isSpeaking {
             isSpeaking = false
+            outcome.shouldStopPlayback = true
             outcome.payloads.append(.playbackStopped(reason: .failed))
         }
         if !outputText.isEmpty {
