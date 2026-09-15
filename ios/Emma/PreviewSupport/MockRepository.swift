@@ -143,6 +143,25 @@ public actor MockRepository:
         return updated
     }
 
+    /// Usunięcie zgłoszenia w Demo — te same reguły co backend: tylko lead,
+    /// i tylko wtedy, gdy wersja się zgadza.
+    public func deleteClient(_ client: Client, expectedVersion: Version) async throws {
+        await pause()
+        guard client.stage != .client else {
+            throw DomainError.validationFailed(
+                "Kartoteki nie usuwa się z aplikacji — usunąć można tylko zgłoszenie przed konwersją."
+            )
+        }
+        guard let index = dataset.clients.firstIndex(where: { $0.id == client.id }) else {
+            throw DomainError.notFound(resource: "client", id: client.id.rawValue)
+        }
+        let current = dataset.clients[index]
+        guard current.version == expectedVersion else {
+            throw DomainError.versionConflict(expected: expectedVersion, current: current.version)
+        }
+        dataset.clients.remove(at: index)
+    }
+
     // MARK: - Sprawy
 
     public func cases(status: CaseStatus?) async throws -> [LegalCase] {

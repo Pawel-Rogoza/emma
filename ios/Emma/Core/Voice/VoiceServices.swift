@@ -82,6 +82,8 @@ public protocol ClientRepository: Sendable {
     func client(id: ClientID) async throws -> Client?
     func createClient(_ draft: NewClientDraft) async throws -> Client
     func updateClient(_ client: Client, expectedVersion: Version) async throws -> Client
+    /// Usunięcie zgłoszenia. Kartoteki nie usuwa — patrz `BackendRepository`.
+    func deleteClient(_ client: Client, expectedVersion: Version) async throws
 }
 
 public protocol CaseRepository: Sendable {

@@ -195,11 +195,12 @@ final class BackendLoginUITests: XCTestCase {
         attachScreenshot("M2-03-nowe-zgloszenia-z-backendu")
     }
 
-    /// Pełny zapis: aplikacja → prawdziwy backend → baza. To jedyny test, który
-    /// **pisze** do backendu, dlatego wymaga jawnej zgody `EMMA_UI_ALLOW_WRITES=1`
-    /// — uruchomiony przez pomyłkę przeciw produkcji założyłby tam zgłoszenie.
-    /// Przeznaczenie: baza testowa (patrz runbook).
-    func testRealAddLeadWritesToBackend() throws {
+    /// Pełny obieg: aplikacja → prawdziwy backend → baza, i z powrotem.
+    /// Tworzy zgłoszenie z formularza, a potem usuwa je z menu po przytrzymaniu.
+    /// To jedyny test, który **pisze** do backendu, dlatego wymaga jawnej zgody
+    /// `EMMA_UI_ALLOW_WRITES=1` — uruchomiony przez pomyłkę przeciw produkcji
+    /// zostawiłby tam (albo skasował) prawdziwe zgłoszenie.
+    func testRealAddAndDeleteLeadRoundTrip() throws {
         try XCTSkipIf(backendURL == nil, "Brak EMMA_UI_BACKEND_URL — test integracyjny pominięty")
         try XCTSkipUnless(
             ProcessInfo.processInfo.environment["EMMA_UI_ALLOW_WRITES"] == "1",
@@ -239,6 +240,32 @@ final class BackendLoginUITests: XCTestCase {
             "Backend nie oddał karty nowego kontaktu — zapis się nie udał"
         )
         attachScreenshot("M3-01-zapis-przez-aplikacje")
+
+        // Wracamy na listę i usuwamy to, co właśnie powstało.
+        let back = application.buttons["Wróć"]
+        if back.waitForExistence(timeout: 5) {
+            back.tap()
+        }
+        let created = application.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", name)
+        ).firstMatch
+        XCTAssertTrue(created.waitForExistence(timeout: 20), "Nowe zgłoszenie nie wróciło na listę")
+
+        created.press(forDuration: 1.2)
+        let deleteItem = application.buttons["Usuń zgłoszenie"]
+        XCTAssertTrue(deleteItem.waitForExistence(timeout: 10), "Brak usuwania w menu")
+        deleteItem.tap()
+
+        let confirm = application.alerts.buttons["Usuń"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 10), "Brak potwierdzenia usunięcia")
+        confirm.tap()
+
+        let gone = expectation(
+            for: NSPredicate(format: "exists == false"),
+            evaluatedWith: application.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
+        )
+        wait(for: [gone], timeout: 20)
+        attachScreenshot("M3-02-usuniecie-przez-aplikacje")
     }
 
     func testWrongPasswordShowsServerMessageAndStaysOnLogin() throws {

@@ -167,19 +167,49 @@ public struct BackendRepository: EmmaRepository, Sendable {
                 idempotencyKey: Self.newIdempotencyKey()
             )
         } catch let error as BackendRepositoryError {
-            // 409 niesie wersję, którą ma serwer. `BackendRepositoryError` nie jest
-            // `DomainError`, więc bez tego tłumaczenia ekran pokazałby bezradne
-            // „Nie udało się wykonać operacji.” — a to jedyny błąd, przy którym
-            // użytkownik wie, co zrobić: odświeżyć listę i powtórzyć.
-            if case .conflict(let current, _) = error {
-                throw DomainError.versionConflict(
-                    expected: expectedVersion,
-                    current: current.map(Version.init) ?? expectedVersion.next()
-                )
-            }
-            throw error
+            throw Self.writeError(error, expectedVersion: expectedVersion)
         }
         return try Self.mapClient(dto)
+    }
+
+    /// Usunięcie **zgłoszenia** (`DELETE /clients/{client_id}`).
+    ///
+    /// Backend przyjmuje tu wyłącznie leada. Kartoteki nie usuwamy także
+    /// dlatego, że w aplikacji jest to nieodwracalne, a panel kancelarii ma
+    /// wobec niej własne zasady (sprawy, terminy, dokumenty).
+    public func deleteClient(_ client: Client, expectedVersion: Version) async throws {
+        guard client.stage != .client else {
+            throw DomainError.validationFailed(
+                "Kartoteki nie usuwa się z aplikacji — usunąć można tylko zgłoszenie przed konwersją."
+            )
+        }
+        do {
+            try await api.deleteClient(
+                id: client.id.rawValue,
+                expectedVersion: expectedVersion.value,
+                idempotencyKey: Self.newIdempotencyKey()
+            )
+        } catch let error as BackendRepositoryError {
+            throw Self.writeError(error, expectedVersion: expectedVersion)
+        }
+    }
+
+    /// Wspólne tłumaczenie błędu zapisu.
+    ///
+    /// `BackendRepositoryError` nie jest `DomainError`, więc bez tego ekran
+    /// pokazałby bezradne „Nie udało się wykonać operacji.” — a przy konflikcie
+    /// wersji użytkownik wie, co zrobić: odświeżyć i powtórzyć.
+    private static func writeError(
+        _ error: BackendRepositoryError,
+        expectedVersion: Version
+    ) -> Error {
+        if case .conflict(let current, _) = error {
+            return DomainError.versionConflict(
+                expected: expectedVersion,
+                current: current.map(Version.init) ?? expectedVersion.next()
+            )
+        }
+        return error
     }
 
     /// Etap kontaktu w słowniku kontraktu (`new` / `in_contact` / `client`).

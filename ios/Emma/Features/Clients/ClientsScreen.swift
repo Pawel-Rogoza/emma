@@ -24,6 +24,8 @@ struct ClientsScreen: View {
     /// Nazwa leada w trakcie zmiany — `nil` znaczy, że okno jest zamknięte.
     @State private var renaming: Client?
     @State private var renameText = ""
+    /// Zgłoszenie czekające na potwierdzenie usunięcia.
+    @State private var pendingDelete: Client?
 
     var body: some View {
         ScrollView {
@@ -66,6 +68,21 @@ struct ClientsScreen: View {
         } message: {
             Text("Nazwa pojawi się na liście i w karcie.")
         }
+        .alert("Usunąć zgłoszenie?", isPresented: deleteBinding, presenting: pendingDelete) { client in
+            Button("Anuluj", role: .cancel) { pendingDelete = nil }
+            Button("Usuń", role: .destructive) { commitDelete() }
+        } message: { client in
+            Text("„\(client.displayName)” zniknie z listy zgłoszeń. Zgłoszenie z rezerwacji zwolni też okienko na stronie.")
+        }
+    }
+
+    // MARK: Usuwanie — potwierdzenie
+
+    private var deleteBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDelete != nil },
+            set: { if !$0 { pendingDelete = nil } }
+        )
     }
 
     // MARK: Zmiana nazwy
@@ -93,6 +110,24 @@ struct ClientsScreen: View {
         Task {
             await dependencies.perform {
                 try await dependencies.repository.updateClient(updated, expectedVersion: client.version)
+            }
+        }
+    }
+
+    // MARK: Usuwanie zgłoszenia
+
+    /// Usunięcie jest nieodwracalne, więc pytamy wprost i pokazujemy, kogo
+    /// dotyczy — przy dwóch podobnych zgłoszeniach łatwo skasować nie to.
+    private func confirmDelete(_ client: Client) {
+        pendingDelete = client
+    }
+
+    private func commitDelete() {
+        guard let client = pendingDelete else { return }
+        pendingDelete = nil
+        Task {
+            await dependencies.perform {
+                try await dependencies.repository.deleteClient(client, expectedVersion: client.version)
             }
         }
     }
@@ -204,7 +239,8 @@ struct ClientsScreen: View {
                         nextEvent: model.nextLeadEvents[client.id],
                         onOpen: { dependencies.openPerson(client.id) },
                         onSetStage: { stage in move(client, to: stage) },
-                        onRename: { beginRename(client) }
+                        onRename: { beginRename(client) },
+                        onDelete: { confirmDelete(client) }
                     )
                 }
             }

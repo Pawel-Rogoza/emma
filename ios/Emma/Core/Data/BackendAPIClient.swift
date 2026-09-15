@@ -149,6 +149,26 @@ public struct BackendAPIClient: Sendable {
         try await get("\(Endpoint.clients.rawValue)/\(id.rawValue)", query: [])
     }
 
+    /// `DELETE /api/mobile/v1/clients/{client_id}` — usunięcie zgłoszenia.
+    ///
+    /// `expected_version` jedzie w ciele (tak samo jak przy usunięciu terminu):
+    /// bez tego drugie urządzenie mogłoby usunąć coś innego, niż widziało.
+    func deleteClient(id: String, expectedVersion: Int, idempotencyKey: String) async throws {
+        struct Body: Encodable {
+            let expectedVersion: Int
+
+            enum CodingKeys: String, CodingKey {
+                case expectedVersion = "expected_version"
+            }
+        }
+        try await sendNoContent(
+            "DELETE",
+            path: "\(Endpoint.clients.rawValue)/\(id)",
+            body: Body(expectedVersion: expectedVersion),
+            idempotencyKey: idempotencyKey
+        )
+    }
+
     /// `POST /api/mobile/v1/clients` — nowe zgłoszenie (lead) z aplikacji.
     ///
     /// Kontrakt `NewClient` zna tylko `display_name`, `topic`, `language`,
@@ -434,6 +454,37 @@ public struct BackendAPIClient: Sendable {
             return try Self.decoder.decode(T.self, from: data)
         } catch {
             throw BackendRepositoryError.decoding("\(error)")
+        }
+    }
+
+    /// Zapis z ciałem, którego odpowiedź nie niesie treści (204).
+    ///
+    /// Istnieje osobno od `send(_:path:body:)`, bo tamten **dekoduje** odpowiedź:
+    /// przy 204 nie ma czego dekodować, a próba kończyłaby się błędem mimo
+    /// udanego zapisu.
+    private func sendNoContent<B: Encodable>(
+        _ method: String,
+        path: String,
+        body: B,
+        idempotencyKey: String
+    ) async throws {
+        let encoded: Data
+        do {
+            encoded = try Self.encoder.encode(body)
+        } catch {
+            throw BackendRepositoryError.decoding("nie udało się zapisać treści żądania: \(error)")
+        }
+        let (data, http) = try await authenticatedRequest { token in
+            try self.makeRequest(
+                path: path,
+                method: method,
+                body: encoded,
+                idempotencyKey: idempotencyKey,
+                token: token
+            )
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw Self.error(from: http, data: data)
         }
     }
 

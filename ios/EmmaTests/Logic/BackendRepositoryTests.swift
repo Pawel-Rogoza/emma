@@ -301,6 +301,49 @@ final class BackendRepositoryTests: XCTestCase {
         XCTAssertNil(StubURLProtocol.lastBody?["stage"])
     }
 
+    // MARK: Usuwanie zgłoszenia
+
+    /// Usuwanie wymaga wersji w ciele — bez tego drugie urządzenie mogłoby
+    /// usunąć coś innego, niż widziało.
+    func testDeleteClientSendsVersionAndKey() async throws {
+        StubURLProtocol.respond(json: Data(Self.clientsJSON.utf8), status: 200)
+        let repository = makeRepository()
+        let lead = try await repository.clients(matching: "", stage: nil)[0]
+        XCTAssertEqual(lead.stage, .new)
+
+        StubURLProtocol.reset()
+        StubURLProtocol.respond(json: Data(), status: 204)
+
+        try await repository.deleteClient(lead, expectedVersion: Version(3))
+
+        let request = try XCTUnwrap(StubURLProtocol.allRequests.last)
+        XCTAssertEqual(request.httpMethod, "DELETE")
+        XCTAssertEqual(request.url?.path, "/api/mobile/v1/clients/lead-7")
+        XCTAssertEqual(StubURLProtocol.lastBody?["expected_version"] as? Int, 3)
+        XCTAssertFalse(try XCTUnwrap(request.value(forHTTPHeaderField: "Idempotency-Key")).isEmpty)
+    }
+
+    /// Kartoteki nie usuwamy — i nie udajemy, że próbowaliśmy: żądanie
+    /// w ogóle nie powstaje.
+    func testDeleteClientRefusesCardFileWithoutRequest() async throws {
+        StubURLProtocol.respond(json: Data(Self.clientsJSON.utf8), status: 200)
+        let repository = makeRepository()
+        let card = try await repository.clients(matching: "", stage: nil)[1]
+        XCTAssertEqual(card.stage, .client)
+
+        StubURLProtocol.reset()
+        do {
+            try await repository.deleteClient(card, expectedVersion: card.version)
+            XCTFail("Oczekiwano odmowy usunięcia kartoteki")
+        } catch let error as DomainError {
+            guard case .validationFailed(let message) = error else {
+                return XCTFail("Oczekiwano .validationFailed, a jest \(error)")
+            }
+            XCTAssertTrue(message.contains("Kartoteki nie usuwa się z aplikacji"), message)
+        }
+        XCTAssertEqual(StubURLProtocol.requestCount, 0)
+    }
+
     /// Konflikt wersji nie może skończyć się na „Nie udało się wykonać operacji.”:
     /// to jedyny błąd zapisu, przy którym użytkownik wie, co zrobić.
     func testUpdateClientTurnsVersionConflictIntoDomainError() async throws {

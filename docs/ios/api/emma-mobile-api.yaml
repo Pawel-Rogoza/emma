@@ -255,6 +255,39 @@ paths:
               schema: { $ref: "#/components/schemas/Client" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+    delete:
+      tags: [Zapis]
+      summary: Usunięcie zgłoszenia (leada)
+      description: |
+        Usuwa **wyłącznie zgłoszenie** (`lead-N`). Kartoteki (`client-N`) nie
+        usuwa nawet panel kancelarii — ma sprawy, terminy i dokumenty — więc
+        żądanie na `client-N` kończy się `422 validation_failed` z wyjaśnieniem.
+
+        Wymaga `expected_version` w ciele, tak samo jak usunięcie terminu: dwa
+        urządzenia widzą to samo zgłoszenie, jedno je usuwa, a drugie nie może
+        usunąć czegoś innego, niż widziało.
+
+        Lead z rezerwacji zostawia tombstone (import wstecz go nie przywróci),
+        a okienko na stronie zostaje zwolnione — tak samo, jak przy usunięciu
+        z panelu.
+      parameters:
+        - $ref: "#/components/parameters/ClientID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version]
+              properties:
+                expected_version: { $ref: "#/components/schemas/Version" }
+      responses:
+        "204":
+          description: Zgłoszenie usunięte
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
   /cases/{case_id}:
     get:
       tags: [Odczyt]

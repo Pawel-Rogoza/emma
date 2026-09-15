@@ -109,6 +109,42 @@ final class ClientsLeadMenuUITests: XCTestCase {
         )
     }
 
+    /// Usunięcie zgłoszenia z menu po przytrzymaniu. Sprawdzamy **całą** drogę:
+    /// pozycję menu, pytanie o potwierdzenie i zniknięcie karty z listy.
+    func testLongPressDeleteRemovesLead() {
+        openClients()
+
+        let lead = application.buttons.matching(identifier: "lead-card").firstMatch
+        XCTAssertTrue(lead.waitForExistence(timeout: 15), "Brak zgłoszenia na liście")
+        let leadLabel = lead.label
+        let countBefore = application.buttons.matching(identifier: "lead-card").count
+
+        lead.press(forDuration: 1.2)
+        let deleteItem = application.buttons["Usuń zgłoszenie"]
+        XCTAssertTrue(
+            deleteItem.waitForExistence(timeout: 10),
+            "Przytrzymanie leada nie pokazało usuwania"
+        )
+        deleteItem.tap()
+
+        // Usunięcie jest nieodwracalne, więc aplikacja musi zapytać.
+        let confirm = application.alerts.buttons["Usuń"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 10), "Brak pytania o potwierdzenie usunięcia")
+        attachScreenshot(name: "potwierdzenie-usuniecia")
+        confirm.tap()
+
+        let sameCard = application.buttons
+            .matching(NSPredicate(format: "label == %@", leadLabel))
+            .firstMatch
+        let disappeared = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: sameCard)
+        wait(for: [disappeared], timeout: 15)
+        XCTAssertLessThan(
+            application.buttons.matching(identifier: "lead-card").count,
+            countBefore,
+            "Liczba zgłoszeń nie spadła po usunięciu"
+        )
+    }
+
     func testLongPressMovesLeadToContact() {
         openClients()
 

@@ -18,19 +18,22 @@ struct LeadCard: View {
     private let onOpen: () -> Void
     private let onSetStage: ((ClientStage) -> Void)?
     private let onRename: (() -> Void)?
+    private let onDelete: (() -> Void)?
 
     init(
         client: Client,
         nextEvent: ScheduledEvent?,
         onOpen: @escaping () -> Void,
         onSetStage: ((ClientStage) -> Void)? = nil,
-        onRename: (() -> Void)? = nil
+        onRename: (() -> Void)? = nil,
+        onDelete: (() -> Void)? = nil
     ) {
         self.client = client
         self.nextEvent = nextEvent
         self.onOpen = onOpen
         self.onSetStage = onSetStage
         self.onRename = onRename
+        self.onDelete = onDelete
     }
 
     var body: some View {
@@ -55,7 +58,7 @@ struct LeadCard: View {
         .accessibilityIdentifier("lead-card")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
-        .accessibilityHint("Otwiera kartę klienta. Przytrzymaj, aby przenieść lub zmienić nazwę.")
+        .accessibilityHint("Otwiera kartę klienta. Przytrzymaj, aby przenieść, zmienić nazwę albo usunąć zgłoszenie.")
         .accessibilityAddTraits(.isButton)
     }
 
@@ -81,6 +84,15 @@ struct LeadCard: View {
                 onRename()
             } label: {
                 Label("Zmień nazwę", systemImage: "pencil")
+            }
+        }
+        // Usuwanie jest tylko dla zgłoszeń. Kartoteka ma sprawy, terminy
+        // i dokumenty — jej usunięcie nie jest tym samym co skasowanie spamu.
+        if let onDelete, client.stage != .client {
+            Button(role: .destructive) {
+                onDelete()
+            } label: {
+                Label("Usuń zgłoszenie", systemImage: "trash")
             }
         }
         Button {

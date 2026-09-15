@@ -291,7 +291,7 @@ powstaje wcale** — jest na to test.
      wersja 2; licznik `stage=new` spadł do 0;
    - nieaktualny `expected_version` → **409** z `current_version` (blokada działa).
 3. **Aplikacja przeciw prawdziwemu backendowi** (`EMMA_UI_BACKEND_URL` na lokalny
-   serwer, test `testRealAddLeadWritesToBackend`, bramkowany `EMMA_UI_ALLOW_WRITES=1`,
+   serwer, test `testRealAddAndDeleteLeadRoundTrip`, bramkowany `EMMA_UI_ALLOW_WRITES=1`,
    żeby nigdy sam nie pisał do produkcji): po dodaniu kontaktu z formularza w bazie
    powstał `lead-2`: status `new`, źródło `manual`, treść
    `"Zgłoszenie z testu integracyjnego\n\nKontekst z testu."` — czyli kontekst
@@ -317,3 +317,63 @@ menu etapów, dodanie kontaktu do listy).
   jako `new`, a konwersję na kartotekę robi się świadomie z menu etapów.
 - Formularz nie zbiera telefonu ani e-maila, choć tabela `leads` ma takie kolumny
   — kontrakt `NewClient` ich nie zna. Dodanie ich to zmiana kontraktu + backendu.
+
+---
+
+## Usuwanie zgłoszenia (DELETE /clients/{client_id}) — 2026-09-15
+
+**Decyzja:** Tomasz poprosił o usuwanie leada z menu po przytrzymaniu.
+Kontrakt mobilny nie znał takiej trasy, więc trzeba było dołożyć ją świadomie —
+razem z backendem, bo trasa bez wdrożenia byłaby przyciskiem, który w produkcji
+zawsze zawodzi.
+
+**Zakres jest celowo węższy niż nazwa trasy:** usuwamy **tylko zgłoszenie**
+(`lead-N`), nigdy kartotekę (`client-N`). Kartoteka ma sprawy, terminy
+i dokumenty, a panel kancelarii też jej nie usuwa — aplikacja nie może być tu
+furtką. Żądanie na `client-N` kończy się `422 validation_failed` z wyjaśnieniem,
+a aplikacja w ogóle go nie wysyła (pozycja menu jest tylko dla zgłoszeń).
+
+**Reguła usuwania jest wspólna z panelem.** Tombstone dla leada z rezerwacji
+(`lead_tombstones`), kasowanie rekordu i audyt `lead.delete` wyjęte do
+`deleteLeadRecord` w `src/lib/crm/leads.ts`; korzysta z niej trasa panelu
+i warstwa mobilna. Bez tego panel i aplikacja mogłyby z czasem zacząć usuwać
+inaczej. Po usunięciu leada z rezerwacji okienko na stronie jest zwalniane tą
+samą decyzją co w panelu (`reject`, bez e-maila do klienta).
+
+**Wymagane `expected_version`** w ciele — tak samo jak przy usuwaniu terminu:
+dwa urządzenia widzą to samo zgłoszenie, jedno je usuwa, drugie nie może usunąć
+czegoś, czego nie widziało. Nieaktualna wersja to `409 version_conflict`
+z aktualnym numerem, a rekord **zostaje**.
+
+**Aplikacja:** `DELETE` z kluczem idempotencji, tłumaczenie 409 na
+`DomainError.versionConflict` (wspólne z `PATCH`), pozycja „Usuń zgłoszenie”
+w menu po przytrzymaniu i pytanie o potwierdzenie z nazwą osoby — przy dwóch
+podobnych zgłoszeniach łatwo skasować nie to.
+
+**Weryfikacja:**
+- Backend: **117 plików / 933 testy**, 0 porażek (4 nowe: usunięcie + tombstone
+  + audyt, nieaktualna wersja, odmowa dla kartoteki, brak klucza idempotencji).
+  `astro check`: 0 błędów. Cały zestaw panelu zielony po refaktorze reguły.
+- Aplikacja: `BackendRepositoryTests` **22/22** (ciało `DELETE`, klucz, brak
+  żądania dla kartoteki), `ClientsLeadMenuUITests` **4/4** (pełna droga:
+  przytrzymanie → „Usuń zgłoszenie” → potwierdzenie → karta znika).
+- **Prawdziwy backend** (tymczasowa baza w `/tmp`): `POST` → 201, `DELETE`
+  z wersją → **204**, lista pusta, w bazie **0 leadów**, audyt `lead.delete`;
+  lead z rezerwacją → **tombstone** `ref-usuwanie-1`, kartoteka nietknięta;
+  nieaktualna wersja → **409** i rekord zostaje; `client-N` → **422**.
+- **Aplikacja przeciw prawdziwemu backendowi** (`testRealAddAndDeleteLeadRoundTrip`,
+  bramkowany `EMMA_UI_ALLOW_WRITES=1`): dodała zgłoszenie z formularza, usunęła
+  je z menu po przytrzymaniu, a w bazie zostało `lead.delete` z
+  `meta_json: {"channel_app":"ios"}` — czyli usunięcie naprawdę przyszło z iOS.
+- Po weryfikacji: serwer zatrzymany, baza tymczasowa i schemat z hasłem usunięte.
+  **Produkcja nietknięta.**
+
+**Ograniczenia:**
+- Trasa istnieje **tylko w repozytorium** do momentu wdrożenia backendu na VPS.
+  Dopóki nie jest wdrożona, usuwanie w aplikacji produkcyjnej nie zadziała —
+  dlatego instalacja nowego builda czeka na decyzję o wdrożeniu.
+- Usunięcie jest twarde (kasuje wiersz). Historia w `audit_log` zostaje, ale
+  w panelu nie ma kosza ani przywracania leada; lead z rezerwacji ma tylko
+  tombstone chroniący przed ponownym importem.
+- Telefon nie pojawia się w oknie „Wymaga odpowiedzi” ani inne znane braki
+  kontraktu (`phone`, `email`) — bez zmian.
