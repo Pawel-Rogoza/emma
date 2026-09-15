@@ -149,6 +149,40 @@ public struct BackendAPIClient: Sendable {
         try await get("\(Endpoint.clients.rawValue)/\(id.rawValue)", query: [])
     }
 
+    /// `POST /api/mobile/v1/clients` — nowe zgłoszenie (lead) z aplikacji.
+    ///
+    /// Kontrakt `NewClient` zna tylko `display_name`, `topic`, `language`,
+    /// `stage` i `source`. `topic` to w bazie **`leads.message`** — CRM trzyma
+    /// jeden wolny tekst zgłoszenia, więc kontekst dopisany przez użytkownika
+    /// dokładamy do tej samej treści po stronie repozytorium.
+    func createClient(
+        displayName: String,
+        message: String,
+        language: String,
+        source: String,
+        idempotencyKey: String
+    ) async throws -> BackendClientDTO {
+        struct Body: Encodable {
+            let displayName: String
+            let topic: String
+            let language: String
+            let source: String
+
+            enum CodingKeys: String, CodingKey {
+                case displayName = "display_name"
+                case topic
+                case language
+                case source
+            }
+        }
+        return try await send(
+            "POST",
+            path: Endpoint.clients.rawValue,
+            body: Body(displayName: displayName, topic: message, language: language, source: source),
+            idempotencyKey: idempotencyKey
+        )
+    }
+
     /// `PATCH /api/mobile/v1/clients/{client_id}` — zmiana danych kontaktu.
     ///
     /// Trasa obsługuje leady i kartotekę tak samo (`lead-26` / `client-33`).

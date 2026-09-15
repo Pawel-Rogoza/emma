@@ -55,6 +55,60 @@ final class ClientsLeadMenuUITests: XCTestCase {
         add(shot)
     }
 
+    /// Przycisk „+” ma naprawdę zakładać zgłoszenie. Przed tą zmianą w produkcji
+    /// kończył się komunikatem „Backend nie udostępnia jeszcze…”, bo repozytorium
+    /// nie wołało istniejącej trasy `POST /clients`.
+    func testAddingLeadShowsItInNewList() {
+        openClients()
+
+        let countBefore = application.buttons.matching(identifier: "lead-card").count
+        application.buttons["Dodaj leada"].tap()
+
+        let nameField = application.textFields["Imię i nazwisko"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 10), "Arkusz „Nowy kontakt” się nie otworzył")
+        nameField.tap()
+        nameField.typeText("Anna Testowa")
+
+        let topicField = application.textFields["Temat zgłoszenia"]
+        topicField.tap()
+        topicField.typeText("Zaległe alimenty")
+
+        // Kontekst trafia do tej samej treści zgłoszenia (`leads.message`).
+        let contextField = application.textViews["Kontekst zgłoszenia"]
+        if contextField.waitForExistence(timeout: 5) {
+            contextField.tap()
+            contextField.typeText("Proszę o kontakt po 16:00.")
+        }
+        attachScreenshot(name: "nowy-kontakt-formularz")
+
+        // Klawiatura zasłania przycisk zapisu — chowamy ją, dotykając nagłówka.
+        application.staticTexts["Nowy kontakt"].tap()
+        let submit = application.buttons["Dodaj kontakt"]
+        XCTAssertTrue(submit.waitForExistence(timeout: 5))
+        submit.tap()
+
+        // Po zapisie aplikacja otwiera kartę nowego kontaktu — sprawdzamy to,
+        // a potem wracamy na listę, żeby zobaczyć zgłoszenie na filtrze „Nowe”.
+        let cardTitle = application.staticTexts["Anna Testowa"]
+        XCTAssertTrue(cardTitle.waitForExistence(timeout: 20), "Nie otworzyła się karta nowego kontaktu")
+        XCTAssertTrue(application.staticTexts["DODANO RĘCZNIE"].exists, "Nowy kontakt nie ma źródła „Dodano ręcznie”")
+        attachScreenshot(name: "nowy-kontakt-na-liscie")
+
+        let back = application.buttons["Wróć"]
+        if back.waitForExistence(timeout: 5) {
+            back.tap()
+        }
+        let created = application.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "Anna Testowa")
+        ).firstMatch
+        XCTAssertTrue(created.waitForExistence(timeout: 20), "Nowe zgłoszenie nie pojawiło się na liście")
+        XCTAssertGreaterThan(
+            application.buttons.matching(identifier: "lead-card").count,
+            countBefore,
+            "Liczba zgłoszeń na liście nie wzrosła"
+        )
+    }
+
     func testLongPressMovesLeadToContact() {
         openClients()
 

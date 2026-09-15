@@ -257,3 +257,63 @@ wykonalne — czeka na decyzję, bo to operacja nieodwracalna i zmienia kontrakt
 **Zrzuty:** `docs/ios/screenshots/leady-2026-09-15/` — `produkcja-nowe-zgloszenia.png`
 (prawdziwe dane: liczniki i „Zgłoszono …”), `menu-po-przytrzymaniu.png` (menu etapów)
 oraz `demo-lista-nowe.png`.
+
+---
+
+## Dodawanie zgłoszenia z aplikacji (POST /clients) — 2026-09-15
+
+**Dlaczego:** przycisk „+” w nagłówku „Klienci” istniał, ale w produkcji kończył
+się komunikatem „Backend nie udostępnia jeszcze…”. Repozytorium nie wołało trasy
+`POST /api/mobile/v1/clients`, która **już istniała** w backendzie. To była praca
+wyłącznie po stronie aplikacji — bez zmian w backendzie i bez wdrożenia.
+
+**Kontrakt (`NewClient`):** `display_name`, `topic`, `language` (wymagane),
+`stage`, `source`. Formularz „Nowy kontakt” pyta dodatkowo o **kontekst
+zgłoszenia**, którego kontrakt nie zna — CRM trzyma w leadzie jeden wolny tekst
+(`leads.message`, widoczny i przeszukiwalny w panelu). Kontekst jest więc
+dokładany jako drugi akapit tej samej treści. Bez tego użytkownik wpisałby
+kontekst, a on przepadłby po cichu.
+
+**Źródło `Polecenie`:** `ClientSource.referral` nie ma odpowiednika w słowniku
+kontraktu (`manual`/`web_form`/`whatsapp`/`import`). Zamiast sprowadzać je do
+`manual` (kłamstwo w bazie) repozytorium zgłasza brak trasy, a **żądanie nie
+powstaje wcale** — jest na to test.
+
+**Weryfikacja końcowa — nie mock:**
+1. Aplikacja (testy ze stubem): dokładne ciało żądania, ścieżka, metoda,
+   `Idempotency-Key`; brak kontekstu = sam temat; `referral` bez żądania.
+2. **Prawdziwy backend na tymczasowej bazie** (`astro dev`, `CRM_DATA_DIR` w `/tmp`,
+   konto lokalne, hasło przez `scripts/mobile-set-password.mjs`), te same ciała
+   żądań co aplikacja:
+   - `POST /clients` → **201**, `lead-1`, etap `new`, źródło `manual`, język `pl`;
+   - ten sam klucz idempotencji dwa razy → nadal **1** lead w tabeli;
+   - `PATCH /clients/lead-1` z `stage: in_contact` → **200**, etap `in_contact`,
+     wersja 2; licznik `stage=new` spadł do 0;
+   - nieaktualny `expected_version` → **409** z `current_version` (blokada działa).
+3. **Aplikacja przeciw prawdziwemu backendowi** (`EMMA_UI_BACKEND_URL` na lokalny
+   serwer, test `testRealAddLeadWritesToBackend`, bramkowany `EMMA_UI_ALLOW_WRITES=1`,
+   żeby nigdy sam nie pisał do produkcji): po dodaniu kontaktu z formularza w bazie
+   powstał `lead-2`: status `new`, źródło `manual`, treść
+   `"Zgłoszenie z testu integracyjnego\n\nKontekst z testu."` — czyli kontekst
+   dotarł na miejsce. `audit_log`: `lead.create` ×2, `lead.update` ×1.
+4. Po weryfikacji: serwer zatrzymany, tymczasowa baza i schemat z hasłem usunięte.
+   **Produkcja nie została tknięta żadnym zapisem.**
+
+**Poprawka przy okazji:** konflikt wersji (409) nie jest `DomainError`, więc ekran
+pokazywał bezradne „Nie udało się wykonać operacji.” mimo komunikatu backendu
+(„Dane kontaktu zmieniły się od czasu odczytu. Odśwież i spróbuj ponownie.”).
+Repozytorium tłumaczy teraz 409 na `DomainError.versionConflict`, więc użytkownik
+dostaje komunikat, przy którym wie, co zrobić.
+
+**Testy:** `BackendRepositoryTests` **20/20** (m.in. ciało `POST`, idempotencja,
+`referral`, konflikt wersji), `ClientsLeadMenuUITests` **3/3** (domyślny filtr,
+menu etapów, dodanie kontaktu do listy).
+
+**Ograniczenia:**
+- Test zapisu przez aplikację **nie** był uruchamiany przeciw produkcji — celowo:
+  założyłby tam prawdziwe zgłoszenie. Produkcja jest sprawdzona odczytem
+  (`testRealNewLeadsAreDefaultView`).
+- `stage` w `POST` nie jest wysyłany z aplikacji: nowe zgłoszenie zawsze startuje
+  jako `new`, a konwersję na kartotekę robi się świadomie z menu etapów.
+- Formularz nie zbiera telefonu ani e-maila, choć tabela `leads` ma takie kolumny
+  — kontrakt `NewClient` ich nie zna. Dodanie ich to zmiana kontraktu + backendu.

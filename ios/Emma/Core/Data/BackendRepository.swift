@@ -100,8 +100,46 @@ public struct BackendRepository: EmmaRepository, Sendable {
         }
     }
 
+    /// Nowe zgłoszenie z aplikacji (`POST /clients`).
+    ///
+    /// Zakłada **leada**, nie kartotekę: backend domyślnie nadaje etap `new`,
+    /// a konwersja na klienta jest osobną, świadomą decyzją (etap `client`).
     public func createClient(_ draft: NewClientDraft) async throws -> Client {
-        throw notAvailable("tworzenie klienta (POST /clients)")
+        let dto = try await api.createClient(
+            displayName: draft.displayName,
+            message: Self.leadMessage(topic: draft.topic, context: draft.context),
+            language: draft.language.rawValue,
+            source: try Self.sourceToken(draft.source),
+            idempotencyKey: Self.newIdempotencyKey()
+        )
+        return try Self.mapClient(dto)
+    }
+
+    /// CRM trzyma w leadzie **jeden** wolny tekst zgłoszenia (`leads.message`,
+    /// widoczny i przeszukiwalny w panelu). Formularz pyta o temat i kontekst
+    /// osobno, więc kontekst dokładamy jako drugi akapit — bez tego to, co
+    /// użytkownik napisał, przepadłoby po cichu.
+    static func leadMessage(topic: String, context: String) -> String {
+        let trimmed = context.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return topic }
+        return "\(topic)\n\n\(trimmed)"
+    }
+
+    /// Źródło zgłoszenia w słowniku kontraktu.
+    ///
+    /// `ClientSource.referral` („Polecenie”) nie ma odpowiednika w kontrakcie,
+    /// więc **nie** sprowadzamy go do `manual` (to byłoby kłamstwo w bazie) —
+    /// zgłaszamy brak trasy tak samo, jak przy brakujących endpointach.
+    static func sourceToken(_ source: ClientSource) throws -> String {
+        switch source {
+        case .manual: return "manual"
+        case .webForm: return "web_form"
+        case .whatsApp: return "whatsapp"
+        case .referral:
+            throw BackendRepositoryError.notAvailableInBackend(
+                "źródło „Polecenie” (POST /clients)"
+            )
+        }
     }
 
     /// Zmiana danych kontaktu (`PATCH /clients/{client_id}`).
@@ -119,13 +157,28 @@ public struct BackendRepository: EmmaRepository, Sendable {
         // więc zwracamy stan z serwera, zamiast wysyłać pusty zapis.
         guard name != nil || stage != nil else { return original }
 
-        let dto = try await api.updateClient(
-            id: client.id.rawValue,
-            displayName: name,
-            stage: stage,
-            expectedVersion: expectedVersion.value,
-            idempotencyKey: Self.newIdempotencyKey()
-        )
+        let dto: BackendClientDTO
+        do {
+            dto = try await api.updateClient(
+                id: client.id.rawValue,
+                displayName: name,
+                stage: stage,
+                expectedVersion: expectedVersion.value,
+                idempotencyKey: Self.newIdempotencyKey()
+            )
+        } catch let error as BackendRepositoryError {
+            // 409 niesie wersję, którą ma serwer. `BackendRepositoryError` nie jest
+            // `DomainError`, więc bez tego tłumaczenia ekran pokazałby bezradne
+            // „Nie udało się wykonać operacji.” — a to jedyny błąd, przy którym
+            // użytkownik wie, co zrobić: odświeżyć listę i powtórzyć.
+            if case .conflict(let current, _) = error {
+                throw DomainError.versionConflict(
+                    expected: expectedVersion,
+                    current: current.map(Version.init) ?? expectedVersion.next()
+                )
+            }
+            throw error
+        }
         return try Self.mapClient(dto)
     }
 

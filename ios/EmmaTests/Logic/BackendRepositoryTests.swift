@@ -167,18 +167,68 @@ final class BackendRepositoryTests: XCTestCase {
 
     // MARK: Brak trasy w backendzie
 
-    func testCreateClientThrowsNotAvailableInBackend() async {
+    // MARK: Nowe zgłoszenie (POST /clients)
+
+    /// „Dodaj leada” ma założyć **zgłoszenie**, nie kartotekę: etap `new`,
+    /// źródło `manual`, a treść w jednym polu `leads.message`.
+    func testCreateClientPostsEnquiryWithMessageAndKey() async throws {
+        StubURLProtocol.respond(json: Data(Self.createdLeadJSON.utf8), status: 201)
         let repository = makeRepository()
-        await assertNotAvailable {
-            _ = try await repository.createClient(NewClientDraft(
-                displayName: "Nowy",
-                topic: "Temat",
-                language: .pl,
-                context: "",
-                createdAt: LocalDate(year: 2026, month: 9, day: 14)
-            ))
-        }
+
+        let created = try await repository.createClient(Self.draft)
+
+        XCTAssertEqual(created.id.rawValue, "lead-31")
+        XCTAssertEqual(created.stage, .new)
+        XCTAssertEqual(created.source, .manual)
+        XCTAssertEqual(created.language, .pl)
+
+        let request = try XCTUnwrap(StubURLProtocol.allRequests.last)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.path, "/api/mobile/v1/clients")
+        XCTAssertEqual(StubURLProtocol.lastBody?["display_name"] as? String, "Nowy Klient")
+        // Temat i kontekst jadą razem: w bazie jest na to jedno pole.
+        XCTAssertEqual(
+            StubURLProtocol.lastBody?["topic"] as? String,
+            "Zaległe alimenty\n\nTrzy zaległe raty, proszę o kontakt."
+        )
+        XCTAssertEqual(StubURLProtocol.lastBody?["language"] as? String, "pl")
+        XCTAssertEqual(StubURLProtocol.lastBody?["source"] as? String, "manual")
+        XCTAssertFalse(try XCTUnwrap(request.value(forHTTPHeaderField: "Idempotency-Key")).isEmpty)
     }
+
+    /// Bez kontekstu nie doklejamy pustego akapitu — treść ma zostać tematem.
+    func testCreateClientWithoutContextSendsTopicAlone() async throws {
+        StubURLProtocol.respond(json: Data(Self.createdLeadJSON.utf8), status: 201)
+        let repository = makeRepository()
+
+        var draft = Self.draft
+        draft.context = "   "
+        _ = try await repository.createClient(draft)
+
+        XCTAssertEqual(StubURLProtocol.lastBody?["topic"] as? String, "Zaległe alimenty")
+    }
+
+    /// „Polecenie” nie istnieje w słowniku źródła w kontrakcie. Wysłanie go jako
+    /// `manual` byłoby kłamstwem w bazie, więc żądanie **w ogóle nie powstaje**.
+    func testReferralSourceIsNotSentAsManual() async {
+        let repository = makeRepository()
+        var draft = Self.draft
+        draft.source = .referral
+
+        await assertNotAvailable {
+            _ = try await repository.createClient(draft)
+        }
+        XCTAssertEqual(StubURLProtocol.requestCount, 0)
+    }
+
+    private static let draft = NewClientDraft(
+        displayName: "Nowy Klient",
+        topic: "Zaległe alimenty",
+        language: .pl,
+        context: "Trzy zaległe raty, proszę o kontakt.",
+        source: .manual,
+        createdAt: LocalDate(year: 2026, month: 9, day: 15)
+    )
 
     // MARK: Zmiana kontaktu (PATCH /clients/{client_id})
 
@@ -249,6 +299,35 @@ final class BackendRepositoryTests: XCTestCase {
 
         XCTAssertEqual(StubURLProtocol.lastBody?["display_name"] as? String, "Ihor Bondar-Nowak")
         XCTAssertNil(StubURLProtocol.lastBody?["stage"])
+    }
+
+    /// Konflikt wersji nie może skończyć się na „Nie udało się wykonać operacji.”:
+    /// to jedyny błąd zapisu, przy którym użytkownik wie, co zrobić.
+    func testUpdateClientTurnsVersionConflictIntoDomainError() async throws {
+        StubURLProtocol.respond(json: Data(Self.clientsJSON.utf8), status: 200)
+        let repository = makeRepository()
+        var lead = try await repository.clients(matching: "", stage: nil)[0]
+
+        StubURLProtocol.reset()
+        StubURLProtocol.respond(sequence: [
+            (json: Data(Self.leadCardJSON.utf8), status: 200),
+            (json: Data(#"{"code":"version_conflict","current_version":9}"#.utf8), status: 409),
+        ])
+
+        lead.stage = .inContact
+        do {
+            _ = try await repository.updateClient(lead, expectedVersion: Version(3))
+            XCTFail("Oczekiwano konfliktu wersji")
+        } catch let error as DomainError {
+            guard case .versionConflict(let expected, let current) = error else {
+                return XCTFail("Oczekiwano .versionConflict, a jest \(error)")
+            }
+            XCTAssertEqual(expected, Version(3))
+            XCTAssertEqual(current, Version(9))
+            // To samo, co zobaczy użytkownik na ekranie.
+            let message = ScreenLoad.message(for: error, fallback: "Nie udało się wykonać operacji.")
+            XCTAssertTrue(message.contains("Ktoś zmienił ten element"), message)
+        }
     }
 
     func testSingleTaskAndEventReadThrowNotAvailableInBackend() async {        let repository = makeRepository()
@@ -390,6 +469,13 @@ final class BackendRepositoryTests: XCTestCase {
      "topic":"Zapytanie o rozwód","stage":"new","source":"web_form","created_at":"2026-09-01",
      "briefing":null,"incoming_message":null,"incoming_translation":null,"incoming_time":null,
      "needs_reply":true,"version":4}
+    """#
+
+    private static let createdLeadJSON = #"""
+    {"id":"lead-31","display_name":"Nowy Klient","initials":"NK","language":"pl",
+     "topic":"Zaległe alimenty","stage":"new","source":"manual","created_at":"2026-09-15",
+     "briefing":null,"incoming_message":null,"incoming_translation":null,"incoming_time":null,
+     "needs_reply":false,"version":1}
     """#
 
     private static let clientsJSON = #"""

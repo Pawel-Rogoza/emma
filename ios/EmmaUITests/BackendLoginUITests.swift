@@ -195,6 +195,52 @@ final class BackendLoginUITests: XCTestCase {
         attachScreenshot("M2-03-nowe-zgloszenia-z-backendu")
     }
 
+    /// Pełny zapis: aplikacja → prawdziwy backend → baza. To jedyny test, który
+    /// **pisze** do backendu, dlatego wymaga jawnej zgody `EMMA_UI_ALLOW_WRITES=1`
+    /// — uruchomiony przez pomyłkę przeciw produkcji założyłby tam zgłoszenie.
+    /// Przeznaczenie: baza testowa (patrz runbook).
+    func testRealAddLeadWritesToBackend() throws {
+        try XCTSkipIf(backendURL == nil, "Brak EMMA_UI_BACKEND_URL — test integracyjny pominięty")
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["EMMA_UI_ALLOW_WRITES"] == "1",
+            "Zapis do backendu tylko za zgodą EMMA_UI_ALLOW_WRITES=1"
+        )
+        try launchAgainstBackend()
+        typeCredentials(totp: TOTP.code(secret: totpSecret))
+        dismissPasswordSavePromptIfPresent()
+
+        let clientsTab = application.buttons["tab.clients"]
+        XCTAssertTrue(clientsTab.waitForExistence(timeout: 30), "Brak zakładki „Klienci” po zalogowaniu")
+        clientsTab.tap()
+
+        application.buttons["Dodaj leada"].tap()
+        let name = "Zapis Testowy UI"
+        let nameField = application.textFields["Imię i nazwisko"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 15), "Arkusz „Nowy kontakt” się nie otworzył")
+        nameField.tap()
+        nameField.typeText(name)
+
+        let topicField = application.textFields["Temat zgłoszenia"]
+        topicField.tap()
+        topicField.typeText("Zgłoszenie z testu integracyjnego")
+
+        let contextField = application.textViews["Kontekst zgłoszenia"]
+        if contextField.waitForExistence(timeout: 5) {
+            contextField.tap()
+            contextField.typeText("Kontekst z testu.")
+        }
+        application.staticTexts["Nowy kontakt"].tap()
+        let submit = application.buttons["Dodaj kontakt"]
+        XCTAssertTrue(submit.waitForExistence(timeout: 5))
+        submit.tap()
+
+        XCTAssertTrue(
+            application.staticTexts[name].waitForExistence(timeout: 25),
+            "Backend nie oddał karty nowego kontaktu — zapis się nie udał"
+        )
+        attachScreenshot("M3-01-zapis-przez-aplikacje")
+    }
+
     func testWrongPasswordShowsServerMessageAndStaysOnLogin() throws {
         try XCTSkipIf(backendURL == nil, "Brak EMMA_UI_BACKEND_URL — test integracyjny pominięty")
         try launchAgainstBackend()
