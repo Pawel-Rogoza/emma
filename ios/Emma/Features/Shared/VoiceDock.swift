@@ -1,93 +1,54 @@
 import SwiftUI
 
-// MARK: - Dock Emmy (`#assistant-dock` → `.voice-controls-row`)
+// MARK: - Sterowanie rozmową na ekranie Emmy (`emma-voice-controls`)
 //
-// Wiersz stanu z referencji: etykieta stanu („Słucham…”, „Emma mówi…”,
-// „Rozmowa głosowa”, „Odpowiedzi tekstowe”), „Przerwij” i zakończenie rozmowy.
+// Ekran rozmowy ma **jedną** czynność pierwszego rzędu: rozpocznij albo zakończ
+// rozmowę. Wyciszenie mikrofonu, przerwanie i dyktowanie zostały z tego ekranu
+// usunięte na wniosek użytkownika — stan sesji czyta `VoiceUIState` (połączenie,
+// słuchanie, mowa Emmy, błąd), więc przycisk nie musi dublować go etykietami.
 //
 // Dock nie tworzy własnego silnika audio ani drugiej sesji — wyłącznie woła
-// metody jednego koordynatora (§5.3). Odsłuch nigdy nie otwiera mikrofonu (§5.1).
+// metody jednego koordynatora (§5.3). Wyciszenie mikrofonu nadal jest dostępne
+// w globalnym mini-panelu poza ekranem Emmy, a pole tekstowe zostaje dla poleceń
+// pisanych.
 
 @MainActor
 struct VoiceDock: View {
 
     private let state: VoiceUIState
-    private let speaksReplies: Bool
-    private let onToggleSpeech: () -> Void
-    private let onToggleMicrophone: () -> Void
-    private let onInterrupt: () -> Void
-    private let onEndSession: () -> Void
+    private let onStart: () -> Void
+    private let onEnd: () -> Void
 
     init(
         state: VoiceUIState,
-        speaksReplies: Bool,
-        onToggleSpeech: @escaping () -> Void,
-        onToggleMicrophone: @escaping () -> Void,
-        onInterrupt: @escaping () -> Void,
-        onEndSession: @escaping () -> Void
+        onStart: @escaping () -> Void,
+        onEnd: @escaping () -> Void
     ) {
         self.state = state
-        self.speaksReplies = speaksReplies
-        self.onToggleSpeech = onToggleSpeech
-        self.onToggleMicrophone = onToggleMicrophone
-        self.onInterrupt = onInterrupt
-        self.onEndSession = onEndSession
+        self.onStart = onStart
+        self.onEnd = onEnd
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Text(stateLabel)
+        VStack(alignment: .leading, spacing: 8) {
+            Text(stateLabel)
+                .font(EmmaTypography.caption())
+                .foregroundStyle(EmmaTheme.dockStatusText)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel("Stan rozmowy: \(stateLabel)")
+
+            // Błąd pokazujemy **przy przycisku**, a nie tylko w przewijanej
+            // treści: brak zgody na mikrofon albo brak toru wejścia musi być
+            // widoczny bez szukania, tuż pod jedyną czynnością rozmowy.
+            if let error = state.lastError {
+                Text(error)
                     .font(EmmaTypography.caption())
-                    .foregroundStyle(EmmaTheme.dockStatusText)
+                    .foregroundStyle(EmmaTheme.danger)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityLabel("Stan rozmowy: \(stateLabel)")
-                    // Zamrożona sygnatura przewiduje przełącznik odpowiedzi głosowych;
-                    // widoczny przełącznik jest w nagłówku ekranu (jak w referencji),
-                    // tutaj zostaje akcja dostępności.
-                    .accessibilityAction(named: Text(speaksReplies ? "Wyłącz odpowiedzi głosowe" : "Włącz odpowiedzi głosowe")) {
-                        onToggleSpeech()
-                    }
-
-                Spacer(minLength: 8)
-
-                // Wyciszenie jest czynnością pierwszego rzędu, obok przerwania
-                // i zakończenia (F06/F07) — nie ukrywamy go w menu.
-                if state.sessionID != nil {
-                    Button(action: onToggleMicrophone) {
-                        Image(systemName: state.isCapturingMicrophone ? "mic.fill" : "mic.slash.fill")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(
-                                state.isCapturingMicrophone ? EmmaTheme.primaryButtonText : EmmaTheme.dockActionText
-                            )
-                            .frame(width: 44, height: 44)
-                            .background(
-                                state.isCapturingMicrophone ? EmmaTheme.primaryButton : Color.clear,
-                                in: Circle()
-                            )
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(state.isCapturingMicrophone ? "Wycisz mikrofon" : "Włącz mikrofon")
-                    .accessibilityValue(state.microphone.displayName)
-                }
-                if state.canInterrupt {
-                    dockButton("Przerwij", systemImage: "pause.fill", action: onInterrupt)
-                }
-                if state.canEndSession {
-                    dockButton("Zakończ", systemImage: "xmark.circle", action: onEndSession)
-                }
+                    .accessibilityLabel("Problem: \(error)")
             }
 
-            // Połączenie i mikrofon mówimy wprost, ale **tylko gdy sesja istnieje**
-            // (F07). Bez sesji „Połączenie: Nieaktywna · Mikrofon niedostępny ·
-            // Tryb: Bezczynny” to trzy sprzeczne komunikaty o niczym.
-            if state.sessionID != nil {
-                Text("Połączenie: \(state.connection.displayName) · Mikrofon: \(state.microphone.displayName) · Tryb: \(state.mode.displayName)")
-                    .font(EmmaTypography.caption())
-                    .foregroundStyle(EmmaTheme.dockStatusText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            primaryButton
 
             if let toolLabel = state.toolLabel {
                 Text("Emma: \(toolLabel)")
@@ -99,7 +60,7 @@ struct VoiceDock: View {
         }
         .padding(.horizontal, 18)
         .padding(.top, 8)
-        .padding(.bottom, 8)
+        .padding(.bottom, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(EmmaTheme.dockBackground)
         .overlay(alignment: .top) {
@@ -109,31 +70,37 @@ struct VoiceDock: View {
         }
     }
 
-    /// Jeden stan bez żargonu (F07). Bazę daje rdzeń (`VoiceUIState.sessionHeadline`),
-    /// żeby dock i mini-panel nie rozjechały się w nazwach.
-    private var stateLabel: String {
-        guard state.sessionID != nil else { return state.sessionHeadline }
-        // Wyciszenie jest ważniejsze niż tryb: „Rozmowa głosowa” przy wyciszonym
-        // mikrofonie obiecywało nasłuch, którego nie ma.
-        if state.turn == .waiting, state.microphone != .muted, state.connection == .connected {
-            return speaksReplies ? "Rozmowa głosowa" : "Odpowiedzi tekstowe"
-        }
-        return state.sessionHeadline
-    }
-
-    private func dockButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 12, weight: .medium))
-                Text(title)
-                    .font(EmmaTypography.caption())
+    /// Jedyny przycisk: „Rozmawiaj” bez sesji, „Zakończ” w trakcie rozmowy.
+    /// Etykiety celowo są krótkie i zgodne z dotychczasowym nazewnictwem Emmy.
+    private var primaryButton: some View {
+        let isActive = state.sessionID != nil
+        return Button(action: isActive ? onEnd : onStart) {
+            HStack(spacing: 9) {
+                Image(systemName: isActive ? "phone.down.fill" : "mic.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                Text(isActive ? "Zakończ" : "Rozmawiaj")
+                    .font(EmmaTypography.button)
             }
-            .foregroundStyle(EmmaTheme.dockActionText)
-            .frame(minHeight: EmmaSpacing.hitTarget)
+            .foregroundStyle(EmmaTheme.primaryButtonText)
+            .frame(maxWidth: .infinity, minHeight: EmmaMetrics.emmaVoiceButtonSize)
+            .background(EmmaTheme.primaryButton)
+            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.composerInner, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(title)
+        .accessibilityLabel(isActive ? "Zakończ" : "Rozmawiaj")
+        .accessibilityHint(isActive ? "Kończy rozmowę z Emmą" : "Rozpoczyna rozmowę głosową z Emmą")
+    }
+
+    /// Jeden stan bez żargonu (F07). Bazę daje rdzeń (`VoiceUIState.sessionHeadline`),
+    /// żeby ekran i mini-panel nie rozjechały się w nazwach.
+    private var stateLabel: String {
+        guard state.sessionID != nil else { return state.sessionHeadline }
+        // W trakcie spokojnej rozmowy mówimy wprost, że to rozmowa, a nie
+        // powtarzamy „Emma czeka”, co przy żywym mikrofonie brzmi jak bezczynność.
+        if state.turn == .waiting, state.microphone != .muted, state.connection == .connected {
+            return "Rozmowa głosowa"
+        }
+        return state.sessionHeadline
     }
 }

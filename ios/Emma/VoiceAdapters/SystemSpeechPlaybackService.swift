@@ -92,9 +92,14 @@ public final class SystemSpeechPlaybackService: NSObject, SpeechPlaybackService 
     }
 
     /// Oddajemy sesję audio tylko wtedy, gdy sami ją włączyliśmy.
+    ///
+    /// Druga bariera: odsłuch mógł zacząć się **przed** rozmową, a skończyć już
+    /// w jej trakcie. Wtedy sesję trzyma WebRTC dostawcy — dezaktywacja odebrałaby
+    /// rozmowie mikrofon i dźwięk, mimo że to my włączyliśmy sesję dla odsłuchu.
     private func releaseAudioSessionIfOwned() {
         guard ownsAudioSession else { return }
         ownsAudioSession = false
+        guard !audioSession.providerOwnsAudioSession else { return }
         audioSession.deactivate()
     }
 

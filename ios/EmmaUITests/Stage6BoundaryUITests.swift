@@ -33,8 +33,8 @@ final class Stage6BoundaryUITests: XCTestCase {
         capture("35-emma-nota-o-demo", description: "Stopka Emmy: jawna granica mocka (głos, WhatsApp, odsłuch)") {
             let tab = self.application.buttons["tab.emma"]
             if tab.exists { tab.tap() }
-            guard self.application.buttons["Dyktuj tekst do pola"].waitForExistence(timeout: 15) else {
-                return "brak kompozytora na ekranie Emmy"
+            guard self.application.textFields["Polecenie dla Emmy"].waitForExistence(timeout: 15) else {
+                return "brak pola polecenia na ekranie Emmy"
             }
             // Stopka jest pod rozmową — przewijamy, żeby była w kadrze.
             let start = self.application.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75))

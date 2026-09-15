@@ -211,6 +211,16 @@ public final class AppDependencies: ObservableObject {
         self.currentUser = currentUserProvider?() ?? dataset.user
         self.fixtureNotice = resolution.notice
 
+        // Zgoda na mikrofon pytana przed startem produkcyjnej rozmowy. W Demo
+        // mikrofonu nie ma w ogóle (mock bez audio), więc port zostaje pusty.
+        #if canImport(UIKit)
+        let microphonePermission: (any MicrophonePermissionProviding)? = configuration.usesMockServices
+            ? nil
+            : SystemMicrophonePermission()
+        #else
+        let microphonePermission: (any MicrophonePermissionProviding)? = nil
+        #endif
+
         self.voice = VoiceSessionCoordinator(
             sessionRepository: voiceRepository,
             actionRepository: self.repository,
@@ -221,7 +231,11 @@ public final class AppDependencies: ObservableObject {
             // od danych kancelarii, bo to ono zna trasę statusu.
             sessionStatus: { [voiceRepository] sessionID in
                 try? await voiceRepository.fetchStatus(sessionID: sessionID)
-            }
+            },
+            // Bez zgody na mikrofon nie ma rozmowy: SDK dostawcy połączyłby ją
+            // bez wejścia audio i użytkownik mówiłby w pustkę (szczegóły portu
+            // w `MicrophonePermission`). W Demo port jest pusty.
+            microphonePermission: microphonePermission
         )
 
         self.navigation = Dictionary(uniqueKeysWithValues: AppTab.allCases.map { ($0, TabNavigation()) })
@@ -256,7 +270,10 @@ public final class AppDependencies: ObservableObject {
             accessToken: accessToken,
             // Ten sam identyfikator instalacji co w logowaniu (FIX A).
             installationID: InstallationIdentity.current(),
-            mockScenarioName: voiceScenarioName
+            mockScenarioName: voiceScenarioName,
+            // Sesja audio dla rozmowy (SDK jej nie ustawia) — bez tego mikrofon
+            // po odsłuchu/dyktowaniu zostaje w kategorii bez wejścia.
+            audioSession: audioSession
         )
     }
 

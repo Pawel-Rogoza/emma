@@ -37,14 +37,17 @@ public enum VoiceServicesFactory {
         fixtureName: String?,
         accessToken: String?,
         installationID: String,
-        mockScenarioName: String
+        mockScenarioName: String,
+        audioSession: AudioSessionController? = nil
     ) -> VoiceTransport {
         #if canImport(ElevenLabs)
         if providerIsAvailable(configuration: configuration), let baseURL = configuration.apiBaseURL {
             return ElevenLabsVoiceTransport(
                 tokenProvider: BackendConversationTokenProvider(baseURL: baseURL),
                 accessToken: accessToken,
-                installationID: installationID
+                installationID: installationID,
+                // Sesję audio dla rozmowy ustawia transport: SDK tego nie robi.
+                audioSession: audioSession
             )
         }
         #endif

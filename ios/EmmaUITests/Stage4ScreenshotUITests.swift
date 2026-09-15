@@ -2,8 +2,8 @@ import XCTest
 
 // MARK: - Zrzuty etapu 4 (globalny panel sesji)
 //
-// Sceny zapisywane do `EMMA_SHOT_DIR` wraz z raportem tekstowym: kompozytor
-// w spoczynku (jedno „Rozmawiaj”, „Dyktuj tekst”), dock z żywą sesją, mini-panel
+// Sceny zapisywane do `EMMA_SHOT_DIR` wraz z raportem tekstowym: ekran Emmy
+// w spoczynku (jedno „Rozmawiaj” i pole polecenia), dock z żywą sesją, mini-panel
 // w innej zakładce i mini-panel nad arkuszem z klawiaturą.
 
 final class Stage4ScreenshotUITests: XCTestCase {
@@ -28,7 +28,7 @@ final class Stage4ScreenshotUITests: XCTestCase {
     // MARK: Scenariusze
 
     func testCaptureStage4Screens() {
-        capture("26-emma-kompozytor", description: "Emma — jedno „Rozmawiaj” i tryb pisania z „Dyktuj tekst”") {
+        capture("26-emma-kompozytor", description: "Emma — jedno „Rozmawiaj” i pole polecenia tekstowego") {
             self.openTab("emma")
             guard self.application.buttons["Rozmawiaj"].waitForExistence(timeout: 15) else {
                 return "brak przycisku „Rozmawiaj”"
@@ -36,8 +36,11 @@ final class Stage4ScreenshotUITests: XCTestCase {
             guard !self.application.buttons["Zakończ"].exists else {
                 return "sesja powinna być nieaktywna przy zrzucie spoczynku"
             }
-            guard self.application.buttons["Dyktuj tekst do pola"].exists else {
-                return "brak jawnego „Dyktuj tekst”"
+            guard self.application.textFields["Polecenie dla Emmy"].exists else {
+                return "brak pola polecenia tekstowego"
+            }
+            guard !self.application.buttons["Dyktuj tekst do pola"].exists else {
+                return "„Dyktuj tekst” wciąż jest na ekranie rozmowy"
             }
             return nil
         }

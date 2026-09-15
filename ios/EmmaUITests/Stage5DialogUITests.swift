@@ -109,7 +109,7 @@ final class Stage5DialogUITests: XCTestCase {
     private func openEmma() {
         let tab = application.buttons["tab.emma"]
         if tab.exists { tab.tap() }
-        _ = application.buttons["Dyktuj tekst do pola"].waitForExistence(timeout: 15)
+        _ = application.textFields["Polecenie dla Emmy"].waitForExistence(timeout: 15)
     }
 
     /// Wpisuje polecenie w tryb pisania i wysyła je. Zwraca `false`, gdy pole

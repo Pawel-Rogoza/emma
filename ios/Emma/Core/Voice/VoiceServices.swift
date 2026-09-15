@@ -35,6 +35,17 @@ public protocol DictationStartFailureMapping {
     var dictationFailure: DictationFailure { get }
 }
 
+/// Port zgody na mikrofon. Rdzeń nie zna `AVFoundation`, więc pyta o zgodę przez
+/// ten protokół; adapter systemowy (`MicrophonePermission`) żyje w `VoiceAdapters`.
+///
+/// Zgoda jest warunkiem wejścia do rozmowy, a nie kosmetyką: SDK dostawcy przy
+/// odmowie łączy sesję bez toru mikrofonu i nie zgłasza tego błędem.
+@MainActor
+public protocol MicrophonePermissionProviding: Sendable {
+    /// Zgoda na mikrofon, z systemowym pytaniem, gdy jest jeszcze nierozstrzygnięta.
+    func requestRecordPermission() async -> Bool
+}
+
 @MainActor
 public protocol SpeechPlaybackService: AnyObject {
     func play(_ request: SpeechPlaybackRequest) async throws

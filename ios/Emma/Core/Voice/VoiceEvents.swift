@@ -357,6 +357,10 @@ public enum RecoverableErrorKind: String, Codable, Sendable {
 
 public enum FatalErrorKind: String, Codable, Sendable {
     case microphonePermissionDenied
+    /// Zgoda jest, ale tor mikrofonu nie powstał (np. mikrofon zajęty przez inną
+    /// aplikację albo sesja audio nie oddała wejścia). Osobny przypadek, bo
+    /// komunikat o uprawnieniach byłby wtedy mylący.
+    case microphoneUnavailable
     case speechRecognitionPermissionDenied
     case authenticationFailed
     case sessionRevoked
@@ -369,6 +373,8 @@ public enum FatalErrorKind: String, Codable, Sendable {
         switch self {
         case .microphonePermissionDenied:
             return "Brak dostępu do mikrofonu. Możesz pisać tekstem albo zmienić uprawnienia w Ustawieniach."
+        case .microphoneUnavailable:
+            return "Mikrofon nie przekazuje dźwięku. Sprawdź, czy nie używa go inna aplikacja, albo pisz tekstem."
         case .speechRecognitionPermissionDenied:
             return "Brak dostępu do rozpoznawania mowy. Możesz pisać tekstem."
         case .authenticationFailed:

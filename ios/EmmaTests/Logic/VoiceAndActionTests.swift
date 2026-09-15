@@ -555,6 +555,23 @@ final class VoiceStateReducerTests: XCTestCase {
 
 // MARK: - Koordynator voice (§5.3, §5.6, §6, §12.2)
 
+/// Stub portu zgody na mikrofon. Liczy pytania — test ma dowieść nie tylko
+/// wyniku, ale i tego, że port w ogóle został zapytany **przed** startem sesji.
+@MainActor
+private final class StubMicrophonePermission: MicrophonePermissionProviding {
+    private let granted: Bool
+    private(set) var asked = false
+
+    init(granted: Bool) {
+        self.granted = granted
+    }
+
+    func requestRecordPermission() async -> Bool {
+        asked = true
+        return granted
+    }
+}
+
 @MainActor
 final class VoiceSessionCoordinatorTests: XCTestCase {
 
@@ -648,6 +665,58 @@ final class VoiceSessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.state.connection, .failed)
         XCTAssertEqual(coordinator.state.lastError, FatalErrorKind.microphonePermissionDenied.safeMessage)
         XCTAssertEqual(coordinator.state.microphone, .unavailable)
+    }
+
+    /// Brak zgody na mikrofon zatrzymuje start, **zanim** powstanie sesja.
+    ///
+    /// SDK dostawcy przy odmowie połączyłby rozmowę bez toru wejścia i nic by
+    /// nie zgłosił — użytkownik mówiłby w pustkę. Ten test pilnuje, że port
+    /// zgody jest pytany przed `create` i przed zbudowaniem transportu.
+    func testStartWithoutMicrophonePermissionDoesNotCreateSession() async {
+        var factoryCalls = 0
+        let permission = StubMicrophonePermission(granted: false)
+        let gated = VoiceSessionCoordinator(
+            sessionRepository: repository,
+            actionRepository: repository,
+            clock: clock,
+            microphonePermission: permission
+        )
+        await gated.startConversation(
+            context: AssistantContext(scope: .firm),
+            user: DemoFixtures.dataset().user,
+            installationID: "install-test",
+            transportFactory: { _ in
+                factoryCalls += 1
+                return MockVoiceTransport(scenario: self.scenarioWithoutScript(), delayProvider: { _ in })
+            }
+        )
+        XCTAssertTrue(permission.asked, "Port zgody nie został zapytany")
+        XCTAssertEqual(factoryCalls, 0, "Bez zgody nie wolno tworzyć transportu")
+        XCTAssertNil(gated.state.sessionID, "Bez zgody nie wolno zakładać sesji")
+        XCTAssertEqual(gated.state.connection, .failed)
+        XCTAssertEqual(gated.state.lastError, FatalErrorKind.microphonePermissionDenied.safeMessage)
+    }
+
+    /// Zgoda otwiera normalną ścieżkę startu: sesja i transport powstają.
+    func testStartWithMicrophonePermissionCreatesSession() async {
+        let permission = StubMicrophonePermission(granted: true)
+        let granted = VoiceSessionCoordinator(
+            sessionRepository: repository,
+            actionRepository: repository,
+            clock: clock,
+            microphonePermission: permission
+        )
+        await granted.startConversation(
+            context: AssistantContext(scope: .firm),
+            user: DemoFixtures.dataset().user,
+            installationID: "install-test",
+            transportFactory: { _ in
+                MockVoiceTransport(scenario: VoiceScenario(name: "manual", steps: []), delayProvider: { _ in })
+            }
+        )
+        XCTAssertTrue(permission.asked, "Port zgody nie został zapytany")
+        XCTAssertNotNil(granted.state.sessionID, "Zgodna rozmowa musi założyć sesję")
+        XCTAssertNotEqual(granted.state.connection, .failed)
     }
 
     func testDictationResultGoesToFrozenTargetAndExecutesNothing() async throws {

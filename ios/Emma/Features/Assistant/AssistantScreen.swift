@@ -56,11 +56,8 @@ struct AssistantScreen: View {
 
             VoiceDock(
                 state: store.voiceState,
-                speaksReplies: store.speaksReplies,
-                onToggleSpeech: { Task { await store.toggleSpeech() } },
-                onToggleMicrophone: { Task { await store.toggleMicrophone() } },
-                onInterrupt: { Task { await store.interrupt() } },
-                onEndSession: { Task { await store.endSession() } }
+                onStart: { Task { await store.startNewConversation() } },
+                onEnd: { Task { await store.endSession() } }
             )
 
             composer
@@ -88,18 +85,10 @@ struct AssistantScreen: View {
     // MARK: Nagłówek
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            ScreenHeader(
-                kicker: "TWÓJ ASYSTENT",
-                title: "Emma",
-            )
-            IconButton(
-                systemName: store.speaksReplies ? "speaker.wave.2" : "speaker.slash",
-                accessibilityLabel: store.speaksReplies ? "Wyłącz odpowiedzi głosowe" : "Włącz odpowiedzi głosowe",
-                isSelected: store.speaksReplies,
-                action: { Task { await store.toggleSpeech() } }
-            )
-        }
+        ScreenHeader(
+            kicker: "TWÓJ ASYSTENT",
+            title: "Emma",
+        )
     }
 
     // MARK: Wybór kontekstu (`.emma-context`)
@@ -359,25 +348,12 @@ struct AssistantScreen: View {
     }
 
     // MARK: Stan sesji (`.voice-status-line`)
-
+    //
+    // Bieżący stan i błąd mówi dock na dole (jeden przycisk, jeden napis).
+    // Tutaj zostają wyłącznie treści, których dock nie mieści: słyszana
+    // wypowiedź i tekst, który Emma właśnie wypowiada.
     private var statusBlock: some View {
         VStack(spacing: 4) {
-            Text(store.statusText)
-                .font(EmmaTypography.caption())
-                .foregroundStyle(EmmaTheme.emmaStatusText)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityLabel("Stan Emmy: \(store.statusText)")
-
-            if let error = store.voiceState.lastError {
-                Text(error)
-                    .font(EmmaTypography.caption())
-                    .foregroundStyle(EmmaTheme.danger)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityLabel("Problem: \(error)")
-            }
-
             if !store.voiceState.partialTranscript.isEmpty {
                 Text("Słyszę: \(store.voiceState.partialTranscript)")
                     .font(EmmaTypography.emmaBody(store.voiceState.partialTranscript))
@@ -486,44 +462,22 @@ struct AssistantScreen: View {
             + "a odsłuch tekstu czyta syntezator systemu, nie głos Emmy."
     }
 
-    // MARK: Kompozytor (`.assistant-compose`)
+    // MARK: Kompozytor tekstu (`.assistant-compose`)
     //
-    // F07: jedno główne „Rozmawiaj” zamiast trzech ikon obok siebie, osobny
-    // tryb pisania z jawnym „Dyktuj tekst” i wysłanie nieaktywne dla pustego
-    // pola. Mikrofon ma 56 pt (audyt: 56–64 pt dla głównej akcji głosowej).
+    // Rozmowa ma jeden przycisk w docku („Rozmawiaj”/„Zakończ”); tutaj zostaje
+    // wyłącznie droga tekstowa: pole polecenia i wysłanie nieaktywne dla pustego
+    // pola. Przyciski „Dyktuj tekst” i wyciszenia usunięto z tego ekranu na
+    // wniosek użytkownika — dyktowanie nadal działa w wątkach i formularzach.
 
     private var composer: some View {
-        VStack(spacing: 8) {
-            if store.voiceState.sessionID == nil {
-                Button {
-                    Task { await store.startNewConversation() }
-                } label: {
-                    HStack(spacing: 9) {
-                        Image(systemName: "mic.fill")
-                            .font(.system(size: 20, weight: .semibold))
-                        Text("Rozmawiaj")
-                            .font(EmmaTypography.button)
-                    }
-                    .foregroundStyle(EmmaTheme.primaryButtonText)
-                    .frame(maxWidth: .infinity, minHeight: EmmaMetrics.emmaVoiceButtonSize)
-                    .background(EmmaTheme.primaryButton)
-                    .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.composerInner, style: .continuous))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Rozmawiaj")
-                .accessibilityHint("Rozpoczyna rozmowę głosową z Emmą")
-            }
-
-            writingRow
-        }
-        .padding(.horizontal, 14)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
-        .background(EmmaTheme.bg)
+        writingRow
+            .padding(.horizontal, 14)
+            .padding(.top, 8)
+            .padding(.bottom, 10)
+            .background(EmmaTheme.bg)
     }
 
-    /// Tryb pisania: pole, jawny przycisk dyktowania i wysłanie.
+    /// Tryb pisania: pole polecenia i wysłanie.
     private var writingRow: some View {
         HStack(spacing: 6) {
             TextField("Napisz do Emmy…", text: $store.composer)
@@ -536,32 +490,6 @@ struct AssistantScreen: View {
                 .accessibilityLabel("Polecenie dla Emmy")
                 .padding(.horizontal, 4)
                 .frame(minHeight: EmmaSpacing.hitTarget)
-
-            Button {
-                Task {
-                    if store.isDictating {
-                        await store.finishDictation()
-                    } else {
-                        await store.startDictation()
-                    }
-                }
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "waveform")
-                        .font(.system(size: 15, weight: .regular))
-                    Text(store.isDictating ? "Zakończ" : "Dyktuj tekst")
-                        .font(EmmaTypography.caption(.medium))
-                        .lineLimit(1)
-                }
-                .foregroundStyle(store.isDictating ? Color.white : EmmaTheme.emmaMicText)
-                .padding(.horizontal, 9)
-                .frame(minHeight: EmmaSpacing.hitTarget)
-                .background(store.isDictating ? EmmaTheme.primaryButton : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.composerInner, style: .continuous))
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(store.isDictating ? "Zakończ dyktowanie" : "Dyktuj tekst do pola")
 
             Button {
                 Task { await store.sendComposer() }

@@ -19,7 +19,11 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
     /// Możliwości wynikające z API SDK. Wartości odpowiadają temu, co SDK
     /// faktycznie raportuje; po weryfikacji na koncie można je rozszerzyć (§etap 09).
     public let capabilities = VoiceCapabilities(
-        partialTranscripts: true,
+        // SDK 3.3.1 parsuje `tentative_user_transcript`, ale go **odrzuca**
+        // (`Conversation+Events.swift`: `case .tentativeUserTranscript: break`),
+        // więc częściowej transkrypcji użytkownika nie da się pokazać. Deklarujemy
+        // to zgodnie z faktem, żeby UI nie obiecywał „Słyszę: …”, którego nie ma.
+        partialTranscripts: false,
         interruptGeneration: true,
         localPlaybackStop: true,
         reportsPlaybackEvents: true,
@@ -34,8 +38,19 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
     /// Identyfikator instalacji wymagany przez kontrakt, gdy token trzeba pobrać
     /// bezpośrednio (ścieżka awaryjna). Normalnie token jest już w konfiguracji.
     private let installationID: String
+    /// Sesja audio aplikacji. **SDK ElevenLabs jej nie ustawia** — sprawdzone
+    /// w źródłach 3.3.1: `WebRTCConnectionManager` prosi tylko o zgodę na
+    /// mikrofon (`requestRecordPermission`), a kategorii ani aktywacji nie
+    /// dotyka. Bez `.playAndRecord`/`.voiceChat` ustawionego tutaj rozmowa
+    /// dostaje kategorię odtwarzania, czyli **wejście audio nie istnieje** —
+    /// użytkownik mówi, a agent nie słyszy i nie ma transkryptu.
+    private let audioSession: AudioSessionController?
     private var conversation: Conversation?
     private var continuation: AsyncStream<VoiceEvent>.Continuation?
+    /// Strumień bieżącego połączenia. Trzymamy go razem z kontynuacją, żeby
+    /// `events()` nie tworzyło **drugiego** kanału i nie gubiło zdarzeń
+    /// wyemitowanych w trakcie `connect` (m.in. stanu mikrofonu).
+    private var eventStream: AsyncStream<VoiceEvent>?
     private var configuration: VoiceSessionConfiguration?
     /// Generacja połączenia. SDK nie przekazuje jej wprost, a koordynator musi
     /// umieć odrzucić zdarzenia z poprzedniego połączenia — dlatego liczymy ją tutaj.
@@ -48,10 +63,16 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
 
     /// Inicjalizacja jest wewnętrzna, bo dostawca tokenu (`BackendConversationTokenProvider`)
     /// nie jest typem publicznym — transport powstaje wyłącznie przez `VoiceServicesFactory`.
-    init(tokenProvider: BackendConversationTokenProvider, accessToken: String?, installationID: String) {
+    init(
+        tokenProvider: BackendConversationTokenProvider,
+        accessToken: String?,
+        installationID: String,
+        audioSession: AudioSessionController? = nil
+    ) {
         self.tokenProvider = tokenProvider
         self.accessToken = accessToken
         self.installationID = installationID
+        self.audioSession = audioSession
     }
 
     // MARK: Połączenie
@@ -62,6 +83,16 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
         // Nowe połączenie zaczyna z otwartym mikrofonem; stan wyciszenia nie
         // przenosi się między sesjami.
         microphoneMuted = false
+
+        // Kategorię audio dla rozmowy ustawiamy **tutaj**, przed startem SDK.
+        // SDK tego nie robi (patrz komentarz przy `audioSession`), a po odsłuchu
+        // albo dyktowaniu sesja zostaje w `.playback`/`.measurement` — czyli bez
+        // wejścia. Bez tego kroku rozmowa łączy się bez mikrofonu: użytkownik
+        // mówi, a agent nie słyszy i nie ma transkryptu.
+        audioSession?.setProviderOwnsAudioSession(true)
+        // Awaria aktywacji jest meldowana dopiero po otwarciu kanału zdarzeń —
+        // wcześniej nie ma go dokąd wysłać i komunikat by przepadł.
+        let audioActivationFailed = audioSession?.activate(.conversation) == false
 
         // Token rozmowy pochodzi z backendu; aplikacja nigdy nie wysyła klucza API.
         // Normalnie jest już w konfiguracji sesji (wydał go `VoiceSessionRepository`),
@@ -79,7 +110,11 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
             token = issued.token
         }
 
+        // Jeden kanał na połączenie. Poprzedni domykamy, żeby nie został czytany
+        // przez nikogo po reconnectcie.
+        continuation?.finish()
         let stream = AsyncStream<VoiceEvent>.makeStream()
+        eventStream = stream.stream
         continuation = stream.continuation
 
         // Kontekst sprawy jest wysyłany jako dane inicjujące, ale **wiążące**
@@ -123,6 +158,15 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
         )
         conversation = started
         observe(started)
+        // Dowód, że tor mikrofonu naprawdę powstał. SDK przy braku zgody łączy
+        // sesję bez mikrofonu i **nie** zgłasza tego błędem, a wtedy wypowiedź
+        // użytkownika nie dolatuje do agenta i nie ma transkryptu. Zamiast
+        // udawać działającą rozmowę, mówimy wprost, że wejście audio nie działa.
+        if started.inputTrack == nil || audioActivationFailed {
+            microphoneMuted = true
+            emit(.microphoneChanged(.unavailable))
+            emit(.fatalError(.microphoneUnavailable))
+        }
         emit(.connectionChanged(.connecting))
     }
 
@@ -193,12 +237,12 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
     // MARK: Strumień zdarzeń
 
     public func events() -> AsyncStream<VoiceEvent> {
+        // Jedno połączenie = jeden strumień. Kanał powstaje już w `connect`
+        // (żeby nie zgubić zdarzeń wyemitowanych w trakcie łączenia), więc
+        // kolejne żądanie zwraca ten sam kanał, a nie drugi, świeży.
+        if let eventStream { return eventStream }
         let stream = AsyncStream<VoiceEvent>.makeStream()
-        // Jedno połączenie = jeden strumień. Koordynator jest jedynym subskrybentem,
-        // więc kolejne żądanie zwraca ten sam kanał, a nie drugi.
-        if let continuation {
-            continuation.finish()
-        }
+        eventStream = stream.stream
         continuation = stream.continuation
         return stream.stream
     }
@@ -263,6 +307,11 @@ public final class ElevenLabsVoiceTransport: VoiceTransport {
         emit(.connectionChanged(.ended))
         continuation?.finish()
         continuation = nil
+        eventStream = nil
+        // Sesję audio zwalniamy dopiero tutaj: odsłuch i dyktowanie mogą znowu
+        // przejąć kategorię, a mikrofon nie zostaje zarezerwowany po rozmowie.
+        audioSession?.setProviderOwnsAudioSession(false)
+        audioSession?.deactivate()
     }
 
     // MARK: Mapowanie błędów

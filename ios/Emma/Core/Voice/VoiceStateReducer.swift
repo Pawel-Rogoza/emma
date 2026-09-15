@@ -135,10 +135,6 @@ public struct VoiceUIState: Hashable, Sendable {
         }
     }
 
-    public var canInterrupt: Bool {
-        turn == .speaking || turn == .thinking
-    }
-
     public var canEndSession: Bool {
         sessionID != nil && connection != .ended && connection != .idle
     }
@@ -412,7 +408,7 @@ public struct VoiceStateReducer: Sendable {
             // Odebranie uprawnienia, wylogowanie i przejęcie sesji kończą
             // możliwość wykonania narzędzi (§5.6).
             switch kind {
-            case .microphonePermissionDenied, .speechRecognitionPermissionDenied:
+            case .microphonePermissionDenied, .microphoneUnavailable, .speechRecognitionPermissionDenied:
                 state.microphone = .unavailable
             case .authenticationFailed, .sessionRevoked:
                 state.sessionID = nil

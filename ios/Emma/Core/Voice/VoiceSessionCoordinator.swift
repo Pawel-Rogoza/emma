@@ -49,6 +49,16 @@ public final class VoiceSessionCoordinator {
     /// a nie tylko samej metody.
     private let limitCheckInterval: TimeInterval
     private let sessionStatus: (@MainActor (VoiceSessionID) async -> VoiceSessionStatus?)?
+    /// Zgoda na mikrofon pytana **przed** założeniem sesji. Warstwa logiki nie zna
+    /// `AVFoundation`, więc dostęp do mikrofonu dostaje jako port. `nil` oznacza
+    /// brak sprawdzania (Demo, testy, podglądy) — tam mikrofonu nie ma w ogóle.
+    ///
+    /// To nie jest kosmetyka: SDK dostawcy przy odmowie łączy sesję **bez toru
+    /// mikrofonu** i nie zgłasza tego błędem (patrz `WebRTCConnectionManager`
+    /// w SDK: `enableMic: permissionGranted`). Skutek to rozmowa, w której
+    /// użytkownik mówi w pustkę. Dlatego odmowa kończy start głośno, zanim
+    /// powstanie sesja u dostawcy i na backendzie.
+    private let microphonePermission: (any MicrophonePermissionProviding)?
 
     // MARK: Zasoby wewnętrzne
 
@@ -93,7 +103,9 @@ public final class VoiceSessionCoordinator {
         limitCheckInterval: TimeInterval = 15,
         /// Sposób zapytania backendu o stan sesji. `nil` oznacza tryb bez backendu
         /// (np. testy i Demo), w którym nie ma czego uzgadniać.
-        sessionStatus: (@MainActor (VoiceSessionID) async -> VoiceSessionStatus?)? = nil
+        sessionStatus: (@MainActor (VoiceSessionID) async -> VoiceSessionStatus?)? = nil,
+        /// Zgoda na mikrofon. `nil` = nie pytamy (Demo, testy, podglądy).
+        microphonePermission: (any MicrophonePermissionProviding)? = nil
     ) {
         self.sessionRepository = sessionRepository
         self.actionRepository = actionRepository
@@ -103,6 +115,7 @@ public final class VoiceSessionCoordinator {
         self.sessionLifetime = sessionLifetime
         self.limitCheckInterval = limitCheckInterval
         self.sessionStatus = sessionStatus
+        self.microphonePermission = microphonePermission
         self.state = VoiceUIState()
     }
 
@@ -150,6 +163,18 @@ public final class VoiceSessionCoordinator {
             route: state.route,
             mode: .conversation
         )
+        // Zgoda na mikrofon przed założeniem sesji. Bez niej SDK i tak połączy
+        // rozmowę, ale bez wejścia audio — użytkownik mówi w pustkę, a UI
+        // pokazuje „połączono”. Pytamy więc tutaj i przy odmowie nie tworzymy
+        // ani sesji u dostawcy, ani po stronie backendu.
+        if let microphonePermission, await microphonePermission.requestRecordPermission() == false {
+            state.connection = .failed
+            state.turn = .waiting
+            state.mode = .idle
+            state.microphone = .unavailable
+            state.lastError = FatalErrorKind.microphonePermissionDenied.safeMessage
+            return
+        }
         do {
             let configuration = try await sessionRepository.create(
                 CreateVoiceSession(
