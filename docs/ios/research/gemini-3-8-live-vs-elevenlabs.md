@@ -162,12 +162,20 @@ backendu (zasada „argument modelu nie jest zgodą” nie zmienia się).
    przerwanie, reconnect po `GoAway`, zużycie tokenów na 10 min rozmowy.
 
 **Wynik spike'u (2026-09-15, klucz z `.env`, model `gemini-3.8-live`).**
-Punkty 1–3 wykonane: poświadczenie ~0,5 s, polska odpowiedź głosem z transkrypcją
-(250 562 B audio 24 kHz) i pełna pętla narzędzia (`get_today_overview` →
-`FunctionResponse` → odpowiedź głosem, 253 442 B). Punkt 4 **nie jest** zamknięty:
-latencja odczuwana w rozmowie, jakość na nazwiskach i sygnaturach oraz wznowienie
-po dziesięciu minutach wymagają telefonu i ucha człowieka. Koszt nadal wyliczany
-z cennika, nie z rachunku — spike szedł na tierze darmowym.
+Punkty 1–3 wykonane: poświadczenie 0,37–0,55 s, polska odpowiedź głosem
+z transkrypcją (237–259 kB audio 24 kHz) i pełna pętla narzędzia
+(`get_today_overview` → `FunctionResponse` → odpowiedź głosem). Czas do
+**pierwszego** bajtu audio: **652 ms** dla tury tekstowej i **717 ms** dla
+odpowiedzi po narzędziu — to liczba odpowiadająca odczuwalnej zwłoce (czas całej
+tury zależy od długości zdania i nic o niej nie mówi). Pomiar z laptopa, po sieci,
+na tierze darmowym.
+
+Punkt 4 **nie jest** zamknięty: jakość na nazwiskach i sygnaturach, zachowanie
+mikrofonu, przerwanie wypowiedzi i wznowienie po dziesięciu minutach wymagają
+telefonu i ucha człowieka. Koszt nadal wyliczany z cennika, nie z rachunku —
+spike szedł na tierze darmowym. Dla porównania z ElevenLabs brakuje dwóch liczb:
+ceny z Waszego planu i **czasu do pierwszego audio ElevenLabs** zmierzonego
+w tych samych warunkach.
 
 **Kryteria go/no-go:** przerwanie wypowiedzi działa naturalnie; polski
 akceptowalny na nazwiskach i sygnaturach; koszt zmierzony < obecny koszt

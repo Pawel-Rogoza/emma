@@ -115,16 +115,18 @@ strony protokołu, nie zachowania Google.
 ### Co potwierdził żywy klucz (2026-09-15)
 
 Spike z prawdziwym kluczem (`GEMINI_LIVE_SPIKE=1 … gemini.live.test.ts`) przechodzi
-w trzech punktach:
+w trzech punktach. Wysyła w `setup` dokładnie to, co aplikacja (model +
+`sessionResumption: {}`), więc dowodzi tej samej ścieżki, którą pójdzie telefon:
 
 - `auth_tokens` przyjmuje blokadę sesji razem z `systemInstruction` i `tools`
   (~0,5 s), czyli persona Emmy naprawdę jest zablokowana po stronie serwera,
 - tura tekstowa wraca jako polska transkrypcja **i** audio 24 kHz
   („Jestem Emma, asystentka w kancelarii adwokackiej. W czym mogę Ci dzisiaj
-  pomóc?” + 250 562 B),
+  pomóc?” + 250 562 B) — **pierwsze audio po 652 ms**,
 - model wywołuje prawdziwe narzędzie (`get_today_overview`) i po
   `FunctionResponse` odpowiada głosem („Na dzisiaj masz zaplanowane spotkanie
-  z klientem o godzinie dziesiątej trzydzieści.” + 253 442 B).
+  z klientem o godzinie dziesiątej trzydzieści.” + 253 442 B, pierwsze audio
+  po 717 ms).
 
 Trzy rzeczy, które przechodziły wszystkie testy i atrapę, a **nie działały** na
 prawdziwym API (opis napraw i źródeł: `docs/emma/GEMINI_LIVE_KONTRAKT.md`
