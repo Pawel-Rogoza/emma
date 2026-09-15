@@ -29,7 +29,9 @@ struct NewConversationSheet: View {
                     EmptyState(
                         systemImage: "person.2",
                         title: "Brak kontaktów",
-                        message: "Dane przykładowe nie zawierają jeszcze żadnego klienta."
+                        message: dependencies.configuration.usesMockServices
+                            ? "Dane przykładowe nie zawierają jeszcze żadnego klienta."
+                            : "Kartoteka kancelarii nie ma jeszcze żadnego klienta."
                     )
                 } else {
                     SearchField(text: $query, placeholder: "Szukaj osoby")
