@@ -5,8 +5,10 @@ oraz uczciwie oznacza, co jest już spełnione, a co zablokowane.
 
 **Aktualizacja 2026-09-14 — repozytorium backendu jest już dostępne.** Backend to
 `github.com/Pawel-Rogoza/adwokat-app-project` (nazwa pakietu `advokat-varshava`,
-Astro 7 + adapter Node + SQLite, produkcja: panel `majkuny.pl`, strona
-`advokat-varshava.pl`). Potwierdzone na SHA `029444a`: `npm test` = **110 plików /
+Astro 7 + adapter Node + SQLite. Produkcja: panel stoi na **osobnym hoście**
+(hostGuard przepuszcza tam wyłącznie `/panel`, `/api/crm/` i API usług), a strona
+publiczna oraz API aplikacji mobilnej i narzędzi agenta działają pod
+`advokat-varshava.pl`. Potwierdzone na SHA `029444a`: `npm test` = **110 plików /
 836 testów PASS**, `npx astro check` = 7 błędów, 110 tras API, 40 migracji.
 Pełna analiza luki i plan etapów M0–M6: `docs/emma/MOBILE_API_GAP_2026-09-14.md`
 w repozytorium backendu. Poniższe tabele zaktualizowano tam, gdzie stan kodu

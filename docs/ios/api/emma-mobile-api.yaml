@@ -26,10 +26,10 @@ info:
     Nazwy typów odpowiadają typom domenowym aplikacji, żeby mapowanie było jednoznaczne.
 
 servers:
-  - url: https://majkuny.pl/api/mobile/v1
+  - url: https://advokat-varshava.pl/api/mobile/v1
     description: |
       Baza adresów mobilnych. Aplikacja składa URL jako
-      `EMMA_API_BASE_URL` (sam host, np. `https://majkuny.pl`) + `api/mobile/v1/`
+      `EMMA_API_BASE_URL` (sam host, np. `https://advokat-varshava.pl`) + `api/mobile/v1/`
       + ścieżka z tego dokumentu — dlatego ścieżki są tu zapisane **względnie**
       (`/clients`, `/voice/sessions`), a nie z powtórzonym prefiksem.
 

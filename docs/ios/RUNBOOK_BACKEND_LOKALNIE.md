@@ -40,7 +40,7 @@ Dlaczego tak:
 
 ```bash
 curl -sS -X POST -H 'Content-Type: application/json' \
-  -d '{"code":"emma-live-kod","email":"pawel@majkuny.pl","name":"Paweł Rogoża","password":"Emma-live-2026!"}' \
+  -d '{"code":"emma-live-kod","email":"adwokat@example.test","name":"Paweł Rogoża","password":"Emma-live-2026!"}' \
   http://127.0.0.1:4399/api/crm/auth/setup > /tmp/emma-live/setup.json
 
 python3 -c "
@@ -69,7 +69,7 @@ sqlite3 /tmp/emma-live/crm.sqlite3 \
 cd ~/projects/emma/ios   # albo ~/Desktop/emma/ios
 SECRET=$(cat /tmp/emma-live/secret.txt)
 TEST_RUNNER_EMMA_UI_BACKEND_URL=http://127.0.0.1:4399 \
-TEST_RUNNER_EMMA_UI_LOGIN_EMAIL=pawel@majkuny.pl \
+TEST_RUNNER_EMMA_UI_LOGIN_EMAIL=adwokat@example.test \
 TEST_RUNNER_EMMA_UI_LOGIN_PASSWORD='Emma-live-2026!' \
 TEST_RUNNER_EMMA_UI_TOTP_SECRET="$SECRET" \
 TEST_RUNNER_EMMA_UI_EXPECT_CLIENT='Zenon Backendowicz-Testowy' \

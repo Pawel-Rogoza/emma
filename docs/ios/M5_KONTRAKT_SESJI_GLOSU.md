@@ -18,7 +18,7 @@ przypadkiem `/voice/conversation-token` bez prefiksu.
   To była realna rozbieżność, nie kosmetyka.
 
 **Zrobione:** `servers:` w kontrakcie to teraz
-`https://majkuny.pl/api/mobile/v1` z opisem, że ścieżki są względne, a trasa
+`https://advokat-varshava.pl/api/mobile/v1` z opisem, że ścieżki są względne, a trasa
 backendu **musi** leżeć w `src/pages/api/mobile/v1/…` (plik wyżej tworzy
 `/api/voice/…`, którego nginx nie przepuszcza i aplikacja nie woła).
 
@@ -201,19 +201,53 @@ Potwierdzone realnym użyciem — nie mockiem:
   `2026-09-14` (wcześniej błędnie `2026-09-11` z `DemoClock`).
 - `installation_id` jest jeden i trwały (`620A227E-1F35-41E4-8DAE-987CC3532340`) — 403 zniknął.
 
-Nadal niepotwierdzone (do sprawdzenia przez użytkownika): polskie STT/TTS, przerwanie
-wypowiedzi, mute oraz **zakończenie sesji** — obie sesje w bazie pozostają `active`,
-brak wpisu `mobile.voice_session_end`. Oznaczenia Demo zostają do czasu potwierdzenia
-tych punktów.
+## Aktualizacja 2026-09-15 — rozmowa dwukierunkowa, jeden głos, jeden przycisk
 
-## Czego brakuje do „Jarvira"
+Potwierdzone na urządzeniu po poprawkach:
 
-Agent ElevenLabs nie ma narzędzi podłączonych do backendu, dlatego odpowiada, że nie ma
-dostępu do funkcji kancelarii. Kierunek: **jedno kanoniczne narzędziowe źródło prawdy**
-(ten sam rejestr narzędzi i ten sam action engine, którego używa panel) wystawione
-agentowi jako narzędzia serwerowe (webhooki), z uwierzytelnieniem usługowym
-(`EMMA_GATEWAY_SERVICE_SECRET`) i bez kopiowania danych do promptu.
+- **Mowa użytkownika dolatuje do agenta.** Przyczyną ciszy było to, że aplikacja
+  **nie pytała o zgodę na mikrofon**, a SDK (3.3.1) przy braku zgody łączy rozmowę bez
+  toru wejścia i **nie zgłasza tego błędem** (`WebRTCConnectionManager`:
+  `enableMic: permissionGranted`). Teraz zgoda jest pytana **przed** założeniem sesji,
+  a jej odmowa kończy start czytelnym komunikatem i nie tworzy sesji u dostawcy.
+- **Sesja audio rozmowy** jest ustawiana jawnie w transporcie
+  (`setProviderOwnsAudioSession(true)` + `activate(.conversation)`) jako zabezpieczenie
+  deterministyczne. Ustalenie źródłowe: ElevenLabs sam nie woła `setCategory`, ale używa
+  LiveKit, którego `AudioSessionEngineObserver` domyślnie ustawia `.playAndRecord`.
+- **Jeden głos.** Drugim torem był lokalny tekst `unrecognizedMessage` (o „prototypie”
+  i liście możliwości) czytany systemowym syntezatorem równolegle z głosem dostawcy;
+  w produkcji z aktywną sesją lokalna warstwa nie odpowiada już głosem.
+- **Jeden przycisk start/stop** na ekranie rozmowy; wyciszanie, przerwanie i dyktowanie
+  zostały z tego ekranu usunięte. Pilnuje tego test
+  `Stage4VoicePanelUITests.testConversationScreenHasNoExtraControls`.
+- **Zakończenie sesji domyka się** — w bazie produkcyjnej `ended = 9`
+  (wcześniej obie sesje zostawały `active`; główną przyczyną był SIGTRAP crashu
+  dyktowania, który ubijał proces przed sprzątaniem).
+- **Crash „dyktuj tekst” naprawiony** — 6 raportów awarii z urządzenia wskazało pułapkę
+  izolacji aktora w Swift 6: domknięcie tapu `AVAudioNodeTap` i callback TCC dziedziczyły
+  `@MainActor`, a AVFAudio/TCC wołają je z wątku tła.
+- **Narzędzia agenta działają end-to-end.** Audyt produkcji:
+  `get_today_overview` × 2 (status 200) i `search_clients` (200) — agent naprawdę odpytuje
+  backend w trakcie rozmowy.
+- **Kanoniczna domena:** publiczne API aplikacji (`/api/mobile/`) i narzędzia agenta
+  (`/api/emma/`) działają pod `advokat-varshava.pl`; panel pozostał na osobnym hoście
+  (hostGuard rozdziela ścieżki panelowe od usługowych), a strona publiczna działa bez zmian.
 
-Etapy: (1) odczyt — klienci, sprawy, zadania, terminy, notatki, wątki; (2) działanie —
-wnioski o akcję z potwierdzeniem człowieka, idempotencją i audytem; (3) kontekst sprawy
-w rozmowie (już mamy `context_version` w sesji).
+Nadal **niepotwierdzone** (wymaga oceny człowieka, nie da się zmierzyć automatycznie):
+jakość polskiego STT/TTS na nazwiskach i sygnaturach oraz zachowanie przy przerwaniu
+wypowiedzi. Wyciszanie nie jest już częścią ekranu rozmowy (decyzja użytkownika), więc
+jego potwierdzanie straciło sens dla tej ścieżki.
+
+## Narzędzia agenta (etap odczytu) — stan
+
+Etap odczytu jest **wykonany**: kanoniczny rejestr asystenta (ten sam, którego używa panel)
+jest wystawiony agentowi jako 8 narzędzi serwerowych pod
+`https://advokat-varshava.pl/api/emma/tools/<nazwa>` — `search_clients`, `search_cases`,
+`get_case`, `search_leads`, `get_lead`, `list_tasks`, `list_agenda`, `get_today_overview`.
+Autoryzacja wyłącznie sekretem usługi (porównanie w czasie stałym), limit 20 pozycji i
+64 KB, audyt `assistant.emma.tool` bez treści danych klienta.
+
+Etap zapisu **pozostaje wyłączony**: `propose_*` kończy się 403 — wróci razem z bramką
+potwierdzenia człowieka, idempotencją i audytem. Wiadomości WhatsApp nie mają jeszcze
+tabeli z treścią, więc nie ma czego czytać; dołączą do tych samych narzędzi po
+uruchomieniu konta WhatsApp Business.

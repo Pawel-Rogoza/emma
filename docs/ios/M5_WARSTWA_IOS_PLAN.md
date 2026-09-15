@@ -42,7 +42,7 @@ warstwę aplikacji, która ma się z nim połączyć. Decyzje użytkownika:
    w `AuthStore` razem z tokenem.
 5. **Podłączenie w `AppDependencies`**: dla trybu nie-Demo prawdziwe
    `BackendVoiceSessionRepository` (żadnego mocka w ścieżce transportu).
-6. **`EMMA_API_BASE_URL = https://majkuny.pl`** w `Production.xcconfig`.
+6. **`EMMA_API_BASE_URL = https://advokat-varshava.pl`** w `Production.xcconfig`.
 7. **Build TestFlight wewnętrzny** + lista kontrolna testu na urządzeniu.
 
 ## Czego nie ruszamy

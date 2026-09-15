@@ -14,7 +14,7 @@ i w jakiej kolejności.
 | Oznaczenia demo | 44 pliki w `Features/`; głos symulowany, wiadomości demo |
 | Uprawnienia w `Info.plist` | **są**: mikrofon, rozpoznawanie mowy, Face ID |
 | Bundle ID | `pl.kancelaria.emma` (+ `.demo`, `.staging`) |
-| Backend publiczny | `https://majkuny.pl/api/mobile/v1/...` odpowiada kontraktem, certyfikat ważny, panel 200 |
+| Backend publiczny | `https://advokat-varshava.pl/api/mobile/v1/...` odpowiada kontraktem, certyfikat ważny, panel 200 |
 | Konto testowe dla recenzenta | brak |
 | Polityka prywatności, karta App Privacy | brak |
 
@@ -59,7 +59,7 @@ przetestowane”, ale **nie** zadeklaruję, że głos albo wysyłka WhatsApp dzi
    wyszukiwanie). Głos i wiadomości — do decyzji: ukryte w produkcji albo
    jawnie opisane jako niedostępne. **Oznaczeń demo nie usuwamy** — zostają
    w konfiguracji Demo.
-4. **`EMMA_API_BASE_URL = https://majkuny.pl`** w `Production.xcconfig`
+4. **`EMMA_API_BASE_URL = https://advokat-varshava.pl`** w `Production.xcconfig`
    (dopiero po kroku 1, żeby nie wypuścić builda z działającym odczytem
    i niedziałającym zapisem).
 5. **Konto dla recenzenta**: e-mail + hasło, **bez TOTP** (recenzent nie ma
