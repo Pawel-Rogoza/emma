@@ -108,10 +108,11 @@ public final class GeminiLiveTransport: VoiceTransport {
         audioSession?.setProviderOwnsAudioSession(true)
         let audioActivationFailed = audioSession?.activate(.conversation) == false
 
-        continuation?.finish()
-        let stream = AsyncStream<VoiceEvent>.makeStream()
-        eventStream = stream.stream
-        continuation = stream.continuation
+        // Strumień zdarzeń powstaje raz i żyje całą sesję. Świadomie **nie**
+        // kończymy go tutaj: koordynator woła `connect`, a dopiero potem
+        // `events()`, ale podglądy i testy robią to w odwrotnej kolejności —
+        // zamknięcie kanału w `connect` gubiłoby wtedy cały uścisk dłoni.
+        _ = currentStream()
 
         // Poświadczenie pochodzi z backendu. Normalnie jest już w konfiguracji
         // sesji; poniższa gałąź domyka tylko brak (np. ponowne wejście do sesji).
@@ -128,9 +129,11 @@ public final class GeminiLiveTransport: VoiceTransport {
             token = issued.token
         }
 
+        // `connecting` przed otwarciem gniazda: pętla odbioru startuje w środku
+        // `openSocket` i `setupComplete` może dotrzeć, zanim wrócimy z `await`.
+        emit(.connectionChanged(.connecting))
         try await openSocket(token: token, resumeHandle: nil)
 
-        emit(.connectionChanged(.connecting))
         if audioActivationFailed {
             emit(.fatalError(.audioSessionFailed))
         }
@@ -193,6 +196,12 @@ public final class GeminiLiveTransport: VoiceTransport {
             if let audio = outcome.audio { enqueuePlayback(audio) }
             if let call = outcome.toolCall { executeToolCall(call) }
             for payload in outcome.payloads { emit(payload) }
+            // `goAway` to zapowiedź zamknięcia (limit ~10 minut). Nie czekamy, aż
+            // gniazdo padnie: otwieramy nowe połączenie z uchwytem tej samej sesji,
+            // więc rozmowa trwa bez przerwy w słuchaniu użytkownika.
+            if outcome.goAwayIn != nil {
+                reconnect(proactive: true)
+            }
         }
     }
 
@@ -202,11 +211,24 @@ public final class GeminiLiveTransport: VoiceTransport {
         guard !isClosing else { return }
         for payload in tracker.connectionLost().payloads { emit(payload) }
         stopPlayback()
-        guard reconnectsLeft > 0, let session = configuration else {
-            emit(.fatalError(.providerUnavailable))
+        reconnect(proactive: false)
+    }
+
+    /// Wznowienie sesji: nowe poświadczenie i nowe gniazdo z uchwytem.
+    ///
+    /// `proactive` odróżnia zapowiedziane zamknięcie (`goAway`, po którym zdarzenia
+    /// już poszły) od zerwania — dzięki temu nie dublujemy komunikatów o błędzie.
+    /// Jedna próba: jeśli się nie uda, mówimy wprost, że dostawca jest niedostępny.
+    private func reconnect(proactive: Bool) {
+        guard !isClosing, reconnectsLeft > 0, let session = configuration else {
+            if !proactive, !isClosing { emit(.fatalError(.providerUnavailable)) }
             return
         }
         reconnectsLeft -= 1
+        socket?.cancel(with: .normalClosure, reason: nil)
+        socket = nil
+        receiveTask?.cancel()
+        receiveTask = nil
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -217,6 +239,9 @@ public final class GeminiLiveTransport: VoiceTransport {
                     accessToken: self.accessToken
                 )
                 try await self.openSocket(token: issued.token, resumeHandle: self.tracker.resumptionHandle)
+                // Nowe gniazdo = nowy limit prób. Sesja Live API żyje do dwóch
+                // godzin, więc jedno zerwanie na całą rozmowę to za mało.
+                self.reconnectsLeft = 1
             } catch {
                 self.emit(.fatalError(.providerUnavailable))
             }
@@ -309,6 +334,12 @@ public final class GeminiLiveTransport: VoiceTransport {
     // MARK: Strumień zdarzeń
 
     public func events() -> AsyncStream<VoiceEvent> {
+        currentStream()
+    }
+
+    /// Jedna kolejka na sesję. `AsyncStream` buforuje to, co trafiło przed
+    /// pierwszym odczytem, więc zdarzenia z `connect` nie przepadają.
+    private func currentStream() -> AsyncStream<VoiceEvent> {
         if let eventStream { return eventStream }
         let stream = AsyncStream<VoiceEvent>.makeStream()
         eventStream = stream.stream
@@ -482,19 +513,41 @@ public final class GeminiLiveTransport: VoiceTransport {
         guard capacity > 0,
               let output = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return nil }
 
-        var supplied = false
+        // Blok wejściowy konwertera jest `@Sendable`, a AVFAudio może go zawołać
+        // spoza wątku, który nas woła. Źródło trzymamy w pudełku z zamkiem,
+        // zamiast współdzielić zmienną `var` (to była realna data race).
+        let source = ConversionSource(buffer: buffer)
         var error: NSError?
         let status = converter.convert(to: output, error: &error) { _, statusPointer in
-            if supplied {
+            guard let next = source.take() else {
                 statusPointer.pointee = .noDataNow
                 return nil
             }
-            supplied = true
             statusPointer.pointee = .haveData
-            return buffer
+            return next
         }
         guard status != .error, output.frameLength > 0, let samples = output.int16ChannelData else { return nil }
         return Data(bytes: samples[0], count: Int(output.frameLength) * MemoryLayout<Int16>.size)
+    }
+}
+
+/// Jednorazowe źródło dla bloku wejściowego `AVAudioConverter`. Konwerter sam
+/// zgłasza, ile buforów zużył, więc oddajemy bufor raz i potem mówimy „brak
+/// danych” — inaczej resampling w kółko przetwarzałby ten sam fragment.
+final class ConversionSource: @unchecked Sendable {
+    private let lock = NSLock()
+    private var buffer: AVAudioPCMBuffer?
+
+    init(buffer: AVAudioPCMBuffer) {
+        self.buffer = buffer
+    }
+
+    func take() -> AVAudioPCMBuffer? {
+        lock.lock()
+        defer { lock.unlock() }
+        let next = buffer
+        buffer = nil
+        return next
     }
 }
 

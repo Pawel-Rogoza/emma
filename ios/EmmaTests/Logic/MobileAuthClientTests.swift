@@ -245,6 +245,9 @@ final class StubURLProtocol: URLProtocol {
     nonisolated(unsafe) private static var recordedRequest: URLRequest?
     nonisolated(unsafe) private static var recordedRequests: [URLRequest] = []
     nonisolated(unsafe) private static var recordedBody: [String: Any]?
+    /// Odpowiedź liczona z żądania — dla tras, w których odpowiedź musi odesłać
+    /// wartość wygenerowaną przez klienta (np. `session_id` sesji głosu).
+    nonisolated(unsafe) private static var dynamicHandler: ((URLRequest, Data?) -> (status: Int, body: Data))?
 
     static var lastRequest: URLRequest? {
         lock.lock()
@@ -292,11 +295,19 @@ final class StubURLProtocol: URLProtocol {
         stub = Stub(status: 0, body: Data(), headers: [:], failure: error)
     }
 
+    static func respond(handler: @escaping (URLRequest, Data?) -> (status: Int, body: Data)) {
+        lock.lock()
+        defer { lock.unlock() }
+        stubQueue = []
+        dynamicHandler = handler
+    }
+
     static func reset() {
         lock.lock()
         defer { lock.unlock() }
         stub = Stub(status: 200, body: Data(), headers: [:], failure: nil)
         stubQueue = []
+        dynamicHandler = nil
         recordedRequest = nil
         recordedRequests = []
         recordedBody = nil
@@ -318,7 +329,10 @@ final class StubURLProtocol: URLProtocol {
             Self.recordedBody = nil
         }
         let current: Stub
-        if !Self.stubQueue.isEmpty {
+        if let handler = Self.dynamicHandler {
+            let result = handler(request, body)
+            current = Stub(status: result.status, body: result.body, headers: [:], failure: nil)
+        } else if !Self.stubQueue.isEmpty {
             current = Self.stubQueue.removeFirst()
         } else {
             current = Self.stub

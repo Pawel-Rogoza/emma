@@ -79,12 +79,36 @@ obok, nie zamiast.
 | --- | --- |
 | Kodek wysyła i czyta ramki Live API zgodnie z kontraktem | `swift test` — 20 testów `GeminiLive*`, 0 błędów |
 | Reguły tury (przerwanie, transkrypcje, narzędzie) są spójne | tamże, `GeminiLiveTurnTrackerTests` |
+| **Transport prowadzi całą sesję po prawdziwym gnieździe WebSocket** | `xcodebuild test` — `GeminiLiveTransportIntegrationTests` (2 testy) przeciw atrapie Live API: uścisk dłoni, tura, obieg narzędzia, wznowienie z uchwytem |
+| Kontrakt tokenu czyta oba kształty dostawców (bez `conversation_id` dla Gemini) | `swift test` — `VoiceSessionContractTests` (5 testów) |
+| Wywołanie narzędzia idzie trasą mobilną z bearerem użytkownika i nie udaje sukcesu przy odmowie | `xcodebuild test` — `VoiceToolAndAudioTests` (8 testów) |
+| Konwersja PCM (16 kHz wejście, 24 kHz wyjście) nie gubi i nie odwraca skali | tamże |
 | Przełącznik domyślnie zostaje na ElevenLabs i umie wrócić | `xcodebuild test` — `VoiceProviderSelectionTests` |
 | Backend domyślnie zostaje przy ElevenLabs, bez klucza nie woła Gemini | `npm test` — `voice.test.ts` (4 nowe przypadki) |
 | Narzędzia Live API są tylko czytające i audytowane | `npm test` — `voiceTools.test.ts` (6 testów) |
 | Projekt Xcode się kompiluje z nowym transportem | `xcodebuild build` → `** BUILD SUCCEEDED **` |
 | **Model odpowiada na żywym kluczu** (transkrypcja, audio, tool call, polski) | **brak dowodu** — spike `GEMINI_LIVE_SPIKE=1 npx vitest run src/lib/crm/voice/gemini.live.test.ts` nie został uruchomiony (brak klucza w `.env`) |
 | Rozmowa na urządzeniu brzmi dobrze | **brak dowodu** — wymaga iPhone'a i uszu człowieka |
+
+### Jak uruchomić testy integracyjne transportu
+
+```bash
+# 1. atrapy Live API (repo backendu, tam jest `ws`) — jedna zwykła, jedna z goAway
+node scripts/fake-live-api.mjs --port 8791
+node scripts/fake-live-api.mjs --port 8792 --scenario goaway
+
+# 2. zmienne widoczne dla procesu w symulatorze
+xcrun simctl spawn booted launchctl setenv EMMA_FAKE_LIVE_BASE_URL http://127.0.0.1:8791
+xcrun simctl spawn booted launchctl setenv EMMA_FAKE_LIVE_BASE_URL_GOAWAY http://127.0.0.1:8792
+
+# 3. testy (bez tych zmiennych same się pomijają — nigdy nie wołają prawdziwego API)
+cd ios && xcodebuild test -project Emma.xcodeproj -scheme Emma-Demo \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -only-testing:EmmaTests/GeminiLiveTransportIntegrationTests
+```
+
+Atrapa **nie jest** emulatorem Live API i nie zwalnia z punktu 4: dowodzi naszej
+strony protokołu, nie zachowania Google.
 
 ### Czego jeszcze nie wiemy (jawne ryzyka)
 
@@ -102,6 +126,9 @@ obok, nie zamiast.
    (nie udawać).
 4. **Przerwanie.** Live API nie ma klientowego „anuluj turę”; zatrzymujemy
    lokalne odtwarzanie i czekamy na `interrupted` z VAD serwera.
+   Rozstrzygnięte po naszej stronie: strumień zdarzeń żyje całą sesję (jedna
+   kolejka, zdarzenia z `connect` są buforowane), a `goAway` wznawia sesję od
+   razu nowym gniazdem z uchwytem i nowym poświadczeniem z backendu.
 5. **Tier Free** używa treści do ulepszania produktów Google. Do rozmów z danymi
    klientów wyłącznie tier płatny.
 
