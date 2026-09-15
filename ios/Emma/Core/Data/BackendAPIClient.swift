@@ -149,6 +149,39 @@ public struct BackendAPIClient: Sendable {
         try await get("\(Endpoint.clients.rawValue)/\(id.rawValue)", query: [])
     }
 
+    /// `PATCH /api/mobile/v1/clients/{client_id}` — zmiana danych kontaktu.
+    ///
+    /// Trasa obsługuje leady i kartotekę tak samo (`lead-26` / `client-33`).
+    /// `stage` przysyłamy tylko wtedy, gdy naprawdę się zmienia: dla leada
+    /// backend mapuje go na status, a wejście na `client` **konwertuje
+    /// zgłoszenie w kartotekę**. `expected_version` to wersja, którą aplikacja
+    /// widziała — backend odrzuci zapis, jeśli ktoś zmienił rekord wcześniej.
+    func updateClient(
+        id: String,
+        displayName: String?,
+        stage: String?,
+        expectedVersion: Int,
+        idempotencyKey: String
+    ) async throws -> BackendClientDTO {
+        struct Body: Encodable {
+            let displayName: String?
+            let stage: String?
+            let expectedVersion: Int
+
+            enum CodingKeys: String, CodingKey {
+                case displayName = "display_name"
+                case stage
+                case expectedVersion = "expected_version"
+            }
+        }
+        return try await send(
+            "PATCH",
+            path: "\(Endpoint.clients.rawValue)/\(id)",
+            body: Body(displayName: displayName, stage: stage, expectedVersion: expectedVersion),
+            idempotencyKey: idempotencyKey
+        )
+    }
+
     /// `GET /api/mobile/v1/cases/{case_id}` — sprawa z zadania i historią.
     func caseDetail(id: CaseID) async throws -> BackendCaseDetail {
         try await get("\(Endpoint.cases.rawValue)/\(id.rawValue)", query: [])

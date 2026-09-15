@@ -13,8 +13,17 @@ struct ClientsScreen: View {
 
     @StateObject private var store = ClientsStore()
     @State private var search = ""
-    @State private var leadFilter: LeadListFilter = .all
+    /// Domyślnie pokazujemy **nowe** zgłoszenia.
+    ///
+    /// Leady to rezerwacje konsultacji ze strony — sensem tego ekranu jest
+    /// przerobienie świeżych zgłoszeń, a nie przeklikanie całej kartoteki.
+    /// Zgłoszenia, których nikt nie ruszył, zostają „nowe" i gromadzą się
+    /// (na produkcji 8 z 25), więc widok otwiera się dokładnie na nich.
+    @State private var leadFilter: LeadListFilter = .new
     @State private var caseFilter: CaseListFilter = .active
+    /// Nazwa leada w trakcie zmiany — `nil` znaczy, że okno jest zamknięte.
+    @State private var renaming: Client?
+    @State private var renameText = ""
 
     var body: some View {
         ScrollView {
@@ -47,8 +56,60 @@ struct ClientsScreen: View {
         .onChange(of: dependencies.clientMode) { _, _ in
             // `setClientMode` w referencji czyści wyszukiwanie i wraca do pierwszego filtra.
             search = ""
-            leadFilter = .all
+            leadFilter = .new
             caseFilter = .active
+        }
+        .alert("Zmień nazwę", isPresented: renameBinding) {
+            TextField("Imię i nazwisko", text: $renameText)
+            Button("Anuluj", role: .cancel) { renaming = nil }
+            Button("Zapisz") { commitRename() }
+        } message: {
+            Text("Nazwa pojawi się na liście i w karcie.")
+        }
+    }
+
+    // MARK: Zmiana nazwy
+
+    private var renameBinding: Binding<Bool> {
+        Binding(
+            get: { renaming != nil },
+            set: { if !$0 { renaming = nil } }
+        )
+    }
+
+    private func beginRename(_ client: Client) {
+        renameText = client.displayName
+        renaming = client
+    }
+
+    private func commitRename() {
+        guard let client = renaming else { return }
+        let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        renaming = nil
+        guard trimmed.count >= 2, trimmed != client.displayName else { return }
+
+        var updated = client
+        updated.displayName = trimmed
+        Task {
+            await dependencies.perform {
+                try await dependencies.repository.updateClient(updated, expectedVersion: client.version)
+            }
+        }
+    }
+
+    // MARK: Zmiana etapu
+
+    /// Przeniesienie leada między etapami. Wejście na etap `client` jest
+    /// w backendzie **konwersją zgłoszenia w klienta** — dlatego menu pyta
+    /// o to wprost, zamiast po cichu zakładać kartotekę.
+    private func move(_ client: Client, to stage: ClientStage) {
+        guard stage != client.stage else { return }
+        var updated = client
+        updated.stage = stage
+        Task {
+            await dependencies.perform {
+                try await dependencies.repository.updateClient(updated, expectedVersion: client.version)
+            }
         }
     }
 
@@ -70,10 +131,37 @@ struct ClientsScreen: View {
 
     @ViewBuilder
     private var filterChips: some View {
-        switch dependencies.clientMode {
-        case .leads:
+        switch (dependencies.clientMode, store.phase) {
+        case (.leads, .loaded(let model)):
+            // Liczba przy filtrze mówi, ile zgłoszeń naprawdę czeka — bez tego
+            // trzeba zgadywać, czy warto przełączyć widok.
+            ListFilterChips(
+                items: LeadListFilter.allCases,
+                selection: $leadFilter,
+                title: { $0.rawValue },
+                count: { filter in
+                    switch filter {
+                    case .all: return model.clients.filter { $0.stage != .client }.count
+                    case .new: return model.clients.filter { $0.stage == .new }.count
+                    case .inContact: return model.clients.filter { $0.stage == .inContact }.count
+                    }
+                }
+            )
+        case (.cases, .loaded(let model)):
+            ListFilterChips(
+                items: CaseListFilter.allCases,
+                selection: $caseFilter,
+                title: { $0.rawValue },
+                count: { filter in
+                    switch filter {
+                    case .active: return model.cases.filter { $0.status.isActive }.count
+                    case .closed: return model.cases.filter { $0.status == .closed }.count
+                    }
+                }
+            )
+        case (.leads, _):
             ListFilterChips(items: LeadListFilter.allCases, selection: $leadFilter, title: { $0.rawValue })
-        case .cases:
+        case (.cases, _):
             ListFilterChips(items: CaseListFilter.allCases, selection: $caseFilter, title: { $0.rawValue })
         }
     }
@@ -111,9 +199,13 @@ struct ClientsScreen: View {
         } else {
             LazyVStack(spacing: EmmaSpacing.cardGap) {
                 ForEach(rows) { client in
-                    LeadCard(client: client, nextEvent: model.nextLeadEvents[client.id]) {
-                        dependencies.openPerson(client.id)
-                    }
+                    LeadCard(
+                        client: client,
+                        nextEvent: model.nextLeadEvents[client.id],
+                        onOpen: { dependencies.openPerson(client.id) },
+                        onSetStage: { stage in move(client, to: stage) },
+                        onRename: { beginRename(client) }
+                    )
                 }
             }
         }
@@ -200,11 +292,18 @@ struct ListFilterChips<Item: Hashable>: View {
     private let items: [Item]
     @Binding private var selection: Item
     private let title: (Item) -> String
+    private let count: ((Item) -> Int)?
 
-    init(items: [Item], selection: Binding<Item>, title: @escaping (Item) -> String) {
+    init(
+        items: [Item],
+        selection: Binding<Item>,
+        title: @escaping (Item) -> String,
+        count: ((Item) -> Int)? = nil
+    ) {
         self.items = items
         self._selection = selection
         self.title = title
+        self.count = count
     }
 
     var body: some View {
@@ -214,7 +313,7 @@ struct ListFilterChips<Item: Hashable>: View {
                 Button {
                     selection = item
                 } label: {
-                    Text(title(item))
+                    Text(label(item))
                         .font(EmmaTypography.caption(isSelected ? .medium : .regular))
                         .foregroundStyle(isSelected ? EmmaTheme.secondaryButtonText : EmmaTheme.mutedSoft)
                         .padding(.horizontal, 11)
@@ -230,10 +329,17 @@ struct ListFilterChips<Item: Hashable>: View {
                 }
                 .buttonStyle(.plain)
                 .frame(minHeight: EmmaSpacing.hitTarget)
-                .accessibilityLabel(title(item))
+                .accessibilityLabel(label(item))
                 .accessibilityAddTraits(isSelected ? [.isSelected] : [])
             }
         }
+    }
+
+    /// Licznik doklejamy do etykiety, bo filtr ma od razu odpowiadać na pytanie
+    /// „ile tam czeka”, a nie tylko zmieniać zawartość listy.
+    private func label(_ item: Item) -> String {
+        guard let count else { return title(item) }
+        return "\(title(item)) \(count(item))"
     }
 }
 

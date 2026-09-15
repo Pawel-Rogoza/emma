@@ -180,8 +180,78 @@ final class BackendRepositoryTests: XCTestCase {
         }
     }
 
-    func testSingleTaskAndEventReadThrowNotAvailableInBackend() async {
+    // MARK: Zmiana kontaktu (PATCH /clients/{client_id})
+
+    /// Menu po przytrzymaniu zmienia etap. Repozytorium ma wysłać **tylko to,
+    /// co się zmieniło** — razem z wersją, którą widziało — i użyć klucza
+    /// idempotencji, żeby powtórzone żądanie nie zapisało dwa razy.
+    func testUpdateClientSendsChangedStageWithVersionAndKey() async throws {
+        StubURLProtocol.respond(json: Data(Self.clientsJSON.utf8), status: 200)
         let repository = makeRepository()
+        var lead = try await repository.clients(matching: "", stage: nil)[0]
+        XCTAssertEqual(lead.stage, .new)
+        XCTAssertEqual(lead.version, Version(3))
+
+        StubURLProtocol.reset()
+        StubURLProtocol.respond(sequence: [
+            (json: Data(Self.leadCardJSON.utf8), status: 200),
+            (json: Data(Self.leadInContactJSON.utf8), status: 200),
+        ])
+
+        lead.stage = .inContact
+        let updated = try await repository.updateClient(lead, expectedVersion: Version(3))
+
+        XCTAssertEqual(updated.stage, .inContact)
+        XCTAssertEqual(updated.version, Version(4))
+
+        // Jedno czytanie stanu (żeby wiedzieć, co się zmieniło) i jeden zapis.
+        XCTAssertEqual(StubURLProtocol.requestCount, 2)
+        let patch = try XCTUnwrap(StubURLProtocol.allRequests.last)
+        XCTAssertEqual(patch.httpMethod, "PATCH")
+        XCTAssertEqual(patch.url?.path, "/api/mobile/v1/clients/lead-7")
+        XCTAssertEqual(StubURLProtocol.lastBody?["stage"] as? String, "in_contact")
+        XCTAssertEqual(StubURLProtocol.lastBody?["expected_version"] as? Int, 3)
+        XCTAssertNil(StubURLProtocol.lastBody?["display_name"])
+        XCTAssertFalse(try XCTUnwrap(patch.value(forHTTPHeaderField: "Idempotency-Key")).isEmpty)
+    }
+
+    /// Brak zmian to brak zapisu — samo dotknięcie „Zapisz” bez edycji nie ma
+    /// prawa ruszać rekordu ani jego wersji.
+    func testUpdateClientWithoutChangesDoesNotWrite() async throws {
+        StubURLProtocol.respond(json: Data(Self.clientsJSON.utf8), status: 200)
+        let repository = makeRepository()
+        let lead = try await repository.clients(matching: "", stage: nil)[0]
+
+        StubURLProtocol.reset()
+        StubURLProtocol.respond(json: Data(Self.leadCardJSON.utf8), status: 200)
+
+        let updated = try await repository.updateClient(lead, expectedVersion: Version(3))
+
+        XCTAssertEqual(updated.displayName, lead.displayName)
+        XCTAssertEqual(updated.stage, lead.stage)
+        XCTAssertEqual(StubURLProtocol.requestCount, 1)
+    }
+
+    /// Nazwa idzie osobno od etapu: zmiana nazwy nie może przestawić statusu.
+    func testUpdateClientSendsNameWithoutStage() async throws {
+        StubURLProtocol.respond(json: Data(Self.clientsJSON.utf8), status: 200)
+        let repository = makeRepository()
+        var lead = try await repository.clients(matching: "", stage: nil)[0]
+
+        StubURLProtocol.reset()
+        StubURLProtocol.respond(sequence: [
+            (json: Data(Self.leadCardJSON.utf8), status: 200),
+            (json: Data(Self.leadRenamedJSON.utf8), status: 200),
+        ])
+
+        lead.displayName = "Ihor Bondar-Nowak"
+        _ = try await repository.updateClient(lead, expectedVersion: Version(3))
+
+        XCTAssertEqual(StubURLProtocol.lastBody?["display_name"] as? String, "Ihor Bondar-Nowak")
+        XCTAssertNil(StubURLProtocol.lastBody?["stage"])
+    }
+
+    func testSingleTaskAndEventReadThrowNotAvailableInBackend() async {        let repository = makeRepository()
         // Lista spraw ma już trasę (`GET /cases`), ale odczyt pojedynczego
         // zadania i terminu nie ma jej w kontrakcie — dlatego tylko te dwa
         // zgłaszają brak, zamiast zwracać pustkę.
@@ -296,6 +366,31 @@ final class BackendRepositoryTests: XCTestCase {
     }
 
     // MARK: Dane wejściowe
+
+    /// Karta kontaktu — repozytorium czyta ją przed zapisem, żeby wiedzieć,
+    /// które pola naprawdę się zmieniły.
+    private static let leadCardJSON = #"""
+    {"client":
+      {"id":"lead-7","display_name":"Ihor Bondar","initials":"IB","language":"uk",
+       "topic":"Zapytanie o rozwód","stage":"new","source":"web_form","created_at":"2026-09-01",
+       "briefing":null,"incoming_message":null,"incoming_translation":null,"incoming_time":null,
+       "needs_reply":true,"version":3},
+     "events":[],"tasks":[],"notes":[],"activity":[]}
+    """#
+
+    private static let leadInContactJSON = #"""
+    {"id":"lead-7","display_name":"Ihor Bondar","initials":"IB","language":"uk",
+     "topic":"Zapytanie o rozwód","stage":"in_contact","source":"web_form","created_at":"2026-09-01",
+     "briefing":null,"incoming_message":null,"incoming_translation":null,"incoming_time":null,
+     "needs_reply":true,"version":4}
+    """#
+
+    private static let leadRenamedJSON = #"""
+    {"id":"lead-7","display_name":"Ihor Bondar-Nowak","initials":"IB","language":"uk",
+     "topic":"Zapytanie o rozwód","stage":"new","source":"web_form","created_at":"2026-09-01",
+     "briefing":null,"incoming_message":null,"incoming_translation":null,"incoming_time":null,
+     "needs_reply":true,"version":4}
+    """#
 
     private static let clientsJSON = #"""
     {"items":[

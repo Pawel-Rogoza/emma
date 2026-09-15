@@ -23,6 +23,15 @@ public struct BackendRepository: EmmaRepository, Sendable {
     /// w nieskończoność, gdyby serwer zwracał sprzeczne `has_more`.
     private static let maxClientPages = 10
 
+    /// Klucz idempotencji dla pojedynczego zamiaru zapisu.
+    ///
+    /// Jedno dotknięcie użytkownika = jedno żądanie, więc klucz powstaje raz
+    /// na operację. Backend wymaga go zawsze i dzięki niemu powtórzone żądanie
+    /// (np. ponowienie po zerwaniu) nie wykona zapisu drugi raz.
+    static func newIdempotencyKey() -> String {
+        UUID().uuidString.lowercased()
+    }
+
     /// Bieżący użytkownik pochodzi z zewnątrz (sesja mobilna), a nie z danych
     /// kancelarii. Gdy go nie ma, repozytorium to zgłasza — nie podstawia konta.
     private let currentUserProvider: @Sendable () async -> User?
@@ -95,8 +104,46 @@ public struct BackendRepository: EmmaRepository, Sendable {
         throw notAvailable("tworzenie klienta (POST /clients)")
     }
 
+    /// Zmiana danych kontaktu (`PATCH /clients/{client_id}`).
+    ///
+    /// Wysyłamy tylko pola, które faktycznie różnią się od stanu z serwera:
+    /// nazwę, a gdy etap się zmienił — także etap (wejście na `client`
+    /// konwertuje zgłoszenie w kartotekę po stronie backendu). Puste różnice
+    /// nie lecą w ogóle, żeby zmiana nazwy nie ruszała statusu.
     public func updateClient(_ client: Client, expectedVersion: Version) async throws -> Client {
-        throw notAvailable("zmiana danych klienta (PATCH /clients/{client_id})")
+        let original = try await currentClient(client.id)
+        let name = client.displayName != original.displayName ? client.displayName : nil
+        let stage = client.stage != original.stage ? Self.stageToken(client.stage) : nil
+
+        // Sama wersja różnicy nie czyni: bez zmiany pól nie ma czego zapisywać,
+        // więc zwracamy stan z serwera, zamiast wysyłać pusty zapis.
+        guard name != nil || stage != nil else { return original }
+
+        let dto = try await api.updateClient(
+            id: client.id.rawValue,
+            displayName: name,
+            stage: stage,
+            expectedVersion: expectedVersion.value,
+            idempotencyKey: Self.newIdempotencyKey()
+        )
+        return try Self.mapClient(dto)
+    }
+
+    /// Etap kontaktu w słowniku kontraktu (`new` / `in_contact` / `client`).
+    static func stageToken(_ stage: ClientStage) -> String {
+        switch stage {
+        case .new: return "new"
+        case .inContact: return "in_contact"
+        case .client: return "client"
+        }
+    }
+
+    /// Kontakt w kształcie aplikacji — potrzebny, by porównać, co się zmieniło.
+    private func currentClient(_ id: ClientID) async throws -> Client {
+        guard let card = try await client(id: id) else {
+            throw BackendRepositoryError.notFound
+        }
+        return card
     }
 
     // MARK: CaseRepository

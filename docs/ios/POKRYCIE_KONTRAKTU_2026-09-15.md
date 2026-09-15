@@ -178,3 +178,78 @@ w aplikacji go nie widać — nie ma go do kogo przypiąć (model aplikacji wią
 termin z klientem i sprawą). Gdyby kancelaria chciała widzieć konsultacje osób
 będących jeszcze tylko leadami, trzeba najpierw rozstrzygnąć, czy w terminie
 mobilnym `client_id` może być puste (zmiana kontraktu + modelu aplikacji).
+
+---
+
+## Lista leadów: domyślny filtr, liczniki i menu po przytrzymaniu (2026-09-15)
+
+**Zgłoszenie:** „trzeba przerobić leady, tak by domyślnie pokazywały się tylko
+nowe, plus ogólnie usprawnić cały ten widok klientów/leadów | aktualnie apka
+pokazuje zbyt wiele nowych, wydaje mi się, że aż tyle nie ma i coś się zbugowało
+z tym statusem | fajnie jakby można było przytrzymać palcem lead i pojawiła się
+opcja edycji/usunięcia”.
+
+**Czy status jest zbugowany — sprawdzone w bazie produkcyjnej (odczyt):**
+
+| etap | leady |
+|---|---|
+| `new` | 8 |
+| `consultation` | 8 |
+| `client` | 8 |
+| `closed_lost` | 1 |
+
+Osiem zgłoszeń `new` pochodzi z 31.08–15.09.2026, **każde ma `client_id IS NULL`
+i zero terminów**. Wniosek: mapowanie statusów jest poprawne, a stos „nowych” to
+naprawdę nieprzerobione zapytania ze strony — nie błąd. Ekran pokazywał wszystkie
+25 kontaktów naraz, więc te 8 ginęło w tłumie; stąd wrażenie „za dużo nowych”.
+
+**Zmiany w aplikacji (`ios/`):**
+1. Ekran „Klienci” otwiera się na filtrze **Nowe** (wcześniej „Wszystkie”),
+   a przełączenie Leady/Sprawy wraca do niego.
+2. Filtry pokazują **liczniki** („Nowe 8”, „W kontakcie 8”) — policzone z danych
+   już wczytanych, bez dodatkowych zapytań.
+3. Karta leada bez terminu pokazuje **datę zgłoszenia** („Zgłoszono dzisiaj”,
+   „Zgłoszono 13 wrz”) zamiast mylącego „Termin do ustalenia”.
+4. Przytrzymanie karty otwiera menu: przeniesienie między etapami
+   (nowe / w kontakcie / klient) oraz zmianę nazwy. Wejście na etap „klient”
+   jest w backendzie **konwersją zgłoszenia w kartotekę** — dlatego jest osobną
+   pozycją menu, a nie skutkiem ubocznym.
+5. Karta ma `accessibilityIdentifier("lead-card")`, bo etykieta dla VoiceOver
+   niesie treść i nie da się po niej stabilnie trafić w testach.
+
+**Zapis:** `PATCH /api/mobile/v1/clients/{client_id}` (trasa istniała w backendzie,
+aplikacja jej nie używała). Repozytorium wysyła **tylko pola, które różnią się
+od stanu z serwera** — nazwę i/lub etap — razem z `expected_version` (blokada
+optymalizacyjna) i `Idempotency-Key`. Brak różnic = brak żądania zapisu.
+Zgodność nazw sprawdzona w kodzie obu stron: backend czyta `display_name`,
+`stage`, `expected_version` oraz nagłówek `idempotency-key`.
+
+**Usuwania nie ma i nie udajemy, że jest.** Kontrakt mobilny ma `DELETE` tylko
+dla `/events/{event_id}`, `/voice/sessions/{session_id}` i `/push/devices`.
+Panel kancelarii umie usunąć leada (`src/pages/api/crm/leads/[id]/index.ts`),
+więc dodanie `DELETE /clients/{client_id}` do kontraktu + trasy mobilnej jest
+wykonalne — czeka na decyzję, bo to operacja nieodwracalna i zmienia kontrakt.
+
+**Weryfikacja:**
+- Aplikacja: 3 nowe testy repozytorium (etap+`expected_version`+klucz; brak zmian
+  = brak zapisu; nazwa bez etapu) — razem **17/17** w `BackendRepositoryTests`.
+- Nowy plik `EmmaUITests/ClientsLeadMenuUITests.swift`: domyślny filtr „Nowe”
+  oraz pełne przeniesienie leada po przytrzymaniu (menu → etap → zgłoszenie
+  znika z filtra „Nowe”). 2/2 przechodzą.
+- Produkcja (odczyt, bez zapisu): test `testRealNewLeadsAreDefaultView` po
+  zalogowaniu na `advokat-varshava.pl` — filtr „Nowe” zaznaczony domyślnie,
+  na zrzucie liczniki **Wszystkie 16 / Nowe 8 / W kontakcie 8** i realne wiersze
+  „Zgłoszono dzisiaj”, „Zgłoszono 13 wrz”. Licznik „Nowe 8” zgadza się co do
+  jednego z odczytem z bazy — to zamyka pytanie o zbugowany status.
+- Test `testRealBackendDataAppearsInClientsAndCard` szukał klienta na liście,
+  licząc na domyślne „Wszystkie”; teraz wybiera ten filtr **jawnie**, żeby zmiana
+  domyślnego widoku nie robiła z niego fałszywego alarmu.
+
+**Ograniczenia:**
+- Liczniki pokazują tylko to, co aplikacja ma wczytane. Lista schodzi po
+  kursorach do 10 stron po 30 pozycji; przy większej bazie licznik „Wszystkie”
+  policzy mniej, niż jest w kancelarii.
+- Przeniesienie etapu na „klient” **zakłada kartotekę** i jest nieodwracalne
+  z aplikacji (kontrakt nie zna etapu wstecz).
+- Menu nie ma „Wymaga odpowiedzi”, choć backend to pole przyjmuje — czeka na
+  decyzję, czy to ma być element listy, czy osobna akcja.
