@@ -80,7 +80,7 @@ xcodebuild archive \
   CURRENT_PROJECT_VERSION="$GITHUB_RUN_ID" \
   CODE_SIGN_STYLE=Manual \
   CODE_SIGN_IDENTITY='Apple Distribution' \
-  PROVISIONING_PROFILE_SPECIFIER="$profile_name" \
+  EMMA_CI_PROVISIONING_PROFILE_SPECIFIER="$profile_name" \
   DEVELOPMENT_TEAM="$team_id"
 
 plutil -create xml1 "$export_options"
