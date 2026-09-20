@@ -23,6 +23,33 @@ nie powtarzają numeru.
    pozwalającą przesyłać buildy (co najmniej App Manager). Zapisz `Key ID`,
    `Issuer ID` i pobrany raz plik `.p8`.
 
+Jeżeli nie masz już certyfikatu z kluczem prywatnym, możesz przygotować go
+całkowicie na Linuksie. W prywatnym katalogu **poza repozytorium**, z `umask 077`,
+wykonaj:
+
+```bash
+openssl genrsa -aes256 -out emma-distribution.key 2048
+openssl req -new -key emma-distribution.key \
+  -out emma-distribution.certSigningRequest \
+  -subj '/CN=Emma Apple Distribution'
+```
+
+W Apple Developer → Certificates utwórz certyfikat typu **Apple Distribution**,
+wgraj plik `.certSigningRequest` i pobierz wydany `.cer`. Następnie w tym samym
+katalogu:
+
+```bash
+openssl x509 -inform DER -in distribution.cer -out distribution.pem
+openssl pkcs12 -export -inkey emma-distribution.key \
+  -in distribution.pem -out emma-distribution.p12
+```
+
+OpenSSL zapyta o hasło klucza prywatnego i nowe hasło pliku `.p12`.
+To drugie trafia do sekretu `IOS_DISTRIBUTION_CERTIFICATE_PASSWORD`.
+Jeżeli Apple nada pobranemu certyfikatowi inną nazwę, podstaw ją w komendzie.
+Zachowaj klucz prywatny i hasła w bezpiecznym miejscu; bez nich nie odtworzysz
+tego samego certyfikatu.
+
 ## Sekrety repozytorium GitHub
 
 W `Pawel-Rogoza/emma` → **Settings → Secrets and variables → Actions** ustaw:
