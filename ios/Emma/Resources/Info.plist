@@ -43,11 +43,17 @@
 	<string>$(EMMA_API_BASE_URL)</string>
 	<key>EMMADefaultLocale</key>
 	<string>$(EMMA_DEFAULT_LOCALE)</string>
+	<key>EMMAVoiceProvider</key>
+	<string>$(EMMA_VOICE_PROVIDER)</string>
+	<key>EMMAVoiceModel</key>
+	<string>$(EMMA_VOICE_MODEL)</string>
 
 	<!-- Uprawnienia pobierane przy pierwszym użyciu funkcji, nie przy starcie (§5.7).
 	     Mikrofon opisuje rozmowę z Emmą, nie nagrywanie w tle. -->
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Mikrofon jest używany wyłącznie po dotknięciu przycisku, aby rozmawiać z Emmą albo podyktować tekst. Nagranie nie jest zapisywane w aplikacji.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Emma nie korzysta z obrazu z kamery; ta deklaracja jest wymagana przez bibliotekę rozmów głosowych. Rozmowa używa wyłącznie mikrofonu.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Face ID odblokowuje aplikację po powrocie do niej. Zamiast Face ID możesz zawsze użyć hasła urządzenia.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
@@ -70,6 +76,13 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UIUserInterfaceStyle</key>
 	<string>Light</string>

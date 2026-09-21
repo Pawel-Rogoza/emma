@@ -94,6 +94,9 @@ targets:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) EMMA_DEMO
         Staging:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) EMMA_STAGING
+          # Only the app target needs a provisioning profile. Passing this as a
+          # global xcodebuild setting would also apply it to Swift packages.
+          PROVISIONING_PROFILE_SPECIFIER: $(EMMA_CI_PROVISIONING_PROFILE_SPECIFIER)
         Production:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) EMMA_PRODUCTION
 

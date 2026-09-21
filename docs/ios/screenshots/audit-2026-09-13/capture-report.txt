@@ -1,0 +1,15 @@
+Zrzuty ekranu Emmy — stan faktyczny
+Data: 2026-09-13T12:08:05Z
+Uwaga: zrzut „NIE UDAŁO SIĘ” oznacza, że ekran nie wczytał się w założonym czasie.
+Zrzut i tak powstał — pokazuje, co było na ekranie w tym momencie.
+zapisano · 01-dzisiaj.png · Dzisiaj — dzień referencyjny
+zapisano · 02-klienci.png · Klienci — lista leadów
+zapisano · 03-karta-klienta.png · Karta klienta Andriia Melnyka
+zapisano · 04-sprawa.png · Ekran sprawy z podziałem na sekcje
+zapisano · 05-zadania.png · Wspólna lista zadań
+zapisano · 06-kalendarz.png · Kalendarz — tydzień bez kolumny godzin
+zapisano · 07-rozmowy.png · Rozmowy — liczniki nieprzeczytanych
+zapisano · 08-watek.png · Wątek z separatorem nowych wiadomości
+zapisano · 09-emma.png · Emma — orb i kontekst
+zapisano · 10-emma-rozmowa.png · Emma — odpowiedź mocka po wybraniu sugestii
+zapisano · 11-profil.png · Profil kancelarii

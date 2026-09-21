@@ -6,8 +6,10 @@ import SwiftUI
 // koordynatora, a opuszczenie ekranu **nie** kończy rozmowy (§5.6). Nie ma tu
 // drugiego transportu, drugiego subskrybenta ani drugiego silnika audio.
 //
-// Demo działa na deterministycznych mockach i mówi o tym wprost: nie ma kont
-// dostawców, nie ma integracji z ElevenLabs ani z WhatsApp, wysyłka jest symulowana.
+// Nota `.demo-foot` mówi prawdę o bieżącym środowisku: w Demo nie ma ani kont
+// dostawców, ani integracji z ElevenLabs; poza Demo rozmowa idzie do prawdziwego
+// backendu i dostawcy, a demonstracyjne pozostają tylko te czynności, które
+// naprawdę są symulowane (np. wysyłka wiadomości).
 
 
 @MainActor
@@ -41,6 +43,9 @@ struct AssistantScreen: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .scrollDismissesKeyboard(.interactively)
+                // Rozmowa jest kotwiczona na dole: gdy pojawia się klawiatura,
+                // karta nowej propozycji zostaje nad nią, a nie pod nią (§6).
+                .defaultScrollAnchor(.bottom)
                 .onChange(of: store.turns.count) { _, _ in
                     guard let last = store.turns.last else { return }
                     withAnimation(.easeOut(duration: 0.2)) {
@@ -51,10 +56,8 @@ struct AssistantScreen: View {
 
             VoiceDock(
                 state: store.voiceState,
-                speaksReplies: store.speaksReplies,
-                onToggleSpeech: { Task { await store.toggleSpeech() } },
-                onInterrupt: { Task { await store.interrupt() } },
-                onEndSession: { Task { await store.endSession() } }
+                onStart: { Task { await store.startNewConversation() } },
+                onEnd: { Task { await store.endSession() } }
             )
 
             composer
@@ -82,18 +85,10 @@ struct AssistantScreen: View {
     // MARK: Nagłówek
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            ScreenHeader(
-                kicker: "TWÓJ ASYSTENT",
-                title: "Emma",
-            )
-            IconButton(
-                systemName: store.speaksReplies ? "speaker.wave.2" : "speaker.slash",
-                accessibilityLabel: store.speaksReplies ? "Wyłącz odpowiedzi głosowe" : "Włącz odpowiedzi głosowe",
-                isSelected: store.speaksReplies,
-                action: { Task { await store.toggleSpeech() } }
-            )
-        }
+        ScreenHeader(
+            kicker: "TWÓJ ASYSTENT",
+            title: "Emma",
+        )
     }
 
     // MARK: Wybór kontekstu (`.emma-context`)
@@ -135,7 +130,12 @@ struct AssistantScreen: View {
 
     private var intro: some View {
         VStack(spacing: 0) {
-            EmmaOrb(size: .hero, isActive: store.voiceState.orbIsActive)
+            EmmaOrb(
+                size: .hero,
+                isActive: store.voiceState.orbIsActive,
+                breathing: true,
+                state: store.voiceState.turn
+            )
                 .padding(.top, 32)
                 .padding(.bottom, 23)
 
@@ -225,11 +225,11 @@ struct AssistantScreen: View {
                     .foregroundStyle(EmmaTheme.emmaSuggestionIcon)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title)
-                        .font(EmmaTypography.ui(12))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.ink)
                         .multilineTextAlignment(.leading)
                     Text(subtitle)
-                        .font(EmmaTypography.ui(10))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.emmaSuggestionSubtitle)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -268,7 +268,7 @@ struct AssistantScreen: View {
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Text(isUser ? "Ty" : "Emma")
-                    .font(EmmaTypography.ui(10, .semibold))
+                    .font(EmmaTypography.caption(.semibold))
                     .foregroundStyle(EmmaTheme.emmaTurnLabel)
                 if message.isSummary {
                     StatusPill("Streszczenie", kind: .neutral)
@@ -289,7 +289,7 @@ struct AssistantScreen: View {
                         Image(systemName: "speaker.wave.2")
                             .font(.system(size: 14))
                         Text(message.isSummary ? "Odsłuchaj streszczenie" : "Odsłuchaj")
-                            .font(EmmaTypography.ui(11))
+                            .font(EmmaTypography.caption())
                     }
                     .foregroundStyle(EmmaTheme.emmaListenText)
                     .frame(minHeight: EmmaSpacing.hitTarget, alignment: .leading)
@@ -334,39 +334,26 @@ struct AssistantScreen: View {
             onEdit: { text in
                 Task { await store.edit(actionID: action.proposal.id, text: text) }
             },
-            onConfirm: {
-                Task { await store.confirm(actionID: action.proposal.id) }
+            onConfirm: { text in
+                Task { await store.confirm(actionID: action.proposal.id, text: text) }
             },
             onCancel: {
                 Task { await store.cancel(actionID: action.proposal.id) }
             },
             dueDateText: store.dueDateLabel(for: action.proposal),
-            onSpeak: {
-                Task { await store.speakAction(actionID: action.proposal.id) }
+            onSpeak: { text in
+                Task { await store.speakAction(actionID: action.proposal.id, text: text) }
             }
         )
     }
 
     // MARK: Stan sesji (`.voice-status-line`)
-
+    //
+    // Bieżący stan i błąd mówi dock na dole (jeden przycisk, jeden napis).
+    // Tutaj zostają wyłącznie treści, których dock nie mieści: słyszana
+    // wypowiedź i tekst, który Emma właśnie wypowiada.
     private var statusBlock: some View {
         VStack(spacing: 4) {
-            Text(store.statusText)
-                .font(EmmaTypography.ui(11))
-                .foregroundStyle(EmmaTheme.emmaStatusText)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityLabel("Stan Emmy: \(store.statusText)")
-
-            if let error = store.voiceState.lastError {
-                Text(error)
-                    .font(EmmaTypography.ui(11))
-                    .foregroundStyle(EmmaTheme.danger)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityLabel("Problem: \(error)")
-            }
-
             if !store.voiceState.partialTranscript.isEmpty {
                 Text("Słyszę: \(store.voiceState.partialTranscript)")
                     .font(EmmaTypography.emmaBody(store.voiceState.partialTranscript))
@@ -385,13 +372,13 @@ struct AssistantScreen: View {
 
             if store.voiceState.isPlaybackActive, store.isPlayingSummary {
                 Text("Odsłuch: streszczenie.")
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.muted)
             }
 
             if store.voiceState.mode == .dictation {
                 Text("Dyktowanie zapisuje tekst do pola. Nie wykonuje polecenia.")
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.muted)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -426,7 +413,7 @@ struct AssistantScreen: View {
                 Image(systemName: systemImage)
                     .font(.system(size: 14))
                 Text(title)
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
             }
             .foregroundStyle(EmmaTheme.emmaSmallSuggestionText)
             .padding(.horizontal, 10)
@@ -444,42 +431,55 @@ struct AssistantScreen: View {
     }
 
     // MARK: Uczciwa nota o demo (`.demo-foot`)
+    //
+    // W Demo to mock i nie ma integracji z dostawcą. Poza Demo rozmowa głosowa
+    // naprawdę idzie przez backend do ElevenLabs, więc stara nota „nie ma
+    // integracji z ElevenLabs” byłaby nieprawdą. Nadal mówimy wprost, co jest
+    // demonstracyjne: wysyłka wiadomości i odsłuch tekstu (syntezator systemu,
+    // nie głos Emmy); WhatsApp pozostaje niepodłączony.
 
     private var demoFoot: some View {
-        Text(
-            "Emma działa na przykładowych scenariuszach. Głos jest demonstracyjny: "
-                + "nie ma kont dostawców, więc nie ma integracji z ElevenLabs ani z WhatsApp, "
-                + "a wysyłka wiadomości jest symulowana."
-        )
-        .font(EmmaTypography.ui(10))
-        .foregroundStyle(EmmaTheme.emmaDemoFootText)
-        .multilineTextAlignment(.center)
-        .lineSpacing(4)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity)
-        .padding(.top, 19)
+        Text(demoFootText)
+            .font(EmmaTypography.caption())
+            .foregroundStyle(EmmaTheme.emmaDemoFootText)
+            .multilineTextAlignment(.center)
+            .lineSpacing(4)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 19)
     }
 
-    // MARK: Kompozytor (`.assistant-compose`)
+    private var demoFootText: String {
+        if dependencies.configuration.usesMockServices {
+            return "Emma działa na przykładowych scenariuszach. Głos jest demonstracyjny: "
+                + "nie ma kont dostawców, więc nie ma integracji z ElevenLabs ani z WhatsApp, "
+                + "a wysyłka wiadomości jest symulowana. Odsłuch w demo jest scenariuszowy "
+                + "(bez dźwięku); poza demo czyta go syntezator systemu, nie głos Emmy."
+        }
+        return "Rozmowa głosowa łączy się z ElevenLabs przez serwer kancelarii "
+            + "(klucz dostawcy nigdy nie trafia do aplikacji). Nadal demonstracyjne: "
+            + "wysyłka wiadomości i zapisy akcji są symulowane, WhatsApp nie jest podłączony, "
+            + "a odsłuch tekstu czyta syntezator systemu, nie głos Emmy."
+    }
+
+    // MARK: Kompozytor tekstu (`.assistant-compose`)
+    //
+    // Rozmowa ma jeden przycisk w docku („Rozmawiaj”/„Zakończ”); tutaj zostaje
+    // wyłącznie droga tekstowa: pole polecenia i wysłanie nieaktywne dla pustego
+    // pola. Przyciski „Dyktuj tekst” i wyciszenia usunięto z tego ekranu na
+    // wniosek użytkownika — dyktowanie nadal działa w wątkach i formularzach.
 
     private var composer: some View {
-        HStack(spacing: 6) {
-            Button {
-                Task { await store.toggleListening() }
-            } label: {
-                // Nasłuch zatrzymuje wyraźny znak „stop”, a nie „checkmark”:
-                // haczyk sugerował zatwierdzenie, choć przycisk wycisza mikrofon.
-                Image(systemName: store.isMicrophoneCapturing ? "stop.fill" : "mic")
-                    .font(.system(size: store.isMicrophoneCapturing ? 16 : 19, weight: .regular))
-                    .foregroundStyle(store.isMicrophoneCapturing ? Color.white : EmmaTheme.emmaMicText)
-                    .frame(width: EmmaMetrics.emmaComposerButtonSize, height: EmmaMetrics.emmaComposerButtonSize)
-                    .background(store.isMicrophoneCapturing ? EmmaTheme.primaryButton : EmmaTheme.contextStripBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.composerInner, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(store.isMicrophoneCapturing ? "Zatrzymaj nasłuch" : "Rozpocznij wypowiedź")
-            .accessibilityValue(store.isMicrophoneCapturing ? "Nasłuch aktywny" : "Nasłuch wyłączony")
+        writingRow
+            .padding(.horizontal, 14)
+            .padding(.top, 8)
+            .padding(.bottom, 10)
+            .background(EmmaTheme.bg)
+    }
 
+    /// Tryb pisania: pole polecenia i wysłanie.
+    private var writingRow: some View {
+        HStack(spacing: 6) {
             TextField("Napisz do Emmy…", text: $store.composer)
                 .font(EmmaTypography.composerField)
                 .foregroundStyle(EmmaTheme.ink)
@@ -488,26 +488,8 @@ struct AssistantScreen: View {
                 .submitLabel(.send)
                 .onSubmit { Task { await store.sendComposer() } }
                 .accessibilityLabel("Polecenie dla Emmy")
-                .padding(.horizontal, 2)
-
-            Button {
-                Task {
-                    if store.isDictating {
-                        await store.finishDictation()
-                    } else {
-                        await store.startDictation()
-                    }
-                }
-            } label: {
-                Image(systemName: "waveform")
-                    .font(.system(size: 17, weight: .regular))
-                    .foregroundStyle(store.isDictating ? Color.white : EmmaTheme.emmaMicText)
-                    .frame(width: EmmaMetrics.emmaComposerButtonSize, height: EmmaMetrics.emmaComposerButtonSize)
-                    .background(store.isDictating ? EmmaTheme.primaryButton : EmmaTheme.contextStripBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.composerInner, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(store.isDictating ? "Zakończ dyktowanie" : "Dyktuj polecenie do pola")
+                .padding(.horizontal, 4)
+                .frame(minHeight: EmmaSpacing.hitTarget)
 
             Button {
                 Task { await store.sendComposer() }
@@ -520,6 +502,9 @@ struct AssistantScreen: View {
                     .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.composerInner, style: .continuous))
             }
             .buttonStyle(.plain)
+            // Puste pole nie wysyła — przycisk jest nieaktywny, a nie „cicho nic nie robi”.
+            .disabled(!store.canSendComposer)
+            .opacity(store.canSendComposer ? 1 : 0.4)
             .accessibilityLabel("Przekaż polecenie")
         }
         .padding(6)
@@ -529,10 +514,6 @@ struct AssistantScreen: View {
             RoundedRectangle(cornerRadius: EmmaRadii.emmaComposer, style: .continuous)
                 .strokeBorder(EmmaTheme.emmaComposerBorder, lineWidth: 1)
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 6)
-        .padding(.bottom, 10)
-        .background(EmmaTheme.bg)
     }
 }
 

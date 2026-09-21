@@ -28,20 +28,46 @@ public struct AppConfiguration: Sendable {
     /// Adres backendu. Pusty w Demo — aplikacja działa wtedy w pełni lokalnie.
     public let apiBaseURL: URL?
     public let defaultLocale: String
+    /// Który dostawca prowadzi rozmowę głosową. **Domyślnie ElevenLabs**:
+    /// brak wartości w konfiguracji nie może przełączyć dostawcy, bo zmienia to
+    /// także to, kto przetwarza treść rozmowy.
+    public let voiceProvider: VoiceProvider
+    /// Model dostawcy głosu. Dla Gemini Live backend przypina model w tokenie,
+    /// więc aplikacja musi wysłać w `setup` tę samą nazwę.
+    public let voiceModel: String
     /// Czy korzystamy z danych przykładowych i mocków zamiast usług zewnętrznych.
     public var usesMockServices: Bool { apiBaseURL == nil }
     /// Czy wolno pokazywać ceny/poziomy/statusy dostawców, których nie zweryfikowano.
     public let showsUnverifiedProviderState: Bool
 
+    /// Dostawca rozmowy głosowej. Wartości muszą zgadzać się z konfiguracją
+    /// backendu (`EMMA_VOICE_PROVIDER`); rozjazd jest wykrywany po odpowiedzi
+    /// backendu na token, a nie przemilczany.
+    public enum VoiceProvider: String, Sendable {
+        case elevenlabs
+        case geminiLive = "gemini_live"
+
+        public var displayName: String {
+            switch self {
+            case .elevenlabs: return "ElevenLabs"
+            case .geminiLive: return "Gemini Live"
+            }
+        }
+    }
+
     public init(
         environment: Environment,
         apiBaseURL: URL?,
         defaultLocale: String,
+        voiceProvider: VoiceProvider = .elevenlabs,
+        voiceModel: String = "gemini-3.8-live",
         showsUnverifiedProviderState: Bool = false
     ) {
         self.environment = environment
         self.apiBaseURL = apiBaseURL
         self.defaultLocale = defaultLocale
+        self.voiceProvider = voiceProvider
+        self.voiceModel = voiceModel
         self.showsUnverifiedProviderState = showsUnverifiedProviderState
     }
 
@@ -59,6 +85,8 @@ public struct AppConfiguration: Sendable {
             ?? .demo
         var rawBaseURL = (infoDictionary["EMMAApiBaseURL"] as? String) ?? ""
         let locale = (infoDictionary["EMMADefaultLocale"] as? String) ?? "pl-PL"
+        let rawVoiceProvider = (infoDictionary["EMMAVoiceProvider"] as? String) ?? ""
+        let voiceModel = (infoDictionary["EMMAVoiceModel"] as? String) ?? ""
 
         if let index = arguments.firstIndex(of: "-EMMAEnvironment"), index + 1 < arguments.count {
             environment = Environment(rawValue: arguments[index + 1]) ?? environment
@@ -66,6 +94,18 @@ public struct AppConfiguration: Sendable {
         if let index = arguments.firstIndex(of: "-EMMAApiBaseURL"), index + 1 < arguments.count {
             rawBaseURL = arguments[index + 1]
         }
+        // Pozwala porównać dostawców na jednym buildzie (A/B na urządzeniu) bez
+        // przebudowywania konfiguracji.
+        var rawVoiceProviderOverride = rawVoiceProvider
+        if let index = arguments.firstIndex(of: "-EMMAVoiceProvider"), index + 1 < arguments.count {
+            rawVoiceProviderOverride = arguments[index + 1]
+        }
+
+        // Nieznana wartość dostawcy nie przełącza rozmowy „na wszelki wypadek”:
+        // zostaje ElevenLabs, a rozjazd z backendem wyjdzie na jaw przy tokenie.
+        let voiceProvider = VoiceProvider(
+            rawValue: rawVoiceProviderOverride.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        ) ?? .elevenlabs
 
         let trimmed = rawBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         // Demo z adresem backendu jest błędem konfiguracji, nie powodem do awarii:
@@ -76,6 +116,8 @@ public struct AppConfiguration: Sendable {
             environment: environment,
             apiBaseURL: baseURL,
             defaultLocale: locale,
+            voiceProvider: voiceProvider,
+            voiceModel: voiceModel.isEmpty ? "gemini-3.8-live" : voiceModel,
             showsUnverifiedProviderState: environment != .production
         )
     }

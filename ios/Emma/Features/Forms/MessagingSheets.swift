@@ -11,26 +11,64 @@ struct NewConversationSheet: View {
 
     @EnvironmentObject private var dependencies: AppDependencies
 
-    @State private var clients: [Client] = []
+    @State private var phase: LoadPhase<[Client]> = .idle
     @State private var threads: [ConversationThread] = []
+    @State private var query = ""
 
     var body: some View {
         SheetScaffold(title: "Nowa rozmowa", onClose: { dependencies.dismissSheet() }) {
-            if clients.isEmpty {
+            switch phase {
+            case .idle, .loading:
                 LoadingState("Wczytuję kontakty…")
-            } else {
-                ChoiceList(
-                    items: clients,
-                    title: { $0.displayName },
-                    subtitle: { $0.language.displayName }
-                ) { client in
-                    open(client)
+            case .failed(let failure):
+                LoadFailureView(failure) {
+                    Task { await load() }
+                }
+            case .loaded(let clients):
+                if clients.isEmpty {
+                    EmptyState(
+                        systemImage: "person.2",
+                        title: "Brak kontaktów",
+                        message: dependencies.configuration.usesMockServices
+                            ? "Dane przykładowe nie zawierają jeszcze żadnego klienta."
+                            : "Kartoteka kancelarii nie ma jeszcze żadnego klienta."
+                    )
+                } else {
+                    SearchField(text: $query, placeholder: "Szukaj osoby")
+                        .padding(.bottom, 10)
+
+                    let matching = clients.filter {
+                        SearchText.matches(query, in: [$0.displayName, $0.topic])
+                    }
+                    if matching.isEmpty {
+                        EmptyState(
+                            systemImage: "magnifyingglass",
+                            title: "Brak wyników",
+                            message: "Spróbuj innego imienia lub nazwiska."
+                        )
+                    } else {
+                        ChoiceList(
+                            items: matching,
+                            title: { $0.displayName },
+                            subtitle: { $0.language.displayName }
+                        ) { client in
+                            open(client)
+                        }
+                    }
                 }
             }
         }
-        .task {
-            clients = (try? await dependencies.repository.clients(matching: "", stage: nil)) ?? []
-            threads = (try? await dependencies.repository.threads()) ?? []
+        .task { await load() }
+    }
+
+    private func load() async {
+        if !phase.hasLoaded { phase = .loading }
+        do {
+            let clients = try await dependencies.repository.clients(matching: "", stage: nil)
+            threads = try await dependencies.repository.threads()
+            phase = .loaded(clients)
+        } catch {
+            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać kontaktów."))
         }
     }
 
@@ -52,7 +90,7 @@ struct ConversationOptionsSheet: View {
 
     @EnvironmentObject private var dependencies: AppDependencies
 
-    @State private var state: ThreadUserState?
+    @State private var phase: LoadPhase<ThreadUserState> = .idle
     @State private var client: Client?
     @State private var unreadCount = 0
 
@@ -61,7 +99,14 @@ struct ConversationOptionsSheet: View {
             title: client?.displayName ?? "Rozmowa",
             onClose: { dependencies.dismissSheet() }
         ) {
-            if let state {
+            switch phase {
+            case .idle, .loading:
+                LoadingState("Wczytuję rozmowę…")
+            case .failed(let failure):
+                LoadFailureView(failure) {
+                    Task { await load() }
+                }
+            case .loaded(let state):
                 ChoiceList(items: [0, 1, 2], title: { index in
                     switch index {
                     case 0: return state.isPinned ? "Odepnij rozmowę" : "Przypnij rozmowę"
@@ -74,28 +119,30 @@ struct ConversationOptionsSheet: View {
                 .padding(.bottom, 12)
 
                 Text("Status wiadomości jest przykładowy — WhatsApp nie jest jeszcze połączony.")
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.mutedSoft)
                     .fixedSize(horizontal: false, vertical: true)
-            } else {
-                LoadingState("Wczytuję rozmowę…")
             }
         }
         .task { await load() }
     }
 
     private func load() async {
-        let userID = dependencies.currentUser.id
-        let states = (try? await dependencies.repository.readStates(userID: userID)) ?? []
-        var threadState = states.first { $0.threadID == threadID }
-            ?? ThreadUserState(userID: userID, threadID: threadID)
-        let messages = (try? await dependencies.repository.latestMessages(threadID: threadID, limit: 200)) ?? []
-        unreadCount = ReadStatePolicy.unreadCount(in: messages, state: threadState)
-        if let thread = try? await dependencies.repository.thread(id: threadID) {
-            client = try? await dependencies.repository.client(id: thread.clientID)
+        if !phase.hasLoaded { phase = .loading }
+        do {
+            let userID = dependencies.currentUser.id
+            let states = try await dependencies.repository.readStates(userID: userID)
+            let threadState = states.first { $0.threadID == threadID }
+                ?? ThreadUserState(userID: userID, threadID: threadID)
+            let messages = try await dependencies.repository.latestMessages(threadID: threadID, limit: 200)
+            unreadCount = ReadStatePolicy.unreadCount(in: messages, state: threadState)
+            if let thread = try await dependencies.repository.thread(id: threadID) {
+                client = try await dependencies.repository.client(id: thread.clientID)
+            }
+            phase = .loaded(threadState)
+        } catch {
+            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać rozmowy."))
         }
-        state = threadState
-        _ = threadState
     }
 
     private func perform(_ index: Int, state: ThreadUserState) async {
@@ -128,7 +175,7 @@ struct ConversationOptionsSheet: View {
             if let client { dependencies.openPerson(client.id) }
             return
         }
-        self.state = updated
+        self.phase = .loaded(updated)
         dependencies.refreshUnreadTotal()
     }
 }
@@ -141,57 +188,75 @@ struct MessageOptionsSheet: View {
 
     @EnvironmentObject private var dependencies: AppDependencies
 
-    @State private var message: Message?
+    @State private var phase: LoadPhase<Message> = .idle
     @State private var clientName: String = Client.unknownDisplayName
 
     var body: some View {
         SheetScaffold(title: "Wiadomość", onClose: { dependencies.dismissSheet() }) {
-            if let message {
-                Text(message.text)
-                    .font(EmmaTypography.body(for: message.text, size: 15))
-                    .foregroundStyle(EmmaTheme.ink)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(13)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(EmmaTheme.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
-                    }
-                    .padding(.bottom, 12)
-
-                if message.isOutgoing {
-                    HStack(spacing: 7) {
-                        ReceiptMark(transport: message.transport)
-                        Text("\(message.transport.displayName) · \(clockText(message))")
-                            .font(EmmaTypography.ui(12))
-                            .foregroundStyle(EmmaTheme.muted)
-                    }
-                    .padding(.bottom, 6)
-
-                    Text("Status przykładowy. WhatsApp nie jest jeszcze połączony.")
-                        .font(EmmaTypography.ui(11))
-                        .foregroundStyle(EmmaTheme.mutedSoft)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.bottom, 14)
-                }
-
-                SecondaryButton("Odpowiedz na tę wiadomość", systemImage: "arrowshape.turn.up.left") {
-                    Task { await quote(message) }
-                }
-            } else {
+            switch phase {
+            case .idle, .loading:
                 LoadingState("Wczytuję wiadomość…")
+            case .failed(let failure):
+                LoadFailureView(failure) {
+                    Task { await load() }
+                }
+            case .loaded(let message):
+                content(message)
             }
         }
         .task { await load() }
     }
 
+    @ViewBuilder
+    private func content(_ message: Message) -> some View {
+        Text(message.text)
+            .font(EmmaTypography.body(for: message.text, size: 15))
+            .foregroundStyle(EmmaTheme.ink)
+            .lineSpacing(3)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(13)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(EmmaTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
+            }
+            .padding(.bottom, 12)
+
+        if message.isOutgoing {
+            HStack(spacing: 7) {
+                ReceiptMark(transport: message.transport)
+                Text("\(message.transport.displayName) · \(clockText(message))")
+                    .font(EmmaTypography.caption())
+                    .foregroundStyle(EmmaTheme.muted)
+            }
+            .padding(.bottom, 6)
+
+            Text("Status przykładowy. WhatsApp nie jest jeszcze połączony.")
+                .font(EmmaTypography.caption())
+                .foregroundStyle(EmmaTheme.mutedSoft)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 14)
+        }
+
+        SecondaryButton("Odpowiedz na tę wiadomość", systemImage: "arrowshape.turn.up.left") {
+            Task { await quote(message) }
+        }
+    }
+
     private func load() async {
-        let messages = (try? await dependencies.repository.latestMessages(threadID: threadID, limit: 200)) ?? []
-        message = messages.first { $0.id == messageID }
-        if let thread = try? await dependencies.repository.thread(id: threadID),
+        if !phase.hasLoaded { phase = .loading }
+        let result = await RecordLoading.phase(
+            missingMessage: "Nie znaleziono tej wiadomości. Wątek mógł się zmienić.",
+            fallback: "Nie udało się wczytać wiadomości."
+        ) {
+            let messages = try await dependencies.repository.latestMessages(threadID: threadID, limit: 200)
+            return messages.first { $0.id == messageID }
+        }
+        phase = result
+        if case .loaded = result,
+           let thread = try? await dependencies.repository.thread(id: threadID),
            let client = try? await dependencies.repository.client(id: thread.clientID) {
             clientName = client.displayName
         }

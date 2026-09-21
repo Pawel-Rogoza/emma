@@ -49,8 +49,8 @@ struct EmmaContextSheet: View {
                 select(client.id)
             }
 
-            Text("Emma pracuje na danych przykładowych. Rozmowa głosowa w tej wersji jest demonstracyjna — bez kont dostawców.")
-                .font(EmmaTypography.ui(11))
+            Text(contextNote)
+                .font(EmmaTypography.caption())
                 .foregroundStyle(EmmaTheme.mutedSoft)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 14)
@@ -62,6 +62,17 @@ struct EmmaContextSheet: View {
 
     /// Lista jednoelementowa, aby użyć tego samego komponentu co dla klientów.
     private var firmOptions: [ClientID?] { [nil] }
+
+    /// Nota o środowisku. Poza Demo praca idzie na prawdziwej kartotece i realnej
+    /// rozmowie głosowej, więc zdanie o danych przykładowych byłoby nieprawdą.
+    private var contextNote: String {
+        if dependencies.configuration.usesMockServices {
+            return "Emma pracuje na danych przykładowych. Rozmowa głosowa w tej wersji "
+                + "jest demonstracyjna — bez kont dostawców."
+        }
+        return "Emma pracuje na kartotece kancelarii pobranej z serwera. Rozmowa głosowa "
+            + "łączy się z dostawcą przez ten serwer — klucz nigdy nie trafia do aplikacji."
+    }
 
     private func select(_ clientID: ClientID?) {
         dependencies.emmaContext = clientID

@@ -40,10 +40,12 @@ struct EmmaActionCard: View {
     /// Termin zadania sformatowany przez ekran (karta nie zna „dzisiaj” aplikacji).
     private let dueDateText: String?
     private let onEdit: (String) -> Void
-    private let onConfirm: () -> Void
+    /// Potwierdzenie dostaje **bieżącą** treść szkicu, a nie wersję sprzed chwili.
+    /// Bez tego szybkie „Zatwierdź” po edycji wykonywało poprzednią treść (F03).
+    private let onConfirm: (String) -> Void
     private let onCancel: () -> Void
-    /// Odsłuch treści (`speakAction`). Opcjonalny, aby zachować zamrożoną sygnaturę.
-    private let onSpeak: (() -> Void)?
+    /// Odsłuch treści (`speakAction`). Czyta bieżący szkic, nie wersję sprzed edycji (F03).
+    private let onSpeak: ((String) -> Void)?
 
     @State private var draft: String
     /// Ostatnia treść wysłana do rewizji — chroni przed pętlą korekt.
@@ -55,10 +57,10 @@ struct EmmaActionCard: View {
         execution: ActionExecution?,
         isArmedForVoice: Bool,
         onEdit: @escaping (String) -> Void,
-        onConfirm: @escaping () -> Void,
+        onConfirm: @escaping (String) -> Void,
         onCancel: @escaping () -> Void,
         dueDateText: String? = nil,
-        onSpeak: (() -> Void)? = nil
+        onSpeak: ((String) -> Void)? = nil
     ) {
         self.proposal = proposal
         self.clientName = clientName
@@ -121,7 +123,7 @@ struct EmmaActionCard: View {
                     .font(.system(size: 15, weight: .regular))
                     .foregroundStyle(EmmaTheme.actionHeadingText)
                 Text(proposal.kind.displayName)
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.actionHeadingText)
             }
             Spacer(minLength: 7)
@@ -135,7 +137,7 @@ struct EmmaActionCard: View {
     private var taskMetaLine: some View {
         if let meta = taskMeta {
             Text(meta)
-                .font(EmmaTypography.ui(11))
+                .font(EmmaTypography.caption())
                 .foregroundStyle(EmmaTheme.actionMetaText)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 12)
@@ -202,7 +204,7 @@ struct EmmaActionCard: View {
                     systemImage: "speaker.wave.2",
                     isEnabled: onSpeak != nil
                 ) {
-                    onSpeak?()
+                    onSpeak?(draft)
                 }
                 .accessibilityLabel("Odsłuchaj treść działania")
                 SecondaryButton("Anuluj") {
@@ -216,7 +218,11 @@ struct EmmaActionCard: View {
                 systemImage: "checkmark",
                 isEnabled: !draft.emmaTrimmed.isEmpty
             ) {
-                onConfirm()
+                // Bieżący szkic jest wysyłany razem ze zgodą i od razu uznany za
+                // wysłany do rewizji, żeby odroczona korekta nie zdążyła nadpisać
+                // treści tuż po zatwierdzeniu (F03).
+                revisionSent = draft
+                onConfirm(draft)
             }
             .accessibilityLabel(proposal.kind.confirmLabel)
 
@@ -232,7 +238,7 @@ struct EmmaActionCard: View {
                 ? "Potwierdzenie głosem jest uzbrojone dla tej prezentacji. Nadal możesz użyć przycisku."
                 : "Potwierdzenie głosem nie jest uzbrojone: wykonanie wymaga przycisku „\(proposal.kind.confirmLabel)” na ekranie."
         )
-        .font(EmmaTypography.ui(11))
+        .font(EmmaTypography.caption())
         .foregroundStyle(EmmaTheme.emmaListenText)
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityLabel(isArmedForVoice
@@ -262,7 +268,7 @@ struct EmmaActionCard: View {
                 .fixedSize(horizontal: false, vertical: true)
             if let note = settledNote {
                 Text(note)
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.actionMetaText)
                     .fixedSize(horizontal: false, vertical: true)
             }

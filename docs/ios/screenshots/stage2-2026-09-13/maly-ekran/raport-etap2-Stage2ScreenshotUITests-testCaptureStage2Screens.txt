@@ -1,0 +1,7 @@
+Zrzuty ekranu Emmy — etap 2 (czytelność, nawigacja)
+Data: 2026-09-13T13:06:50Z
+Uwaga: zrzut „NIE UDAŁO SIĘ” oznacza, że ekran nie wczytał się w założonym czasie.
+Zrzut i tak powstał — pokazuje, co było na ekranie w tym momencie.
+zapisano · 15-karta-klienta-naglowek.png · Karta klienta — jeden nagłówek i jeden powrót
+zapisano · 16-zadania-naglowek.png · Zadania — jeden nagłówek z powrotem i akcją
+zapisano · 17-rozmowy-kolumna-licznika.png · Rozmowy — licznik w osobnej kolumnie wiersza

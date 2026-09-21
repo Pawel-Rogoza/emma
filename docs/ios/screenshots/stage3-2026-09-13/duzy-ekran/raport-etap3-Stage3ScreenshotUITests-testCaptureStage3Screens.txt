@@ -1,0 +1,7 @@
+Zrzuty ekranu Emmy — etap 3 (pierwszy widok dnia, grupowanie zadań)
+Data: 2026-09-13T14:06:04Z
+Uwaga: zrzut „NIE UDAŁO SIĘ” oznacza, że ekran nie wczytał się w założonym czasie.
+Zrzut i tak powstał — pokazuje, co było na ekranie w tym momencie.
+zapisano · 21-dzisiaj-pierwszy-widok.png · Dzisiaj — kompaktowa Emma, najbliższy termin i zadania bez przewijania
+zapisano · 22-dzisiaj-dalsze-terminy.png · Dzisiaj — dalsze terminy dnia po przewinięciu
+zapisano · 23-zadania-grupy.png · Zadania — grupa „NA DZIŚ” zamiast płaskiej listy

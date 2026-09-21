@@ -16,9 +16,10 @@ struct LoginScreen: View {
 
     @State private var email = ""
     @State private var password = ""
+    @State private var totp = ""
     @FocusState private var focusedField: Field?
 
-    private enum Field { case email, password }
+    private enum Field { case email, password, totp }
 
     var body: some View {
         AuthScaffold(
@@ -50,22 +51,44 @@ struct LoginScreen: View {
                         .modifier(AuthFieldStyle())
                 }
 
+                // Pole kodu jednorazowego pokazujemy wyłącznie wtedy, gdy
+                // istnieje backend: konto z TOTP nie ma prawa dostać słabszego
+                // logowania w aplikacji niż w panelu, ale w Demo takiego konta
+                // nie ma i pole byłoby obietnicą bez pokrycia.
+                if auth.usesRemoteAuth {
+                    LabeledField("Kod jednorazowy (jeśli konto go używa)") {
+                        TextField("6 cyfr", text: $totp)
+                            .focused($focusedField, equals: .totp)
+                            .keyboardType(.numberPad)
+                            .textContentType(.oneTimeCode)
+                            .submitLabel(.go)
+                            .onSubmit { submit() }
+                            .modifier(AuthFieldStyle())
+                    }
+                }
+
                 if let notice = auth.notice {
                     Text(notice)
-                        .font(EmmaTypography.ui(12))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.danger)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                PrimaryButton("Zaloguj się", systemImage: "arrow.right") {
+                PrimaryButton(
+                    "Zaloguj się",
+                    systemImage: "arrow.right",
+                    isEnabled: !auth.isAuthenticating
+                ) {
                     submit()
                 }
                 .padding(.top, 4)
             }
         } footer: {
-            Text("Wersja demonstracyjna: dane konta nie są nigdzie wysyłane, wystarczy dowolny e-mail i hasło.")
-                .font(EmmaTypography.ui(11))
+            Text(auth.usesRemoteAuth
+                 ? "Hasło i kod jednorazowy trafiają do serwera kancelarii. Token sesji zostaje w kluczyku telefonu — aplikacja go nie pokazuje."
+                 : "Wersja demonstracyjna: dane konta nie są nigdzie wysyłane, wystarczy dowolny e-mail i hasło.")
+                .font(EmmaTypography.caption())
                 .foregroundStyle(EmmaTheme.mutedSoft)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -75,7 +98,9 @@ struct LoginScreen: View {
 
     private func submit() {
         focusedField = nil
-        auth.signIn(email: email, password: password)
+        // Jedna ścieżka dla obu trybów: `AuthStore` sam wybiera logowanie do
+        // backendu albo walidację demo, więc widok nie zna różnicy.
+        Task { await auth.signIn(email: email, password: password, totp: totp) }
     }
 }
 
@@ -103,7 +128,7 @@ struct LockScreen: View {
 
                 if let notice = auth.notice {
                     Text(notice)
-                        .font(EmmaTypography.ui(12))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.danger)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -115,14 +140,20 @@ struct LockScreen: View {
             }
         } footer: {
             if let unavailable = auth.availabilityNotice {
-                Text("\(unavailable) W wersji demonstracyjnej dostęp odblokowuje przycisk powyżej.")
-                    .font(EmmaTypography.ui(11))
+                // W Demo brak biometrii nie może zamknąć użytkownika na stałe.
+                // W trybie backendu nie ma obejścia — mówimy, co zrobić.
+                Text(auth.usesRemoteAuth
+                     ? "\(unavailable) Wyloguj się i zaloguj ponownie, aby odzyskać dostęp."
+                     : "\(unavailable) W wersji demonstracyjnej dostęp odblokowuje przycisk powyżej.")
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.mutedSoft)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                Text("Dane kancelarii zostają na urządzeniu — blokada chroni tylko dostęp do aplikacji.")
-                    .font(EmmaTypography.ui(11))
+                Text(auth.usesRemoteAuth
+                     ? "Token sesji zostaje w kluczyku tego telefonu. Blokada chroni dostęp do aplikacji, a nie do danych na serwerze."
+                     : "Dane kancelarii zostają na urządzeniu — blokada chroni tylko dostęp do aplikacji.")
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.mutedSoft)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)

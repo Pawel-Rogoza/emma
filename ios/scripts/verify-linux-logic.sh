@@ -37,14 +37,14 @@ echo "== Emma · weryfikacja logiki bez Xcode =="
 "$SWIFT_BIN" --version | head -1
 echo
 
-echo "== 1/8 · Kompilacja i testy logiki (SwiftPM) =="
+echo "== 1/9 · Kompilacja i testy logiki (SwiftPM) =="
 if ! "$SWIFT" test 2>&1 | grep -vE 'no version information'; then
   echo "[BŁĄD] Testy logiki nie przeszły." >&2
   exit 1
 fi
 echo
 
-echo "== 2/8 · Kontrola składni wszystkich plików Swift (w tym SwiftUI) =="
+echo "== 2/9 · Kontrola składni wszystkich plików Swift (w tym SwiftUI) =="
 failures=0
 checked=0
 while IFS= read -r file; do
@@ -65,7 +65,7 @@ if (( failures > 0 )); then
 fi
 
 echo
-echo "== 3/8 · Kontrola odwołań do zależności i repozytorium =="
+echo "== 3/9 · Kontrola odwołań do zależności i repozytorium =="
 if command -v python3 >/dev/null 2>&1; then
   if ! python3 scripts/check-cross-references.py; then
     echo "[BŁĄD] Znaleziono odwołania do nieistniejących składowych." >&2
@@ -76,7 +76,7 @@ else
 fi
 
 echo
-echo "== 4/8 · Kontrola struktury kontraktu API =="
+echo "== 4/9 · Kontrola struktury kontraktu API =="
 if command -v python3 >/dev/null 2>&1; then
   if ! python3 scripts/validate-api-spec.py; then
     echo "[BŁĄD] Kontrakt API ma problem strukturalny." >&2
@@ -87,7 +87,7 @@ else
 fi
 
 echo
-echo "== 5/8 · Kontrola struktury workflow CI dla macOS =="
+echo "== 5/9 · Kontrola struktury workflow CI dla macOS =="
 if command -v python3 >/dev/null 2>&1; then
   if ! python3 scripts/validate-ci-workflow.py; then
     echo "[BŁĄD] Workflow CI ma problem strukturalny." >&2
@@ -98,7 +98,7 @@ else
 fi
 
 echo
-echo "== 6/8 · Kontrola tokenów koloru wobec referencji =="
+echo "== 6/9 · Kontrola tokenów koloru wobec referencji =="
 # Wymóg: żaden kolor użyty w Swift nie może być wymyślony — każdy musi mieć
 # odpowiednik w regułach referencji. Kategoria „✗ kolory spoza referencji” to błąd.
 if command -v python3 >/dev/null 2>&1; then
@@ -116,7 +116,7 @@ else
 fi
 
 echo
-echo "== 7/8 · Pomiar renderu podglądu (jeśli zbudowany i jest przeglądarka) =="
+echo "== 7/9 · Pomiar renderu podglądu (jeśli zbudowany i jest przeglądarka) =="
 # Ten krok mierzy PRAWDZIWY render strony podglądu: czcionki, wystawanie poza okno,
 # ucinanie tekstu, nachodzenie elementów. Bez przeglądarki mówimy wprost, że
 # podgląd nie został zmierzony — a nie że jest poprawny.
@@ -134,16 +134,40 @@ else
 fi
 
 echo
-echo "== 8/8 · Kontrola martwego publicznego API rdzenia =="
+echo "== 8/9 · Kontrola martwego publicznego API rdzenia =="
 # Publiczna składowa bez użycia to obietnica bez pokrycia i zwykle zalążek drugiej
 # implementacji tej samej reguły. Kontrola jest jawna, więc widać, co pomijamy.
+#
+# Kroki 8 i 9 są od siebie niezależne, więc nie przerywają skryptu od razu:
+# wynik zbieramy, uruchamiamy krok 9 i dopiero potem zwracamy błąd. Wcześniej
+# czerwony krok 8 kończył pracę przed kontrolą czytelności i raport twierdził, że
+# krok 9 się wykonał, choć tak nie było.
+DEAD_CODE_FAILED=0
 if command -v python3 >/dev/null 2>&1; then
   if ! python3 scripts/check-dead-code.py; then
     echo "[BŁĄD] Rdzeń ma publiczne API, którego nikt nie woła." >&2
-    exit 1
+    DEAD_CODE_FAILED=1
   fi
 else
   echo "[POMINIĘTE] Brak python3 — kontrola martwego API nie została wykonana."
+fi
+
+echo
+echo "== 9/9 · Kontrola czytelności interfejsu (F09) =="
+# Wymóg: jedna skala tekstu (bez rozmiarów <12 pt deklarowanych w ekranach) oraz
+# kontrast tokenów tekstowych co najmniej 4,5:1 wobec ich rzeczywistych teł.
+if command -v python3 >/dev/null 2>&1; then
+  if ! python3 scripts/check-readability.py; then
+    echo "[BŁĄD] Interfejs nie przechodzi kontroli czytelności." >&2
+    exit 1
+  fi
+else
+  echo "[POMINIĘTE] Brak python3 — kontrola czytelności nie została wykonana."
+fi
+
+if [ "$DEAD_CODE_FAILED" -ne 0 ]; then
+  echo "[BŁĄD] Kontrola martwego publicznego API rdzenia nie przeszła (krok 8/9)." >&2
+  exit 1
 fi
 
 cat <<'EOF'
@@ -155,6 +179,7 @@ Wynik:
   - struktura kontraktu API: sprawdzona (nie jest to walidacja OpenAPI)
   - struktura workflow CI dla macOS: sprawdzona (nie jest to walidacja GitHub Actions)
   - tokeny koloru: sprawdzone wobec reguł referencji (żaden kolor nie jest wymyślony)
+  - czytelność: jedna skala tekstu (bez <12 pt w ekranach) i kontrast >= 4,5:1
   - martwe publiczne API rdzenia: sprawdzone filtrem nazw (0 martwych składowych)
   - podgląd aplikacji dla Linuksa: .preview/index.html, render mierzony w przeglądarce
     (czcionki, szerokości, ucinanie, nakładanie) — to rekonstrukcja, nie render SwiftUI

@@ -94,6 +94,10 @@ public enum EmmaPlural {
         label(count, "zadanie do wykonania", "zadania do wykonania", "zadań do wykonania")
     }
 
+    public static func overdueTasks(_ count: Int) -> String {
+        label(count, "zaległe zadanie", "zaległe zadania", "zaległych zadań")
+    }
+
     public static func cases(_ count: Int) -> String {
         label(count, "prowadzona sprawa", "prowadzone sprawy", "prowadzonych spraw")
     }

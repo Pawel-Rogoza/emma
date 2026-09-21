@@ -9,6 +9,20 @@ import SwiftUI
 // dostawców — dzięki temu jeden `VoiceSessionCoordinator` obsługuje rozmowę,
 // dyktowanie i odsłuch (§5.3), a UI i głos korzystają z jednego silnika akcji (§8).
 
+/// Pola spotkania rozpoznane z wypowiedzi (F14). Wszystkie opcjonalne: brak pola
+/// znaczy „zostaw domyślną wartość formularza”, nie „zgaduj”.
+public struct EventDraftSeed: Equatable, Sendable {
+    public var title: String?
+    public var day: LocalDate?
+    public var time: TimeOfDay?
+
+    public init(title: String? = nil, day: LocalDate? = nil, time: TimeOfDay? = nil) {
+        self.title = title
+        self.day = day
+        self.time = time
+    }
+}
+
 @MainActor
 public final class AppDependencies: ObservableObject {
 
@@ -16,7 +30,8 @@ public final class AppDependencies: ObservableObject {
 
     public let configuration: AppConfiguration
     public let clock: Clock
-    public let repository: MockRepository
+    /// Kontrakt danych, nie klasa: patrz `EmmaRepository` (F05).
+    public let repository: any EmmaRepository
     public let voice: VoiceSessionCoordinator
     /// Nazwa zestawu danych demo wybrana na starcie (`--fixture`).
     public let fixtureName: String?
@@ -31,14 +46,37 @@ public final class AppDependencies: ObservableObject {
     public let referenceDay: LocalDate
     /// Jeden kontroler sesji audio dla rozmowy, dyktowania i odsłuchu (§5.3).
     public let audioSession = AudioSessionController()
-    /// Token dostępu do backendu. Do czasu wdrożenia logowania (etap 07) go nie ma —
-    /// to jedyne miejsce, które ma go dostarczyć. Klucza dostawcy tu nie będzie nigdy.
-    public var accessToken: String? { nil }
+    /// Token dostępu do backendu. Dostarcza go `AuthStore` (M1: logowanie mobilne);
+    /// w Demo pozostaje `nil`, bo żaden request nie ma prawa wyjść z telefonu.
+    /// Klucza dostawcy tu nie będzie nigdy.
+    ///
+    /// Typ jest `@MainActor`, bo `AuthStore` żyje na głównym aktorze: odczyt tokenu
+    /// z wątku tła byłby wyścigiem, a nie skrótem.
+    private let accessTokenProvider: (@MainActor @Sendable () -> String?)?
+
+    /// Token dla warstw API z możliwością odnowienia (FIX C). W odróżnieniu od
+    /// synchronicznego `accessTokenProvider` (migawka dla transportu głosu) ten
+    /// dostawca czeka na aktora sesji i **odnawia access token z wyprzedzeniem**,
+    /// zamiast wysyłać wygasły. Zwraca `nil`, gdy sesji naprawdę nie ma.
+    private let sessionTokenProvider: (@MainActor @Sendable () async -> String?)?
+    /// Wymuszone odnowienie po 401 z zasobu danych. Zwraca nowy token albo `nil`;
+    /// `nil` po nieudanym odnowieniu oznacza koniec sesji (401), a nie brak sieci.
+    private let sessionTokenRefresher: (@MainActor @Sendable () async -> String?)?
+
+    /// Token, którym warstwy zależne od API podpisują żądania. To wartość
+    /// z ostatniego logowania/odnowienia — odświeżaniem zajmuje się `AuthStore`.
+    public var accessToken: String? { accessTokenProvider?() }
 
     // MARK: Stan wspólny
 
     @Published public private(set) var currentUser: User
     @Published public var tab: AppTab = .today
+    /// Lustro stanu głosu dla widoków powłoki (etap 4 audytu, F06).
+    ///
+    /// Źródłem prawdy pozostaje `voice` — jeden koordynator i jedna sesja (§5.3).
+    /// To tylko publikacja jego stanu, żeby pasek zakładek i arkusze mogły
+    /// pokazać mini-panel bez tworzenia drugiego obserwatora w każdym widoku.
+    @Published public private(set) var voiceState = VoiceUIState()
     @Published public var navigation: [AppTab: TabNavigation] = [:]
     @Published public var sheet: AppSheet?
     @Published public var toast: String?
@@ -49,6 +87,9 @@ public final class AppDependencies: ObservableObject {
     @Published public var emmaContext: ClientID?
     /// Skrót do wykonania po wejściu na ekran Emmy (`assistantExample(action)`).
     @Published public var pendingEmmaAction: EmmaQuickAction?
+    /// Pola spotkania rozpoznane głosem (F14). Formularz terminu zużywa je przy
+    /// otwarciu, żeby „dodaj spotkanie … o 11” nie gubiło godziny i tytułu.
+    @Published public var pendingEventDraft: EventDraftSeed?
     /// Tryb listy klientów: leady albo sprawy (odpowiada `clientMode`).
     @Published public var clientMode: ClientListMode = .leads
     /// Licznik zmian danych. Każdy ekran obserwuje go w `.task(id:)` i po
@@ -71,45 +112,130 @@ public final class AppDependencies: ObservableObject {
     public init(
         configuration: AppConfiguration = .current,
         clock: Clock? = nil,
-        repository: MockRepository? = nil,
-        fixtureName: String? = nil
+        repository: (any EmmaRepository)? = nil,
+        fixtureName: String? = nil,
+        accessTokenProvider: (@MainActor @Sendable () -> String?)? = nil,
+        sessionTokenProvider: (@MainActor @Sendable () async -> String?)? = nil,
+        sessionTokenRefresher: (@MainActor @Sendable () async -> String?)? = nil,
+        currentUserProvider: (@MainActor @Sendable () -> User?)? = nil
     ) {
         self.configuration = configuration
         self.fixtureName = fixtureName
+        self.accessTokenProvider = accessTokenProvider
+        self.sessionTokenProvider = sessionTokenProvider
+        self.sessionTokenRefresher = sessionTokenRefresher
 
         // Zestaw danych rozstrzygamy raz, na starcie: dzień referencyjny, zalogowany
         // prawnik i scenariusz głosu pochodzą z jednego, nazwanego źródła.
         let resolution = DemoFixtureCatalog.resolve(fixtureName)
         self.fixture = resolution.fixture
 
-        let resolvedClock: Clock = clock ?? DemoClock(
-            referenceDate: resolution.fixture.referenceDay,
-            hour: resolution.fixture.referenceHour,
-            minute: resolution.fixture.referenceMinute
-        )
+        // FIX D: zegar demo (stały dzień fixture, np. 2026-09-11) obowiązuje
+        // **wyłącznie** w Demo. W Staging/Production „dziś” musi pochodzić
+        // z prawdziwego zegara, bo inaczej `from`/`through` i `due_on_or_before`
+        // pytają backend o dzień z fixture, a ekran „Dziś” pokazuje nie ten dzień.
+        let resolvedClock: Clock
+        if let clock {
+            resolvedClock = clock
+        } else if configuration.usesMockServices {
+            resolvedClock = DemoClock(
+                referenceDate: resolution.fixture.referenceDay,
+                hour: resolution.fixture.referenceHour,
+                minute: resolution.fixture.referenceMinute
+            )
+        } else {
+            resolvedClock = SystemClock()
+        }
         self.clock = resolvedClock
         self.referenceDay = AppDependencies.localDate(from: resolvedClock.now())
 
-        let dataset = DemoFixtures.dataset()
-        self.repository = repository ?? MockRepository(
-            dataset: dataset,
-            clock: resolvedClock,
-            artificialLatency: 0
-        )
+        let dataset = resolution.fixture.usesLongNames
+            ? DemoFixtures.datasetWithLongNames()
+            : DemoFixtures.dataset()
 
-        self.currentUser = dataset.user
+        // FIX C: warstwy API pytają o token asynchronicznie (świeży albo odnowiony),
+        // a po 401 mogą raz wymusić odnowienie i ponowić żądanie. Gdy aplikacja nie
+        // wstrzyknęła dostawcy sesji (podglądy, testy), zostaje dawna migawka.
+        let apiTokenProvider: @Sendable () async -> String? = {
+            if let sessionTokenProvider { return await sessionTokenProvider() }
+            return await accessTokenProvider?()
+        }
+        let apiTokenRefresher: (@Sendable () async -> String?)?
+        if let sessionTokenRefresher {
+            apiTokenRefresher = { await sessionTokenRefresher() }
+        } else {
+            apiTokenRefresher = nil
+        }
+
+        if let repository {
+            self.repository = repository
+        } else if !configuration.usesMockServices, let baseURL = configuration.apiBaseURL {
+            // Gdy backend jest skonfigurowany, dane muszą pochodzić z sieci.
+            // Zostawienie tu `MockRepository` znaczyłoby, że przykładowe sprawy
+            // są pokazywane jako prawdziwe. Demo i brak adresu nadal używają mocka.
+            self.repository = BackendRepository(
+                baseURL: baseURL,
+                accessTokenProvider: apiTokenProvider,
+                tokenRefresher: apiTokenRefresher,
+                // Użytkownik pochodzi z sesji mobilnej (odtworzonej albo świeżo
+                // zalogowanej). Bez niej repozytorium zgłasza brak sesji zamiast
+                // podstawiać konto demo.
+                currentUser: { await currentUserProvider?() }
+            )
+        } else {
+            self.repository = MockRepository(
+                dataset: dataset,
+                clock: resolvedClock,
+                artificialLatency: 0
+            )
+        }
+
+        // Sesja głosu to osobny, wąski kontrakt. Poza Demo rozmawia z prawdziwym
+        // backendem; w Demo i przy wstrzykniętym repozytorium (testy/podglądy)
+        // zostaje to samo repozytorium, którego używa reszta aplikacji.
+        let voiceRepository: VoiceSessionRepository
+        if let repository {
+            voiceRepository = repository
+        } else if !configuration.usesMockServices, let baseURL = configuration.apiBaseURL {
+            voiceRepository = BackendVoiceSessionRepository(
+                baseURL: baseURL,
+                accessTokenProvider: apiTokenProvider,
+                tokenRefresher: apiTokenRefresher
+            )
+        } else {
+            voiceRepository = self.repository
+        }
+
+        // Bieżący użytkownik: najpierw sesja mobilna, a dopiero gdy jej nie ma —
+        // konto demo. W Demo provider jest `nil`, więc zostaje konto przykładowe.
+        self.currentUser = currentUserProvider?() ?? dataset.user
         self.fixtureNotice = resolution.notice
 
+        // Zgoda na mikrofon pytana przed startem produkcyjnej rozmowy. W Demo
+        // mikrofonu nie ma w ogóle (mock bez audio), więc port zostaje pusty.
+        #if canImport(UIKit)
+        let microphonePermission: (any MicrophonePermissionProviding)? = configuration.usesMockServices
+            ? nil
+            : SystemMicrophonePermission()
+        #else
+        let microphonePermission: (any MicrophonePermissionProviding)? = nil
+        #endif
+
         self.voice = VoiceSessionCoordinator(
-            sessionRepository: self.repository,
+            sessionRepository: voiceRepository,
             actionRepository: self.repository,
             clock: resolvedClock,
             // Uzgodnienie z backendem: przejęcie sesji przez inne urządzenie kończy
             // u nas prawo zapisu głosem (plan §5.6, linia 342). Zapytanie jest tanie
-            // i idzie tym samym repozytorium, co reszta aplikacji.
-            sessionStatus: { [repository = self.repository] sessionID in
-                try? await repository.fetchStatus(sessionID: sessionID)
-            }
+            // i idzie tym samym repozytorium głosu, które otwiera sesję — nie tym
+            // od danych kancelarii, bo to ono zna trasę statusu.
+            sessionStatus: { [voiceRepository] sessionID in
+                try? await voiceRepository.fetchStatus(sessionID: sessionID)
+            },
+            // Bez zgody na mikrofon nie ma rozmowy: SDK dostawcy połączyłby ją
+            // bez wejścia audio i użytkownik mówiłby w pustkę (szczegóły portu
+            // w `MicrophonePermission`). W Demo port jest pusty.
+            microphonePermission: microphonePermission
         )
 
         self.navigation = Dictionary(uniqueKeysWithValues: AppTab.allCases.map { ($0, TabNavigation()) })
@@ -142,7 +268,12 @@ public final class AppDependencies: ObservableObject {
             configuration: self.configuration,
             fixtureName: fixtureName,
             accessToken: accessToken,
-            mockScenarioName: voiceScenarioName
+            // Ten sam identyfikator instalacji co w logowaniu (FIX A).
+            installationID: InstallationIdentity.current(),
+            mockScenarioName: voiceScenarioName,
+            // Sesja audio dla rozmowy (SDK jej nie ustawia) — bez tego mikrofon
+            // po odsłuchu/dyktowaniu zostaje w kategorii bez wejścia.
+            audioSession: audioSession
         )
     }
 
@@ -156,14 +287,28 @@ public final class AppDependencies: ObservableObject {
 
     /// Odsłuch. Poza Demo mock jest nadal mockiem — patrz `VoiceServicesFactory`.
     public func makePlaybackService() -> SpeechPlaybackService {
-        VoiceServicesFactory.makePlaybackService()
+        VoiceServicesFactory.makePlaybackService(
+            configuration: configuration,
+            audioSession: audioSession
+        )
     }
 
     /// Zakończenie sesji przez limit czasu musi być widoczne dla użytkownika:
     /// inaczej rozmowa „sama się rozłącza”, co wygląda jak awaria.
     private func observeSessionEnd() {
         _ = voice.addObserver { [weak self] state in
-            guard let self, state.connection == .ended else { return }
+            guard let self else { return }
+            // Jedno lustro stanu dla powłoki: pasek zakładek i arkusze czytają
+            // `voiceState`, a nie subskrybują koordynatora po swojemu (F06).
+            self.voiceState = state
+            // W produkcyjnej rozmowie sesję audio trzyma WebRTC dostawcy. Odsłuch
+            // i dyktowanie muszą o tym wiedzieć, żeby nie przełączać kategorii ani
+            // nie dezaktywować sesji w trakcie rozmowy (to zabiłoby mikrofon Emmy).
+            self.audioSession.setProviderOwnsAudioSession(
+                !self.configuration.usesMockServices
+                    && (state.connection == .connected || state.connection == .connecting)
+            )
+            guard state.connection == .ended else { return }
             guard let reason = self.voice.lastEndReason else { return }
             guard reason == .idleTimeout || reason == .sessionExpired else { return }
             self.showToast(reason.displayName)
@@ -266,7 +411,21 @@ public final class AppDependencies: ObservableObject {
         sheet = nil
     }
 
-    /// Krótkie potwierdzenie operacji. Znika po 3,8 s — jak w referencji.
+    // MARK: Sterowanie sesją z dowolnego miejsca (F06)
+
+    /// Wyciszenie albo włączenie mikrofonu z mini-panelu. Wyciszony mikrofon
+    /// **nie** kończy rozmowy i nie zmienia stanu połączenia (§5.5).
+    public func toggleVoiceMicrophone() async {
+        await voice.setMicrophoneMuted(voiceState.isCapturingMicrophone)
+    }
+
+    /// Zakończenie rozmowy z dowolnego ekranu. Jedna ścieżka dla docku Emmy
+    /// i mini-panelu, żeby zakończenie nie miało dwóch implementacji (§5.3).
+    public func endVoiceSession() async {
+        await voice.end(reason: .userRequested, preserveDraft: true, revokedCapability: false)
+    }
+
+/// Krótkie potwierdzenie operacji. Znika po 3,8 s — jak w referencji.
     public func showToast(_ message: String) {
         toast = message
         toastTask?.cancel()
@@ -329,7 +488,9 @@ public final class AppDependencies: ObservableObject {
     /// Przywrócenie danych przykładowych (odpowiada `resetDemo()` z referencji).
     public func resetDemoData() async {
         await voice.handleUserLoggedOut()
-        await repository.reset()
+        // Reset danych przykładowych jest zdolnością demo, nie częścią kontraktu
+        // produkcyjnego — pytamy o nią wprost (F05).
+        await (repository as? any DemoFixtureRepository)?.reset()
         let dataset = DemoFixtures.dataset()
         currentUser = dataset.user
         navigation = Dictionary(uniqueKeysWithValues: AppTab.allCases.map { ($0, TabNavigation()) })
@@ -342,6 +503,31 @@ public final class AppDependencies: ObservableObject {
         refreshUnreadTotal()
         dataChanged()
         showToast("Przywrócono dane przykładowe.")
+    }
+
+    // MARK: Użytkownik z sesji mobilnej
+
+    /// Zamiana użytkownika z odpowiedzi logowania (`MobileAuthUser`) na model
+    /// aplikacji. Robimy to w jednym miejscu, żeby powłoka i repozytorium nie
+    /// mogły się rozjechać w interpretacji pól.
+    public static func mapRemoteUser(_ remote: MobileAuthUser) -> User {
+        User(
+            id: UserID(remote.id),
+            displayName: remote.displayName,
+            initials: remote.initials,
+            // Kontrakt dopuszcza kody, których `LanguageCode` nie zna; wtedy
+            // zostaje język kancelarii (interfejs) albo dotychczasowa reguła
+            // języka rozmowy (rosyjski), zamiast pustego kodu.
+            interfaceLanguage: LanguageCode(lenient: remote.interfaceLanguage) ?? .pl,
+            assistantLanguage: LanguageCode(lenient: remote.assistantLanguage) ?? .ru
+        )
+    }
+
+    /// Przyjęcie użytkownika z udanego logowania (albo z odtworzonej sesji).
+    /// `nil` nie kasuje konta: po wylogowaniu powłoka i tak wraca do logowania.
+    public func adoptRemoteUser(_ remote: MobileAuthUser?) {
+        guard let remote else { return }
+        currentUser = Self.mapRemoteUser(remote)
     }
 
     // MARK: Formatowanie

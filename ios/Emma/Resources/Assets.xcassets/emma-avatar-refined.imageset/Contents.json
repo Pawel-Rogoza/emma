@@ -1,0 +1,6 @@
+{
+  "images" : [
+    { "filename" : "emma-avatar-refined.png", "idiom" : "universal", "scale" : "1x" }
+  ],
+  "info" : { "author" : "xcode", "version" : 1 }
+}

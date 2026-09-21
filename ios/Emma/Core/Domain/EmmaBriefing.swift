@@ -9,28 +9,45 @@ import Foundation
 
 public enum EmmaBriefing {
 
+    /// Zdanie o dniu z jawnym rozróżnieniem „pusto” od „nie udało się sprawdzić”.
+    ///
+    /// `events` i `tasks` są opcjonalne celowo: `nil` znaczy „odczyt się nie powiódł”,
+    /// a `[]` znaczy „sprawdzone, naprawdę nic nie ma”. Wcześniej oba przypadki
+    /// wyglądały identycznie, więc awaria kalendarza dawała odpowiedź „nie masz
+    /// terminów”. To jest dokładnie ten błąd, którego nie wolno pokazać prawnikowi.
     public static func briefing(
-        events: [ScheduledEvent],
-        tasks: [TaskItem],
+        events: [ScheduledEvent]?,
+        tasks: [TaskItem]?,
         waitingForReply: [Client],
         clientNames: [ClientID: String]
     ) -> String {
-        let relevant = events.filter { $0.status != .finished }.sorted { $0.time < $1.time }
         var lines: [String] = []
-        lines.append("Dzisiaj w zespole: \(EmmaPlural.label(relevant.count, "wydarzenie", "wydarzenia", "wydarzeń")).")
-        for event in relevant {
-            let who = clientNames[event.clientID] ?? Client.unknownDisplayName
-            var line = "\(event.time.hhmm): \(who), \(event.title)."
-            if event.status == .toConfirm { line += " Termin czeka na potwierdzenie." }
-            lines.append(line)
-        }
-        lines.append("")
-        if tasks.isEmpty {
-            lines.append("Do załatwienia: brak otwartych zadań na dziś.")
+
+        if let events {
+            let relevant = events.filter { $0.status != .finished }.sorted { $0.time < $1.time }
+            lines.append("Dzisiaj w zespole: \(EmmaPlural.label(relevant.count, "wydarzenie", "wydarzenia", "wydarzeń")).")
+            for event in relevant {
+                let who = clientNames[event.clientID] ?? Client.unknownDisplayName
+                var line = "\(event.time.hhmm): \(who), \(event.title)."
+                if event.status == .toConfirm { line += " Termin czeka na potwierdzenie." }
+                lines.append(line)
+            }
         } else {
-            let list = tasks.map(\.title).joined(separator: "; ")
-            lines.append("Do załatwienia: \(list).")
+            lines.append("Nie udało się sprawdzić kalendarza. Nie mam pewności, czy dziś są terminy.")
         }
+
+        lines.append("")
+        if let tasks {
+            if tasks.isEmpty {
+                lines.append("Do załatwienia: brak otwartych zadań na dziś.")
+            } else {
+                let list = tasks.map(\.title).joined(separator: "; ")
+                lines.append("Do załatwienia: \(list).")
+            }
+        } else {
+            lines.append("Nie udało się sprawdzić listy zadań. Nie mam pewności, co jest dziś do zrobienia.")
+        }
+
         if waitingForReply.isEmpty {
             lines.append("Wszystkie rozmowy zaopiekowane.")
         } else {

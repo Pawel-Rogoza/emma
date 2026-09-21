@@ -117,38 +117,48 @@ public enum EmmaTypography {
         )
     }
 
+    // MARK: Skala tekstu
+
+    /// Metadana i podpis — **najniższy dopuszczalny rozmiar tekstu** w interfejsie.
+    ///
+    /// F09 audytu: dawne `ui(10…)`/`ui(11…)`/`ui(12…)` w ekranach dawały tekst
+    /// 10–11 pt z kontrastem poniżej 4,5:1. Teraz każda metadana przechodzi przez
+    /// ten styl (12 pt), więc skala jest jedna, a próg kontrastu dotyczy znanego
+    /// rozmiaru. Ekrany nie deklarują już własnych rozmiarów.
+    public static func caption(_ weight: EmmaWeight = .regular) -> Font { ui(12, weight) }
+
     // MARK: Style interfejsu (DESIGN_CONTRACT §3)
 
     /// Nagłówek główny: „Dzień dobry, Tomaszu”.
     public static var welcome: Font { heading(25) }
     /// Kicker / data: „PIĄTEK, 11 WRZEŚNIA”.
-    public static var kicker: Font { ui(11, .semibold) }
+    public static var kicker: Font { ui(12, .semibold) }
     /// Tytuł sekcji.
     public static var sectionTitle: Font { ui(16, .semibold) }
     /// Nazwa osoby w wierszu listy.
     public static var personName: Font { ui(15, .semibold) }
     /// Podtytuł wiersza listy.
-    public static var personSubtitle: Font { ui(12) }
+    public static var personSubtitle: Font { caption() }
     /// Tytuł karty spotkania.
     public static var meetingTitle: Font { ui(14, .semibold) }
     /// Metadane w karcie.
-    public static var meetingMeta: Font { ui(11) }
+    public static var meetingMeta: Font { ui(12) }
     /// Nagłówek szczegółu.
     public static var detailTitle: Font { ui(13, .semibold) }
     /// Podpis szczegółu.
-    public static var detailCaption: Font { ui(12) }
+    public static var detailCaption: Font { caption() }
     /// Hero klienta.
     public static var clientHero: Font { heading(24) }
     /// Tytuł sprawy.
     public static var caseTitle: Font { heading(25) }
     /// Numer sprawy.
-    public static var caseNumber: Font { ui(10, .medium) }
+    public static var caseNumber: Font { ui(12, .medium) }
     /// Tytuł zadania.
     public static var taskTitle: Font { ui(13, .medium) }
     /// Metadane zadania.
-    public static var taskMeta: Font { ui(11) }
+    public static var taskMeta: Font { ui(12) }
     /// Termin zadania.
-    public static var taskDate: Font { ui(10) }
+    public static var taskDate: Font { ui(12) }
     /// Nazwa w liście rozmów.
     public static var threadName: Font { ui(16, .medium) }
     /// Czas w liście rozmów.
@@ -162,7 +172,7 @@ public enum EmmaTypography {
     /// Cytat w dymku.
     public static func quotedText(_ text: String) -> Font { body(for: text, size: 13) }
     /// Metadane dymku.
-    public static var bubbleMeta: Font { ui(11) }
+    public static var bubbleMeta: Font { ui(12) }
     /// Separator dnia.
     public static var daySeparator: Font { ui(12, .medium) }
     /// Etykieta „Nowe wiadomości”.
@@ -176,18 +186,18 @@ public enum EmmaTypography {
     /// Treść propozycji.
     public static func actionBody(_ text: String) -> Font { body(for: text, size: 14) }
     /// Etykieta pola formularza.
-    public static var fieldLabel: Font { ui(12, .medium) }
+    public static var fieldLabel: Font { caption(.medium) }
     /// Wartość pola formularza. 16 pt zapobiega automatycznemu powiększaniu
     /// widoku przy kursorze (iOS).
     public static var fieldValue: Font { ui(16) }
     /// Etykieta zakładki.
-    public static var tabLabel: Font { ui(10, .medium) }
+    public static var tabLabel: Font { ui(12, .medium) }
     /// Przycisk.
-    public static var button: Font { ui(13, .semibold) }
+    public static var button: Font { ui(16, .semibold) }
     /// Pigułka statusu.
-    public static var pill: Font { ui(11, .medium) }
+    public static var pill: Font { ui(12, .medium) }
     /// Pomocniczy tekst błędu.
-    public static var error: Font { ui(12) }
+    public static var error: Font { caption() }
     /// Tekst stanu pustego.
     public static var emptyState: Font { ui(13) }
 }

@@ -32,11 +32,21 @@ public struct SurfaceCard<Content: View>: View {
 public struct SectionHeader: View {
     private let title: String
     private let actionTitle: String?
+    private let compact: Bool
     private let action: (() -> Void)?
 
-    public init(_ title: String, actionTitle: String? = nil, action: (() -> Void)? = nil) {
+    /// `compact` zmniejsza odstępy nagłówka. Używa tego ekran „Dzisiaj” (etap 3
+    /// audytu), gdzie najbliższy termin i zadania mają zmieścić się nad zgięciem
+    /// ekranu — pełne odstępy sekcji spychały je poza pierwszy widok.
+    public init(
+        _ title: String,
+        actionTitle: String? = nil,
+        compact: Bool = false,
+        action: (() -> Void)? = nil
+    ) {
         self.title = title
         self.actionTitle = actionTitle
+        self.compact = compact
         self.action = action
     }
 
@@ -48,15 +58,15 @@ public struct SectionHeader: View {
             Spacer(minLength: 8)
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
-                    .font(EmmaTypography.ui(12, .medium))
+                    .font(EmmaTypography.caption(.medium))
                     .foregroundStyle(EmmaTheme.accent)
                     .frame(minHeight: EmmaSpacing.hitTarget)
                     .contentShape(Rectangle())
             }
         }
-        .frame(minHeight: EmmaSpacing.sectionHeaderMinHeight, alignment: .bottom)
-        .padding(.top, EmmaSpacing.sectionTop)
-        .padding(.bottom, EmmaSpacing.sectionBottom)
+        .frame(minHeight: compact ? 30 : EmmaSpacing.sectionHeaderMinHeight, alignment: .bottom)
+        .padding(.top, compact ? 12 : EmmaSpacing.sectionTop)
+        .padding(.bottom, compact ? 6 : EmmaSpacing.sectionBottom)
     }
 }
 
@@ -145,7 +155,7 @@ public struct DetailHeader: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(caption.uppercased())
-                    .font(EmmaTypography.ui(12, .semibold))
+                    .font(EmmaTypography.caption(.semibold))
                     .tracking(1)
                     .foregroundStyle(EmmaTheme.mutedSoft)
                 Text(title)
@@ -293,8 +303,17 @@ public struct SegmentedFilter<Item: Hashable>: View {
                     selection = item
                 } label: {
                     Text(title(item))
-                        .font(EmmaTypography.ui(12, isSelected ? .semibold : .regular))
+                        .font(EmmaTypography.caption(isSelected ? .semibold : .regular))
                         .foregroundStyle(isSelected ? EmmaTheme.ink : EmmaTheme.muted)
+                        // Przy największym Dynamic Type etykiety filtrów („Nieprzeczytane”)
+                        // nie mieszczą się w segmencie. Zamiast zawijać je w trzy linie
+                        // (co rozjeżdżało pasek) — jedna linia i czytelne zmniejszenie.
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        // Filtr to kontrolka, nie treść — przy XXXL „Nieprzeczytane”
+                        // nie mieści się w segmencie nawet po zmniejszeniu, więc
+                        // ograniczamy skalę tak jak w pasku zakładek.
+                        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                         .frame(maxWidth: .infinity, minHeight: EmmaMetrics.segmentedMinHeight - 6)
                         .background(isSelected ? EmmaTheme.controlSelected : Color.clear)
                         .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.segmentedInner, style: .continuous))
@@ -484,11 +503,11 @@ public struct InfoList: View {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 HStack(alignment: .top, spacing: 12) {
                     Text(row.label)
-                        .font(EmmaTypography.ui(12))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.muted)
                     Spacer(minLength: 8)
                     Text(row.value)
-                        .font(EmmaTypography.ui(12, .medium))
+                        .font(EmmaTypography.caption(.medium))
                         .foregroundStyle(EmmaTheme.ink)
                         .multilineTextAlignment(.trailing)
                         .fixedSize(horizontal: false, vertical: true)
@@ -536,7 +555,7 @@ public struct LabeledField<Content: View>: View {
             content
             if let help {
                 Text(help)
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.mutedSoft)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -606,7 +625,7 @@ public struct ChoiceList<Item: Hashable>: View {
                                 .multilineTextAlignment(.leading)
                             if let subtitle {
                                 Text(subtitle(item))
-                                    .font(EmmaTypography.ui(11))
+                                    .font(EmmaTypography.caption())
                                     .foregroundStyle(EmmaTheme.mutedSoft)
                                     .multilineTextAlignment(.leading)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -761,7 +780,7 @@ public struct TraceToast: View {
 
     public var body: some View {
         Text(message)
-            .font(EmmaTypography.ui(12))
+            .font(EmmaTypography.caption())
             .foregroundStyle(.white)
             .padding(.horizontal, 16)
             .padding(.vertical, 13)
@@ -804,7 +823,7 @@ public struct QuickActions: View {
                             .font(.system(size: 19, weight: .regular))
                             .foregroundStyle(EmmaTheme.personAvatarText)
                         Text(action.title)
-                            .font(EmmaTypography.ui(11))
+                            .font(EmmaTypography.caption())
                             .foregroundStyle(EmmaTheme.muted)
                             .multilineTextAlignment(.center)
                             .lineLimit(2)
@@ -855,7 +874,7 @@ public struct WorkspaceStats: View {
                         .font(EmmaTypography.heading(23))
                         .foregroundStyle(EmmaTheme.ink)
                     Text(item.label)
-                        .font(EmmaTypography.ui(10))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.mutedSoft)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -895,7 +914,7 @@ public struct ActivityRow: View {
                     .foregroundStyle(EmmaTheme.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(dateText)
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.mutedSoft)
             }
             Spacer(minLength: 0)
@@ -924,7 +943,7 @@ public struct NoteCard: View {
                     .lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(footer)
-                    .font(EmmaTypography.ui(11))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.mutedSoft)
             }
         }
@@ -955,65 +974,94 @@ public struct TaskRow: View {
     }
 
     public var body: some View {
-        HStack(alignment: .top, spacing: 11) {
-            Button(action: onToggle) {
-                ZStack {
-                    // Świadomie nie „biały checkbox”: puste pole czytało się jak
-                    // formularz do wypełnienia, a nie jak zadanie do odhaczenia.
-                    // Pierścień pokazuje stan, a nie miejsce na treść.
-                    Circle()
-                        .fill(task.isDone ? EmmaTheme.accent : Color.clear)
-                    Circle()
-                        .strokeBorder(
-                            task.isDone ? EmmaTheme.accent : EmmaTheme.accent.opacity(0.38),
-                            lineWidth: task.isDone ? 0 : 1.6
-                        )
-                    if task.isDone {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(EmmaTheme.primaryButtonText)
+        Group {
+            // Przy rozmiarach dostępności trzy kolumny zostawiają tytułowi zbyt
+            // wąskie pole i długie słowa łamią się w środku („zatrzyma / nia” na
+            // zrzucie `25-duzy-tekst-zadania.png`). Data i plakietka schodzą
+            // wtedy pod tytuł, na pełną szerokość.
+            if dynamicTypeSize.isAccessibilitySize {
+                HStack(alignment: .top, spacing: 11) {
+                    checkButton
+                    VStack(alignment: .leading, spacing: 6) {
+                        openButton
+                        dateLabel
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                HStack(alignment: .top, spacing: 11) {
+                    checkButton
+                    openButton
+                    VStack(alignment: .trailing, spacing: 6) {
+                        dateLabel
                     }
                 }
-                .frame(width: EmmaMetrics.taskCheckSize, height: EmmaMetrics.taskCheckSize)
-                .frame(width: EmmaSpacing.hitTarget, height: EmmaSpacing.hitTarget, alignment: .topLeading)
-                .contentShape(Rectangle())
-                .animation(.easeInOut(duration: 0.18), value: task.isDone)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(task.isDone ? "Przywróć zadanie" : "Oznacz jako wykonane")
-
-            Button(action: onOpen) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(task.title)
-                        .font(EmmaTypography.taskTitle)
-                        .foregroundStyle(EmmaTheme.ink)
-                        .strikethrough(task.isDone, color: EmmaTheme.mutedSoft)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(TaskItem.taskMeta(clientName: clientName))
-                        .font(EmmaTypography.taskMeta)
-                        .foregroundStyle(EmmaTheme.taskMetaText)
-                        .multilineTextAlignment(.leading)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            VStack(alignment: .trailing, spacing: 6) {
-                Text(dateText)
-                    .font(EmmaTypography.taskDate)
-                    // Wyróżnienie liczy rdzeń (`showsUrgentBadge`), a nie sam priorytet:
-                    // referencja pokazuje je tylko dla zadań niewykonanych.
-                    .foregroundStyle(task.showsUrgentBadge ? EmmaTheme.pillUrgentText : EmmaTheme.taskDateText)
-                    .padding(.horizontal, task.showsUrgentBadge ? 7 : 0)
-                    .padding(.vertical, task.showsUrgentBadge ? 5 : 0)
-                    .background(task.showsUrgentBadge ? EmmaTheme.pillUrgentBackground : Color.clear)
-                    .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.pill, style: .continuous))
             }
         }
         .padding(.vertical, 14)
         .padding(.horizontal, 15)
         .contentShape(Rectangle())
+    }
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var checkButton: some View {
+        Button(action: onToggle) {
+            ZStack {
+                // Świadomie nie „biały checkbox”: puste pole czytało się jak
+                // formularz do wypełnienia, a nie jak zadanie do odhaczenia.
+                // Pierścień pokazuje stan, a nie miejsce na treść.
+                Circle()
+                    .fill(task.isDone ? EmmaTheme.accent : Color.clear)
+                Circle()
+                    .strokeBorder(
+                        task.isDone ? EmmaTheme.accent : EmmaTheme.accent.opacity(0.38),
+                        lineWidth: task.isDone ? 0 : 1.6
+                    )
+                if task.isDone {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(EmmaTheme.primaryButtonText)
+                }
+            }
+            .frame(width: EmmaMetrics.taskCheckSize, height: EmmaMetrics.taskCheckSize)
+            .frame(width: EmmaSpacing.hitTarget, height: EmmaSpacing.hitTarget, alignment: .topLeading)
+            .contentShape(Rectangle())
+            .animation(.easeInOut(duration: 0.18), value: task.isDone)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(task.isDone ? "Przywróć zadanie" : "Oznacz jako wykonane")
+    }
+
+    private var openButton: some View {
+        Button(action: onOpen) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(task.title)
+                    .font(EmmaTypography.taskTitle)
+                    .foregroundStyle(EmmaTheme.ink)
+                    .strikethrough(task.isDone, color: EmmaTheme.mutedSoft)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(TaskItem.taskMeta(clientName: clientName))
+                    .font(EmmaTypography.taskMeta)
+                    .foregroundStyle(EmmaTheme.taskMetaText)
+                    .multilineTextAlignment(.leading)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var dateLabel: some View {
+        Text(dateText)
+            .font(EmmaTypography.taskDate)
+            // Wyróżnienie liczy rdzeń (`showsUrgentBadge`), a nie sam priorytet:
+            // referencja pokazuje je tylko dla zadań niewykonanych.
+            .foregroundStyle(task.showsUrgentBadge ? EmmaTheme.pillUrgentText : EmmaTheme.taskDateText)
+            .padding(.horizontal, task.showsUrgentBadge ? 7 : 0)
+            .padding(.vertical, task.showsUrgentBadge ? 5 : 0)
+            .background(task.showsUrgentBadge ? EmmaTheme.pillUrgentBackground : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.pill, style: .continuous))
     }
 }

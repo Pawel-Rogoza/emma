@@ -321,10 +321,264 @@ gita; usunięcie `deleteEvent` z protokołu agendy.
 
 ---
 
+### D-20 · Ciemniejsze tokeny tekstu dla kontrastu 4,5:1 — **etap 2 audytu UX (F09)**
+
+**Treść:** 20 tokenów tekstowych w `EmmaTheme` ma ciemniejsze wartości niż w referencji,
+np. `mutedSoft` `#7A8492` → `#5F6D7D`, `taskDateText` `#8B96A5` → `#66768B`,
+`contextStripText` `#6B84A0` → `#526F91`, `dockStatusText` `#8A9AAC` → `#5F6D7D`.
+
+**Powód:** pomiar sRGB w audycie wykazał kontrast poniżej 4,5:1 dla etykiet, które
+decydują o dniu i sterowaniu głosem (np. `dockStatusText` 2,68:1). To nie jest kwestia
+gustu — przy takim kontraście danych nie da się odczytać w słońcu ani przy słabym wzroku.
+Cel: co najmniej 4,5:1 dla zwykłego tekstu (WCAG AA), zgodnie z §3 audytu.
+
+**Wpływ:** metadane są ciemniejsze, więc hierarchia jest mniej „mglista”, ale nadal
+czytelna jako drugi plan. Każda nowa wartość **występuje już w regułach referencji**,
+więc kontrola `design-token-diff.py` nadal nie zgłasza kolorów spoza wzorca.
+
+**Kontrola:** `ios/scripts/check-readability.py` (krok 9/9 `verify-linux-logic.sh`) liczy
+kontrast zadeklarowanych tokenów wobec ich rzeczywistych teł i przerywa przy regresji.
+
+**Cofnięcie:** przywrócenie poprzednich wartości z historii gita (kosztem kontrastu).
+
+### D-21 · Jeden powrót na ekranie szczegółu i przywrócony gest — **etap 2 audytu UX (F12)**
+
+**Treść:** `ClientCardScreen` i `TasksScreen` chowają systemowy przycisk powrotu
+(`.navigationBarBackButtonHidden(true)`), tak jak wcześniej `CaseScreen` i `ThreadScreen`.
+Jedyne wejście powrotu to własny przycisk w `DetailHeader` („Wróć”). Ekran Zadania dostał
+`DetailHeader` zamiast `ScreenHeader` + osobnego wiersza z „+”, więc u góry nie ma już
+dwóch nagłówków. Nowy `EmmaSwipeBack` przywraca gest przesunięcia od krawędzi, który
+ukrycie systemowego przycisku domyślnie wyłącza.
+
+**Powód:** na karcie klienta były dwa powroty obok siebie, a na Zadaniach systemowy
+powrót i własny nagłówek tworzyły podwójną, pustą strefę. Audyt wymaga jednego sposobu
+budowania nagłówka i zachowania gestu powrotu.
+
+**Wpływ:** spójny nagłówek na wszystkich wypychanych ekranach; tytuł pozostaje dostępny
+dla VoiceOver („Wróć” + tytuł). Gest krawędzi działa, ale tylko gdy na stosie jest więcej
+niż jeden ekran — na ekranie głównym nie ma czego przewracać.
+
+**Ograniczenie:** przywrócenie gestu opiera się na delegacie
+`interactivePopGestureRecognizer` (UIKit). Jeśli hierarchia nie zna jeszcze
+`UINavigationController`, modyfikator nic nie robi — brak gestu, nie błąd. Zachowanie
+pilnuje test UI wykonujący przeciągnięcie od krawędzi.
+
+### D-22 · Licznik nieprzeczytanych w osobnej kolumnie — **etap 2 audytu UX (F13)**
+
+**Treść:** w wierszu listy rozmów czas, licznik nieprzeczytanych, pinezka i menu tworzą
+osobną kolumnę w układzie (`VStack` po prawej), a nie warstwy nałożone na tekst.
+
+**Powód:** licznik był wyśrodkowaną nakładką i nachodził na dwuliniowy podgląd wiadomości,
+najgorzej w pierwszym wierszu i przy długiej cyrylicy.
+
+**Wpływ:** podgląd nie może wejść w prostokąt kolumny, bo kolumna zajmuje własną szerokość.
+Przy dużym Dynamic Type kolumna rośnie w pionie razem z resztą wiersza.
+
+**Cofnięcie:** przywrócenie nakładek z historii gita (kosztem kolizji).
+
+### D-23 · Jedna skala tekstu: najniższy stopień 12 pt — **etap 2 audytu UX (F09)**
+
+**Treść:** wszystkie metadane i podpisy przechodzą przez `EmmaTypography.caption(...)`
+(12 pt). Dawne `EmmaTypography.ui(10…)`/`ui(11…)` w widokach zostały zamienione na ten
+styl (73 miejsca w 22 plikach). Style nazwane, które miały 10–11 pt
+(`kicker`, `meetingMeta`, `taskMeta`, `taskDate`, `caseNumber`, `bubbleMeta`, `pill`,
+`tabLabel`), mają teraz 12 pt. `button` urósł z 13 na 16 pt (audyt: przyciski 16–17 pt).
+
+**Powód:** etykiety 10–11 pt przy słabym kontraście podejmowały decyzje o dniu i wysyłce.
+Audyt wymaga jednej skali i braku stałych rozmiarów w ekranach.
+
+**Wpływ:** metadane są nieco większe (o 1–2 pt), przyciski bardziej czytelne. Przy
+domyślnym tekście wygląd pozostaje bliski referencji; skala nadal rośnie z Dynamic Type.
+
+**Kontrola:** `check-readability.py` przerywa, gdy w ekranie pojawi się tekst 10 lub 11 pt.
+
+**Cofnięcie:** przywrócenie poprzednich stylów z historii gita.
+
+---
+
+### D-24 · „Dzisiaj”: najpierw sprawa, potem scena Emmy — **etap 3 audytu UX (F08)**
+
+**Treść:** układ ekranu „Dzisiaj” zmienia kolejność i ciężar elementów. Pełna scena Emmy
+(orb `.stage`, „Jestem Emma”, zdanie wyjaśnienia i dwa przyciski) ustępuje **kompaktowej
+karcie** o wysokości ~94 pt: portret 52 pt (`EmmaOrb.Size.compact`), napis „Porozmawiaj
+z Emmą”, podpis „Zapytaj o dzień, terminy lub wiadomości.”, okrągły przycisk mikrofonu
+44 pt i cichy „Napisz” pod nim. Kolejność sekcji to teraz: nagłówek dnia → karta Emmy →
+„Najbliższy termin” (godzina, status, miejsce, linki do klienta i sprawy, „Przygotuj
+mnie”, „Szczegóły”) → „Zadania” z liczbą otwartych i zaległych oraz wejściem „Wszystkie
+zadania” → „Dalej dziś” z pozostałymi terminami → zwijana sekcja „Minione terminy”.
+Nagłówki sekcji na tym ekranie używają wariantu `SectionHeader(compact:)`.
+
+**Powód:** audyt F08 — przy pełnej scenie Emmy najbliższy termin i wejście do zadań
+wypadały poza pierwszy widok, a pilne zadanie lądowało pod długą listą spotkań. To
+świadome **uchylenie punktu 1 decyzji właściciela D-19** („Emma ma więcej miejsca”):
+scena wraca tam, gdzie jest na nią miejsce, czyli do zakładki „Emma”. Pozostałe punkty
+D-19 (oś dnia, wygaszanie minionych, pierścienie zadań) zostają bez zmian, a miniony
+termin nadal widać — tylko w zwiniętej sekcji.
+
+**Wpływ:** pierwszy widok dnia pokazuje najbliższy termin i zadania bez przewijania
+(potwierdzone testem `Stage3LayoutUITests.testNextEventAndTaskEntryAreAboveTheFold`).
+Portret Emmy jest mniejszy niż w D-19; pełna scena nadal istnieje w zakładce „Emma”,
+więc wizerunek Emmy nie znika z aplikacji. Doszły reguły rdzenia `DayAgenda` (najbliższy
+termin / dalsze / minione) i `TaskGrouping` (zaległe / na dziś / później), wspólne dla
+„Dzisiaj” i „Zadania”; `EmmaOrb` dostał rozmiar `.compact` (52 pt).
+
+**Cofnięcie:** przywrócenie poprzedniej wersji `TodayScreen` z historii gita; usunięcie
+`DayAgenda`, `TaskGrouping` i przypadku `.compact` w `EmmaOrb`.
+
+---
+
+### D-25 · Wiersz zadania i karta Emmy układają się w kolumnę przy dużym tekście — **etap 3 audytu UX (F09)**
+
+**Treść:** przy rozmiarach dostępności (`dynamicTypeSize.isAccessibilitySize`) dwa
+poziome układy przechodzą w pionowy:
+
+1. `TaskRow` — data i plakietka „Pilne” schodzą pod tytuł, na pełną szerokość
+   (wcześniej trzy kolumny zostawiały tytułowi ~150 pt).
+2. kompaktowa karta Emmy na „Dzisiaj” — portret i tytuł w jednym wierszu, pod nimi
+   podpis oraz mikrofon i „Napisz”.
+
+**Powód:** OCR zrzutów przy `Accessibility XXXL` wykazał łamanie wyrazów w środku:
+„Porozm / awiaj z / Emmą” oraz „zatrzyma / nia”. To nie jest estetyka — tekst pocięty
+w połowie wyrazu czyta się jak uszkodzony.
+
+**Wpływ:** bez zmian przy standardowym tekście (układ poziomy zostaje). Przy dużym
+tekście lista zadań i karta Emmy są dłuższe, ale czytelne; porównanie w
+`docs/ios/screenshots/stage3-2026-09-13/` (`24-duzy-tekst-dzisiaj.png`,
+`25-duzy-tekst-zadania.png`).
+
+**Kontrola:** OCR zrzutów po zmianie czyta „Porozmawiaj” i „z Emmą” w całości oraz
+„Oddzwonić w / sprawie / zatrzymania”.
+
+**Uzupełnienie (etap 4):** poprawka z etapu 3 była niepełna. Na małym ekranie
+(375 pt) przy `Accessibility XXXL` portret w tym samym wierszu co tytuł nadal urywał
+wyraz — OCR zrzutu `30-duzy-tekst-mini-panel.png` czytał „Porozmawi / aj z Emmą”.
+Etap 4 kładzie portret **nad** tytułem, a tytuł i podpis zajmują pełną szerokość karty
+(`frame(maxWidth: .infinity, alignment: .leading)`). Po poprawce OCR obu ekranów czyta
+„Porozmawiaj” i „z Emmą” w całości. Zrzuty etapu 3 zostały **wykonane ponownie**
+(`24-duzy-tekst-dzisiaj.png` na obu ekranach), bo poprzednia wersja utrwalała błąd —
+etap 3 oceniłem wtedy tylko na dużym ekranie i przeoczyłem to na małym.
+
+**Cofnięcie:** usunięcie gałęzi `if dynamicTypeSize.isAccessibilitySize` w `TaskRow`
+i `TodayScreen.emmaCompactCard()`.
+
+---
+
+### D-26 · Sterowanie rozmową istnieje poza ekranem Emmy (globalny mini-panel) — **etap 4 audytu UX (F06)**
+
+**Treść:** dopóki sesja głosu istnieje, nad paskiem zakładek — a gdy otwarty jest arkusz
+modalny, nad treścią tego arkusza — widnieje pasek o wysokości 56 pt: mały portret Emmy,
+jeden stan („Łączę z Emmą”, „Słucham”, „Mikrofon wyciszony”, „Emma mówi”, „Rozmowa
+niedostępna”), przycisk wyciszenia (44 pt) i „Zakończ rozmowę” (44 pt). Dotknięcie treści
+wraca do pełnej rozmowy. Panelu **nie ma** na zakładce „Emma” (tam jest pełny dock) ani
+w drzewie dostępności za otwartym arkuszem, gdy ten rysuje własny panel.
+
+**Powód:** audyt F06 — sterowanie było dostępne wyłącznie na ekranie Emmy, więc rozmowa
+uruchomiona „przy okazji” zadania lub notatki stawała się nieosiągalna bez porzucenia
+tego, co się robiło. To także wymaganie akceptacyjne etapu: „Jedna sesja; sterowanie
+dostępne we wszystkich zakładach i modalach”.
+
+**Wpływ:** panel czyta stan z **jednego** koordynatora (`VoiceUIState`) i woła jego metody
+przez `AppDependencies.toggleVoiceMicrophone()` / `endVoiceSession()`; nie powstaje drugi
+silnik, druga subskrypcja ani druga sesja. Wyciszenie nie kończy rozmowy, a zakończenie
+jest tą samą ścieżką co w docku Emmy. Przy największym tekście panel skraca się o podpis
+„Wróć do rozmowy”, żeby stan nie był urywany (zrzut `30-duzy-tekst-mini-panel.png`).
+`RootShell` rezerwuje na panel miejsce w układzie, więc nie zasłania treści.
+
+**Cofnięcie:** usunięcie `VoiceMiniPanel.swift` i trzech wstawień w `RootShell`
+(oraz `AppDependencies.toggleVoiceMicrophone()` / `endVoiceSession()`); powrót
+`AssistantStore.endSession()` do bezpośredniego wołania koordynatora.
+
+---
+
+### D-27 · Dock Emmy nie mówi już o „Połączeniu: Nieaktywna”, a kompozytor ma jedno „Rozmawiaj” — **etap 4 audytu UX (F07)**
+
+**Treść:** trzy zmiany widoczne na ekranie Emmy:
+
+1. Linia techniczna „Połączenie: … · Mikrofon: … · Tryb: …” jest pokazywana **tylko**, gdy
+   sesja istnieje. Bez sesji dock mówi jednym zdaniem („Gotowa do rozmowy”).
+2. Dock ma wyciszenie mikrofonu obok przerwania i zakończenia; przycisk zakończenia
+   w docku skrócony do „Zakończ” (pełne „Zakończ rozmowę” zostało w mini-panelu), żeby
+   trzy akcje zmieściły się w jednym wierszu na 375 pt.
+3. Kompozytor: jedno główne „Rozmawiaj” (56 pt, `EmmaMetrics.emmaVoiceButtonSize`)
+   zamiast trzech ikon w jednym rzędzie, pod nim tryb pisania z jawnym „Dyktuj tekst”
+   i wysłaniem **nieaktywnym**, gdy pole jest puste. Stan dyktowania nazywa się
+   „Zakończ”, więc nie ma dwóch znaczeń jednego przycisku.
+
+**Powód:** audyt F07 — dock jednocześnie twierdził „Rozmowa głosowa”, „Połączenie:
+Nieaktywna” i „Mikrofon niedostępny”, a trzy ikony o równej wadze nie mówiły, co jest
+wejściem w rozmowę. Warunek etapu: mikrofon 56–64 pt i nieaktywne wysłanie pustego pola.
+
+**Wpływ:** znika sprzeczny komunikat bez sesji; wizualnie dock jest krótszy, bo linia
+techniczna pojawia się dopiero w rozmowie. Etykiety zmieniły się w testach dostępności
+(„Rozpocznij wypowiedź” → „Rozmawiaj”, „Zatrzymaj nasłuch” → „Wycisz mikrofon”).
+Pełna prawda o połączeniu i mikrofonie nadal jest podana wprost, nigdy tylko kolorem.
+
+**Cofnięcie:** przywrócenie poprzedniego `composer` i `stateLabel` w `AssistantScreen`
+i `VoiceDock` oraz bezwarunkowej linii technicznej.
+
+### D-28 · Godzina terminu zadania jest pokazana, ale nie jest osobnym polem listy — **etap 5 audytu UX (F14/§6-C)**
+
+**Treść:** „Dodaj zadanie: wyślij dokumenty Olenie jutro do 14” tworzy propozycję
+z terminem `2026-09-12`, a w odpowiedzi Emmy i na karcie widać **godzinę 14:00**.
+Sama propozycja zapisuje jednak wyłącznie datę (`ActionProposal.taskDueDate`) — model
+zadania w tym prototypie zna dzień, nie godzinę.
+
+**Powód:** audyt wymaga, żeby „Do 14” **nie zniknęło** i żeby ograniczenie było
+wypowiedziane *przed* zapisem. Dodanie godziny do zadania zmieniłoby wspólną listę
+zadań, ekran „Dzisiaj” i dane demo — czyli zakres poza etapem 5. Zamiast zgadywać,
+Emma mówi wprost: „Godzina 14:00 jest w treści polecenia; lista zadań pokazuje samą
+datę”.
+
+**Wpływ:** termin słyszalny i widoczny jest datą bezwzględną (`2026-09-12`), godzina
+zostaje w treści wypowiedzi i w potwierdzeniu. Formularz **spotkania** przenosi godzinę
+do pola „Godzina” (`EventDraftSeed`), bo wydarzenie ma pełny termin — tam nic nie ginie.
+
+**Cofnięcie:** rozszerzenie `ActionProposal`/`TaskItem` o `dueTime` i pokazanie godziny
+w listach zadań.
+
+---
+
+### D-29 · Rozmowa Emmy jest kotwiczona na dole — **etap 5 audytu UX (F04/§6)**
+
+**Treść:** `AssistantScreen` dostał `.defaultScrollAnchor(.bottom)`. Przy pojawieniu się
+klawiatury najnowsza karta propozycji zostaje nad nią, a nie pod nią.
+
+**Powód:** bez kotwicy karta (ok. 350 pt) wypadała poza okno rozmowy nad klawiaturą —
+`scrollTo(last.id, anchor: .bottom)` wykonywał się **przed** zmianą wstawki klawiatury,
+więc użytkownik widział sam przycisk zgody bez treści, którą zatwierdza (zmierzone:
+pole treści na `y = -306 pt`, czyli poza ekranem 874 pt).
+
+**Wpływ:** kolejność tur i animacje bez zmian; zmieniła się tylko pozycja przewinięcia.
+Zrzuty etapu 5 pokazują całą treść karty (pole treści `y = 224 pt` w oknie 874 pt).
+
+**Cofnięcie:** usunięcie `.defaultScrollAnchor(.bottom)`.
+
+### D-30 · Odsłuch w demo pozostaje scenariuszowy, poza demo mówi syntezator systemu — **etap 6 audytu (F05)**
+
+**Treść:** „Odsłuchaj” w Demo nadal korzysta z `MockSpeechPlaybackService` (zdarzenia
+bez dźwięku). Poza Demo — gdy jest skonfigurowany backend — wybierany jest
+`SystemSpeechPlaybackService`, który naprawdę mówi systemowym `AVSpeechSynthesizer`.
+Stopka demo mówi jedno i drugie wprost.
+
+**Powód:** dwa sprzeczne wymagania. Testy i zrzuty muszą być deterministyczne (mock
+kończy odsłuch natychmiast), a użytkownik nie może usłyszeć **głosu systemowego** jako
+głosu Emmy i pomyśleć, że to integracja z dostawcą. Rozdzielenie według konfiguracji
+zachowuje jedno i drugie, a nota w interfejsie nie pozwala pomylić jednego z drugim.
+
+**Wpływ:** odsłuch przestał być pustą atrapą w kodzie produkcyjnym; w Demo nadal nie ma
+dźwięku i jest to wypowiedziane na ekranie. Głos Emmy od dostawcy pozostaje otwarty —
+do czasu konta i backendu wydającego token.
+
+**Cofnięcie:** zwrócenie `MockSpeechPlaybackService()` w obu wariantach (stan sprzed
+etapu 6) i skrócenie noty w stopce.
+
+---
+
 ## Czego ten rejestr nie zawiera
 
-Nie zawiera porównania zrzutów ekranu, bo **nie zostały wykonane** — brak macOS
-i symulatora (patrz `BUILD_AND_DEVICE_STATUS.md`). Ocena zgodności wizualnej opiera się
-na kaskadzie CSS referencji, pomiarach plików czcionek i przeglądzie komponentów.
-Pierwsze realne porównanie obrazu jest pierwszym punktem listy po uruchomieniu na Macu.
+Nie zawiera porównania zrzutów ekranu z referencją **piksel po pikselu**. Zrzuty są
+wykonane (`docs/ios/screenshots/`, etapy 1–4), ale nie ma narzędzia zestawiającego je
+z `reference/prototype`; ocena opiera się na pomiarach (OCR + geometria ramek) i na
+kaskadzie CSS referencji. Ocena wizualna „na oko” wymaga człowieka albo modelu z
+obsługą obrazu — model prowadzący etapy 1–4 nie ma wejścia obrazowego.
 

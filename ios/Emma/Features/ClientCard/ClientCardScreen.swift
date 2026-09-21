@@ -24,6 +24,11 @@ struct ClientCardScreen: View {
                 .padding(.bottom, EmmaSpacing.contentBottom)
         }
         .background(EmmaTheme.bg)
+        // F12 audytu: karta klienta miała **dwa** powroty — systemowy i własny
+        // w `DetailHeader`. Zostaje jeden (własny), a gest krawędzi wraca przez
+        // `emmaPreservesSwipeBack()`.
+        .navigationBarBackButtonHidden(true)
+        .emmaPreservesSwipeBack()
         .task(id: dependencies.dataVersion) {
             await store.load(dependencies, clientID: clientID)
         }
@@ -84,7 +89,7 @@ struct ClientCardScreen: View {
     @ViewBuilder
     private func consultationsSection(_ model: ClientCardModel) -> some View {
         SectionHeader("Konsultacje i terminy", actionTitle: "Dodaj") {
-            dependencies.present(.eventForm(editing: nil, clientID: model.client.id, caseID: model.legalCase?.id))
+            dependencies.present(.eventForm(editing: nil, clientID: model.client.id, caseID: model.legalCase?.id, initialDay: nil))
         }
         eventsSection(model)
     }
@@ -155,7 +160,7 @@ struct ClientCardScreen: View {
                 dependencies.present(.note(clientID: client.id, caseID: caseID))
             },
             QuickActions.Action(systemImage: "calendar", title: "Umów") {
-                dependencies.present(.eventForm(editing: nil, clientID: client.id, caseID: caseID))
+                dependencies.present(.eventForm(editing: nil, clientID: client.id, caseID: caseID, initialDay: nil))
             }
         ])
     }
@@ -204,7 +209,7 @@ struct ClientCardScreen: View {
                     .foregroundStyle(EmmaTheme.personAvatarText)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(legalCase.number)
-                        .font(EmmaTypography.ui(10, .medium))
+                        .font(EmmaTypography.caption(.medium))
                         .tracking(0.7)
                         .foregroundStyle(EmmaTheme.mutedSoft)
                     Text(legalCase.title)

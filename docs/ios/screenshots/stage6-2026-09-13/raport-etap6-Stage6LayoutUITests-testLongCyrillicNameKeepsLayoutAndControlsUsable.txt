@@ -1,0 +1,7 @@
+Zrzut ekranu Emmy — etap 6 (układ: długie nazwisko w cyrylicy)
+Data: 2026-09-13T15:42:33Z
+Zestaw danych: dlugie-nazwy · tekst: AccessibilityXXXL
+Asercje: nazwisko wewnątrz okna, brak przecięcia z inicjałami, decyzje osiągalne.
+VoiceOver i Reduce Motion pozostają do sprawdzenia na urządzeniu.
+zapisano · 37-dlugie-nazwy-cyrylica.png · Karta klientki o długim nazwisku w cyrylicy przy AccessibilityXXXL
+zapisano · 38-dlugie-nazwy-decyzje.png · Decyzje karty osiągalne przy największym tekście

@@ -21,6 +21,17 @@ public final class AudioSessionController {
     }
 
     public private(set) var mode: Mode = .idle
+    /// Czy sesję audio trzyma dostawca rozmowy (WebRTC LiveKit/ElevenLabs).
+    ///
+    /// Wtedy odsłuch i dyktowanie **nie przełączają** kategorii ani nie
+    /// dezaktywują sesji: zrobiwszy to, odebrałyby mikrofon i dźwięk trwającej
+    /// rozmowie. Sam syntezator/rozpoznawanie i tak korzystają z aktywnej sesji
+    /// dostawcy. Ustawiane przez `AppDependencies` z obserwacji stanu rozmowy.
+    public private(set) var providerOwnsAudioSession = false
+
+    public func setProviderOwnsAudioSession(_ owned: Bool) {
+        providerOwnsAudioSession = owned
+    }
     /// Obserwatory NotificationCenter. `nonisolated(unsafe)`, bo w Swift 6 `deinit`
     /// jest nieizolowany, a jedynym miejscem, które je czyta poza `@MainActor`,
     /// jest sam `deinit` (obiekt nie ma wtedy żadnych innych referencji).
@@ -129,6 +140,58 @@ public final class AudioSessionController {
         let center = NotificationCenter.default
         if let interruptionObserver { center.removeObserver(interruptionObserver) }
         if let routeObserver { center.removeObserver(routeObserver) }
+    }
+}
+
+// MARK: - Zgoda na mikrofon (wejście do rozmowy)
+//
+// Jedyne miejsce, w którym aplikacja pyta system o dostęp do mikrofonu.
+//
+// Dlaczego to nie może zostać wyłącznie po stronie SDK dostawcy: SDK przy
+// odmowie **łączy rozmowę bez toru mikrofonu i nie zgłasza tego błędem**
+// (`WebRTCConnectionManager`: `enableMic: permissionGranted`, komentarz
+// „denial doesn't block startup”). Ekran pokazywałby „połączono”, a wypowiedź
+// użytkownika nie dolatywałaby do agenta — dokładnie zgłoszony objaw „mówię
+// i nic się nie dzieje, nie ma transkryptu”.
+//
+// Dlatego koordynator pyta ten port **przed** założeniem sesji, a odmowa
+// kończy start czytelnym komunikatem po polsku. Zapytanie o zgodę jest
+// czynnością pierwszego planu i musi iść z głównego aktora (TCC).
+
+@MainActor
+public enum MicrophonePermission {
+
+    /// Bieżąca zgoda bez pytania użytkownika. `false` obejmuje też stan
+    /// „jeszcze nie pytano” — wołający ma wtedy użyć `request()`.
+    public static var isGranted: Bool {
+        AVAudioApplication.shared.recordPermission == .granted
+    }
+
+    /// Zgoda na mikrofon, z systemowym pytaniem, gdy jest jeszcze nierozstrzygnięta.
+    ///
+    /// Zwraca `true` tylko dla faktycznej zgody. Odmowa i stan nieokreślony,
+    /// którego system nie rozstrzygnął, dają `false` — nie udajemy wtedy wejścia
+    /// audio, bo rozmowa bez mikrofonu i tak nie ma sensu.
+    public static func request() async -> Bool {
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted:
+            return true
+        case .denied:
+            return false
+        case .undetermined:
+            return await AVAudioApplication.requestRecordPermission()
+        @unknown default:
+            return false
+        }
+    }
+}
+
+/// Systemowy adapter portu zgody. Rdzeń dostaje wyłącznie `MicrophonePermissionProviding`,
+/// więc nie kompiluje `AVFoundation` i można go testować na Linuksie.
+public struct SystemMicrophonePermission: MicrophonePermissionProviding {
+    public init() {}
+    public func requestRecordPermission() async -> Bool {
+        await MicrophonePermission.request()
     }
 }
 #endif

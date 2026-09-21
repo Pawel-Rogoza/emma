@@ -200,14 +200,16 @@ public struct VoiceSessionStatus: Hashable, Codable, Sendable {
     public var sessionID: VoiceSessionID
     public var isActive: Bool
     public var context: AssistantContext
-    public var expiresAt: Date
+    /// Czas wygaśnięcia, jeśli dostawca go podaje. `nil` to „nieznany”, nie „brak
+    /// terminu” — o żywotności sesji rozstrzyga backend, a nie lokalny zegar.
+    public var expiresAt: Date?
     public var providerConversationID: String?
 
     public init(
         sessionID: VoiceSessionID,
         isActive: Bool,
         context: AssistantContext,
-        expiresAt: Date,
+        expiresAt: Date?,
         providerConversationID: String? = nil
     ) {
         self.sessionID = sessionID
@@ -233,6 +235,45 @@ public struct ReviseAction: Sendable {
         self.actionID = actionID
         self.expectedVersion = expectedVersion
         self.newText = newText
+        self.now = now
+    }
+}
+
+public struct RescheduleAction: Sendable {
+    public var actionID: ActionID
+    public var expectedVersion: Version
+    public var dueDate: LocalDate?
+    public var now: Date
+
+    public init(actionID: ActionID, expectedVersion: Version, dueDate: LocalDate?, now: Date) {
+        self.actionID = actionID
+        self.expectedVersion = expectedVersion
+        self.dueDate = dueDate
+        self.now = now
+    }
+}
+
+public struct ChangeActionContext: Sendable {
+    public var actionID: ActionID
+    public var expectedVersion: Version
+    public var clientID: ClientID?
+    public var caseID: CaseID?
+    public var threadID: ThreadID?
+    public var now: Date
+
+    public init(
+        actionID: ActionID,
+        expectedVersion: Version,
+        clientID: ClientID?,
+        caseID: CaseID?,
+        threadID: ThreadID?,
+        now: Date
+    ) {
+        self.actionID = actionID
+        self.expectedVersion = expectedVersion
+        self.clientID = clientID
+        self.caseID = caseID
+        self.threadID = threadID
         self.now = now
     }
 }

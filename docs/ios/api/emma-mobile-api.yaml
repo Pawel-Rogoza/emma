@@ -26,8 +26,18 @@ info:
     Nazwy typów odpowiadają typom domenowym aplikacji, żeby mapowanie było jednoznaczne.
 
 servers:
-  - url: https://api.example.invalid/v1
-    description: Adres przykładowy — właściwy pochodzi z `EMMA_API_BASE_URL` w `.xcconfig`.
+  - url: https://advokat-varshava.pl/api/mobile/v1
+    description: |
+      Baza adresów mobilnych. Aplikacja składa URL jako
+      `EMMA_API_BASE_URL` (sam host, np. `https://advokat-varshava.pl`) + `api/mobile/v1/`
+      + ścieżka z tego dokumentu — dlatego ścieżki są tu zapisane **względnie**
+      (`/clients`, `/voice/sessions`), a nie z powtórzonym prefiksem.
+
+      Trasa po stronie backendu musi leżeć w `src/pages/api/mobile/v1/…`.
+      Plik położony wyżej (np. `src/pages/api/voice/…`) utworzyłby
+      `/api/voice/…` — adres, którego aplikacja **nigdy** nie wywoła i którego
+      nginx nie przepuszcza. To jest błąd, który łatwo popełnić i trudno
+      zauważyć w testach, bo testy podmieniają transport.
 
 tags:
   - name: Sesja
@@ -63,6 +73,13 @@ paths:
                   type: string
                   description: Identyfikator instalacji aplikacji; wiąże sesję z urządzeniem.
                 device_name: { type: string }
+                totp:
+                  type: string
+                  description: >-
+                    Kod jednorazowy TOTP. Wymagany, gdy konto ma skonfigurowany
+                    TOTP (backend nie obniża progu bezpieczeństwa konta dla
+                    aplikacji natywnej); pomijany dla kont bez TOTP. Rozszerzenie
+                    kontraktu z M1 — pole opcjonalne, więc starsi klienci go nie wysyłają.
       responses:
         "200":
           description: Sesja utworzona
@@ -229,7 +246,6 @@ paths:
                 expected_version: { $ref: "#/components/schemas/Version" }
                 display_name: { type: string }
                 stage: { type: string, enum: [new, in_contact, client] }
-                owner_id: { type: [string, "null"] }
                 needs_reply: { type: boolean }
       responses:
         "200":
@@ -238,6 +254,39 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Client" }
         "409": { $ref: "#/components/responses/Conflict" }
+
+    delete:
+      tags: [Zapis]
+      summary: Usunięcie zgłoszenia (leada)
+      description: |
+        Usuwa **wyłącznie zgłoszenie** (`lead-N`). Kartoteki (`client-N`) nie
+        usuwa nawet panel kancelarii — ma sprawy, terminy i dokumenty — więc
+        żądanie na `client-N` kończy się `422 validation_failed` z wyjaśnieniem.
+
+        Wymaga `expected_version` w ciele, tak samo jak usunięcie terminu: dwa
+        urządzenia widzą to samo zgłoszenie, jedno je usuwa, a drugie nie może
+        usunąć czegoś innego, niż widziało.
+
+        Lead z rezerwacji zostawia tombstone (import wstecz go nie przywróci),
+        a okienko na stronie zostaje zwolnione — tak samo, jak przy usunięciu
+        z panelu.
+      parameters:
+        - $ref: "#/components/parameters/ClientID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version]
+              properties:
+                expected_version: { $ref: "#/components/schemas/Version" }
+      responses:
+        "204":
+          description: Zgłoszenie usunięte
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
 
   /cases/{case_id}:
     get:
@@ -264,9 +313,6 @@ paths:
             type: string
             enum: [open, done, all]
             default: open
-        - name: owner_id
-          in: query
-          schema: { type: string }
         - name: due_on_or_before
           in: query
           schema: { $ref: "#/components/schemas/LocalDate" }
@@ -318,9 +364,6 @@ paths:
           in: query
           required: true
           schema: { $ref: "#/components/schemas/LocalDate" }
-        - name: owner_id
-          in: query
-          schema: { type: string }
       responses:
         "200":
           description: Terminy
@@ -332,6 +375,29 @@ paths:
                   items:
                     type: array
                     items: { $ref: "#/components/schemas/ScheduledEvent" }
+
+  /notes:
+    post:
+      tags: [Zapis]
+      summary: Dodanie notatki
+      description: |
+        Autor bierze się z sesji: `author_id` musi wskazywać zalogowanego
+        użytkownika, inaczej notatkę dałoby się podpisać cudzym nazwiskiem.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NewNote" }
+      responses:
+        "201":
+          description: Notatka dodana
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Note" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
 
   /threads:
     get:
@@ -455,6 +521,37 @@ paths:
   # ---------------------------------------------------------------- Zapis
 
   /cases:
+    get:
+      tags: [Odczyt]
+      summary: Lista spraw
+      description: |
+        Sprawy aktywne i zamknięte. Aplikacja ma zakładkę „Sprawy”, a bez tej
+        trasy musiałaby składać listę z kart klientów pojedynczo (N+1).
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [in_progress, awaiting_client, closed]
+        - name: client_id
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: Lista spraw
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/LegalCase" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
     post:
       tags: [Zapis]
       summary: Rozpoczęcie prowadzenia sprawy
@@ -513,6 +610,32 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
 
   /events/{event_id}:
+    delete:
+      tags: [Zapis]
+      summary: Usunięcie terminu
+      description: |
+        Wymaga `expected_version` w ciele: dwa urządzenia widzą ten sam termin,
+        jedno go usuwa, a drugie nie może usunąć czegoś innego, niż widziało.
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version]
+              properties:
+                expected_version: { $ref: "#/components/schemas/Version" }
+      responses:
+        "204":
+          description: Termin usunięty
+        "409": { $ref: "#/components/responses/Conflict" }
+
     patch:
       tags: [Zapis]
       summary: Zmiana terminu
@@ -535,7 +658,6 @@ paths:
                 time: { $ref: "#/components/schemas/TimeOfDay" }
                 duration_minutes: { type: integer }
                 status: { type: string, enum: [to_confirm, confirmed, finished] }
-                owner_id: { type: [string, "null"] }
       responses:
         "200":
           description: Termin po zmianie
@@ -683,14 +805,69 @@ paths:
 
   # ---------------------------------------------------------------- Głos
 
+  /voice/sessions:
+    post:
+      tags: [Głos]
+      summary: Otwarcie sesji głosowej
+      description: |
+        Zakłada techniczną sesję transportu głosu należącą do **zalogowanego
+        użytkownika i konkretnej instalacji** (`installation_id`). Sesja jest
+        wyłącznie nośnikiem rozmowy: nie tworzy drugiego systemu rozmów, zadań
+        ani akcji — historię asystenta i wnioski o akcje prowadzi nadal
+        kanoniczny silnik asystenta.
+
+        Powtórzenie żądania z tym samym `session_id` nie zakłada drugiej sesji
+        (idempotencja po identyfikatorze z aplikacji).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, installation_id]
+              properties:
+                session_id:
+                  type: string
+                  description: Identyfikator nadany przez aplikację (np. UUID).
+                installation_id: { type: string }
+                context_version: { $ref: "#/components/schemas/Version" }
+                language:
+                  type: string
+                  enum: [pl, uk, ru]
+      responses:
+        "201":
+          description: Sesja otwarta
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VoiceSession" }
+        "200":
+          description: Sesja już istniała (powtórzone żądanie) — ten sam stan
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VoiceSession" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: |
+            Sesja należy do innej instalacji tego samego użytkownika albo
+            do innego użytkownika. Rozmowa nie może przejąć cudzej sesji.
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
   /voice/conversation-token:
     post:
       tags: [Głos]
-      summary: Wydanie krótkotrwałego tokenu rozmowy
+      summary: Wydanie tokenu rozmowy
       description: |
-        Backend tworzy sesję u dostawcy i zwraca **tylko token** — klucz API
-        dostawcy nigdy nie opuszcza serwera. Token jest związany z sesją,
-        użytkownikiem i wersją kontekstu; wygasa szybko.
+        Backend prosi dostawcę o token rozmowy i zwraca aplikacji **tylko
+        token**; klucz API dostawcy nigdy nie opuszcza serwera. Token nie jest
+        zapisywany ani logowany — w bazie zostaje wyłącznie powiązanie sesji
+        z rozmową u dostawcy (`provider_conversation_id`).
+
+        `context_version` musi zgadzać się z wersją bieżącą sesji; niezgodność
+        to `409`, żeby aplikacja nie zaczęła rozmowy o nieaktualnym kontekście.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -713,24 +890,89 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ConversationToken" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: Sesja należy do innej instalacji lub użytkownika. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
         "503":
-          description: Dostawca głosu niedostępny — aplikacja pokazuje to wprost,
-          # Bez udawania, że rozmowa trwa.
+          description: |
+            Dostawca głosu niedostępny albo głos wyłączony konfiguracją.
+            Aplikacja pokazuje to wprost — nie udaje, że rozmowa trwa.
 
-  /voice/sessions/{session_id}:
-    delete:
+  /voice/sessions/{session_id}/context:
+    patch:
       tags: [Głos]
-      summary: Zakończenie sesji głosowej
+      summary: Zmiana kontekstu w trakcie rozmowy
       description: |
-        Wywoływane przy zakończeniu rozmowy, przejściu w tło dłuższym niż dozwolone
-        oraz przy wylogowaniu. Backend zwalnia sesję u dostawcy i kończy naliczanie.
+        Podnosi `context_version` sesji, gdy aplikacja zmieni kontekst (np.
+        wejście w inną sprawę). Powrót do wcześniejszej wersji jest odrzucany:
+        wersja może tylko rosnąć, inaczej token wydany dla nowszej wersji
+        opisywałby starszy kontekst.
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [context_version]
+              properties:
+                context_version: { $ref: "#/components/schemas/Version" }
+                context: { $ref: "#/components/schemas/AssistantContext" }
+      responses:
+        "200":
+          description: Sesja z nową wersją kontekstu
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VoiceSession" }
+        "403": { description: Sesja należy do innej instalacji lub użytkownika. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /voice/sessions/{session_id}/status:
+    get:
+      tags: [Głos]
+      summary: Stan sesji głosowej
+      description: |
+        Aplikacja sprawdza, czy sesja nadal żyje (po powrocie z tła, po
+        odzyskaniu sieci). Odpowiedź mówi wprost, czy sesja jest aktywna,
+        zakończona czy wygasła — bez zgadywania z upływu czasu.
       parameters:
         - name: session_id
           in: path
           required: true
           schema: { type: string }
       responses:
+        "200":
+          description: Stan sesji
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VoiceSession" }
+        "403": { description: Sesja należy do innej instalacji lub użytkownika. }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /voice/sessions/{session_id}:
+    delete:
+      tags: [Głos]
+      summary: Zakończenie sesji głosowej
+      description: |
+        Wywoływane przy zakończeniu rozmowy, przejściu w tło dłuższym niż
+        dozwolone oraz przy wylogowaniu. Backend zamyka sesję po swojej stronie
+        i przestaje uznawać wydane dla niej tokeny; powtórzenie jest bezpieczne.
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema: { type: string }
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
         "204": { description: Sesja zamknięta }
+        "403": { description: Sesja należy do innej instalacji lub użytkownika. }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   # ---------------------------------------------------------------- Synchronizacja
 
@@ -897,12 +1139,11 @@ components:
 
     NewClient:
       type: object
-      required: [display_name, topic, language, owner_id]
+      required: [display_name, topic, language]
       properties:
         display_name: { type: string, minLength: 2 }
         topic: { type: string, minLength: 3 }
         language: { $ref: "#/components/schemas/LanguageCode" }
-        owner_id: { type: [string, "null"] }
         stage:
           type: string
           enum: [new, in_contact, client]
@@ -914,22 +1155,24 @@ components:
 
     NewCase:
       type: object
-      required: [client_id, title, summary, owner_id]
+      required: [client_id, title, summary]
       properties:
         client_id: { type: string }
         title: { type: string, minLength: 3 }
         summary: { type: string, minLength: 3 }
-        owner_id: { type: string }
 
     NewTask:
       type: object
-      required: [title, due_date, priority]
+      required: [title, priority]
       properties:
         title: { type: string, minLength: 1 }
         client_id: { type: [string, "null"] }
         case_id: { type: [string, "null"] }
-        owner_id: { type: [string, "null"] }
-        due_date: { $ref: "#/components/schemas/LocalDate" }
+        due_date:
+          oneOf:
+            - $ref: "#/components/schemas/LocalDate"
+            - type: "null"
+          description: Termin można pominąć — patrz `Task.due_date`.
         priority:
           type: string
           enum: [normal, urgent]
@@ -954,7 +1197,6 @@ components:
         day: { $ref: "#/components/schemas/LocalDate" }
         time: { $ref: "#/components/schemas/TimeOfDay" }
         duration_minutes: { type: integer, minimum: 5, maximum: 480 }
-        owner_id: { type: [string, "null"] }
         kind: { type: string, enum: [consultation, case_deadline] }
         place: { type: [string, "null"] }
 
@@ -991,25 +1233,29 @@ components:
         language: { $ref: "#/components/schemas/LanguageCode" }
         topic: { type: string }
         stage: { type: string, enum: [new, in_contact, client] }
-        owner_id: { type: [string, "null"] }
         source: { type: string, enum: [manual, web_form, whatsapp, import] }
         created_at: { $ref: "#/components/schemas/LocalDate" }
         briefing: { type: [string, "null"] }
         incoming_message: { type: [string, "null"] }
         incoming_translation: { type: [string, "null"] }
-        incoming_time: { $ref: "#/components/schemas/TimeOfDay" }
+        incoming_time:
+          type: [string, "null"]
+          pattern: "^[0-9]{2}:[0-9]{2}$"
+          description: >-
+            Godzina ostatniej wiadomości przychodzącej. `null` razem z
+            `incoming_message: null` — gdy nie ma wiadomości, nie ma też godziny;
+            wpisanie tu 00:00 byłoby nieprawdą.
         needs_reply: { type: boolean }
         version: { $ref: "#/components/schemas/Version" }
 
     LegalCase:
       type: object
-      required: [id, number, title, client_id, owner_id, status, created_at, version]
+      required: [id, number, title, client_id, status, created_at, version]
       properties:
         id: { type: string, example: case-041 }
         number: { type: string }
         title: { type: string }
         client_id: { type: string }
-        owner_id: { type: string }
         status: { type: string, enum: [in_progress, awaiting_client, closed] }
         summary: { type: string }
         created_at: { $ref: "#/components/schemas/LocalDate" }
@@ -1017,16 +1263,27 @@ components:
 
     ScheduledEvent:
       type: object
-      required: [id, client_id, title, day, time, duration_minutes, kind, status, version]
+      required: [id, client_id, title, day, all_day, duration_minutes, kind, status, version]
       properties:
         id: { type: string }
         client_id: { type: string }
         case_id: { type: [string, "null"] }
         title: { type: string }
         day: { $ref: "#/components/schemas/LocalDate" }
-        time: { $ref: "#/components/schemas/TimeOfDay" }
-        duration_minutes: { type: integer, minimum: 5, maximum: 480 }
-        owner_id: { type: [string, "null"] }
+        time:
+          type: [string, "null"]
+          pattern: "^[0-9]{2}:[0-9]{2}$"
+          description: >-
+            Godzina zegarowa w strefie kancelarii. `null` wyłącznie dla terminu
+            całodniowego (`all_day: true`) — wtedy dnia nie da się zapisać
+            godziną, a wpisanie `00:00` byłoby nieprawdą.
+        all_day:
+          type: boolean
+          description: >-
+            Termin całodniowy (np. upływ terminu na dokumenty). CRM prowadzi to
+            jako `events.all_day`; aplikacja nie ma jeszcze osobnej prezentacji
+            dla terminu całodniowego — patrz ograniczenia etapu M2b.
+        duration_minutes: { type: integer, minimum: 0, maximum: 480 }
         kind: { type: string, enum: [consultation, case_deadline] }
         status: { type: string, enum: [to_confirm, confirmed, finished] }
         place: { type: [string, "null"] }
@@ -1034,14 +1291,21 @@ components:
 
     Task:
       type: object
-      required: [id, title, due_date, is_done, priority, version]
+      required: [id, title, is_done, priority, version]
       properties:
         id: { type: string }
         title: { type: string }
         client_id: { type: [string, "null"] }
         case_id: { type: [string, "null"] }
-        owner_id: { type: [string, "null"] }
-        due_date: { $ref: "#/components/schemas/LocalDate" }
+        due_date:
+          oneOf:
+            - $ref: "#/components/schemas/LocalDate"
+            - type: "null"
+          description: >-
+            Termin bywa nieustalony (`null`) i to nie jest brak danych: kancelaria
+            prowadzi zadania „do zrobienia, kiedy będzie termin”. Panel widzi je
+            od zawsze, więc aplikacja też musi — z datą zastępczą kłamałaby
+            o pilności.
         is_done: { type: boolean }
         priority: { type: string, enum: [normal, urgent] }
         version: { $ref: "#/components/schemas/Version" }
@@ -1215,7 +1479,6 @@ components:
         actor_user_id: { type: string }
         text: { type: string, minLength: 1 }
         context: { $ref: "#/components/schemas/AssistantContext" }
-        task_owner_id: { type: [string, "null"] }
         task_due_date: { $ref: "#/components/schemas/LocalDate" }
         origin: { type: string, enum: [ui, voice, assistant_text] }
 
@@ -1264,24 +1527,57 @@ components:
 
     # ------------------------------------------------------------ Głos
 
+    VoiceSession:
+      type: object
+      required: [id, state, context_version, installation_id, started_at]
+      properties:
+        id: { type: string }
+        state:
+          type: string
+          enum: [active, ended, expired, revoked]
+          description: >-
+            Stan sesji po stronie backendu. `expired` i `revoked` są osobne od
+            `ended`: pierwsze wynika z upływu czasu, drugie z decyzji
+            (wylogowanie, utrata instalacji).
+        context_version: { $ref: "#/components/schemas/Version" }
+        installation_id: { type: string }
+        started_at: { type: string, format: date-time }
+        ended_at: { type: [string, "null"], format: date-time }
+        provider_conversation_id:
+          type: [string, "null"]
+          description: Rozmowa u dostawcy, jeśli już wydano token. Bez tokenu — `null`.
+
     ConversationToken:
       type: object
-      required: [token, expires_at, session_id]
+      required: [token, conversation_id, context_version]
       properties:
         token:
           type: string
           description: |
             Krótkotrwały token rozmowy wydany przez backend. To **nie** jest klucz
-            API dostawcy — klucz pozostaje na serwerze i nigdy nie trafia do aplikacji.
-        expires_at: { type: string, format: date-time }
-        session_id: { type: string }
-        provider_conversation_id: { type: [string, "null"] }
+            API dostawcy — klucz pozostaje na serwerze i nigdy nie trafia do
+            aplikacji. Backend nie zapisuje go ani nie loguje.
+        conversation_id:
+          type: string
+          description: |
+            Identyfikator rozmowy u dostawcy. Backend zapisuje wyłącznie
+            powiązanie: sesja mobilna ↔ rozmowa u dostawcy. Służy do
+            rozpoznania rozmowy przy zamknięciu i w telemetrii.
+        context_version: { $ref: "#/components/schemas/Version" }
+        session_id:
+          type: string
+          description: Sesja mobilna, dla której wydano token (gdy dotyczy).
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: >-
+            Dostawca **nie podaje** potwierdzonego czasu wygaśnięcia tokenu,
+            więc backend go nie wymyśla. Aplikacja traktuje brak wartości jako
+            „nieznany”, a nie „nie wygasa”: żywotność sesji pilnuje stan sesji
+            (`GET /voice/sessions/{id}/status`), a nie zgadywanie z zegara.
         capabilities:
-          type: object
-          additionalProperties: { type: boolean }
-          description: Co dostawca faktycznie potrafi; aplikacja nie zakłada z góry.
-
-    # ------------------------------------------------------------ Synchronizacja
+          type: [object, "null"]
+          description: Co wolno w tej sesji (np. tryb zapisu); do rozszerzenia.
 
     ChangeBatch:
       type: object
