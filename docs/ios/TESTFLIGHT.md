@@ -1,6 +1,8 @@
 # Emma Gemini Live na iPhonie przez TestFlight
 
-Build powstaje na macOS w GitHub Actions z gałęzi `feat/gemini-live-voice`.
+Build powstaje na macOS w GitHub Actions z bieżącego commita. Automatyczny deploy
+uruchamia się po `push` na `master`; można go też uruchomić ręcznie z zakładki
+Actions dla wybranej gałęzi.
 Schemat `Emma-Staging` używa `pl.kancelaria.emma.staging`, zespołu
 `QZ25N94YZ8`, backendu `https://advokat-varshava.pl` i Gemini 3.8 Live.
 Numer builda to identyfikator przebiegu GitHub Actions, więc kolejne wysyłki
@@ -70,10 +72,11 @@ Nie umieszczaj certyfikatu, kluczy ani profilu w repozytorium lub zgłoszeniu.
 ## Pierwszy i następne buildy
 
 W zakładce **Actions** repozytorium wybierz `Emma · TestFlight`, potem
-**Run workflow** z gałęzi `master`. Workflow pobiera kod aplikacji z
-`feat/gemini-live-voice`, generuje projekt Xcode, podpisuje schemat Staging
-i wysyła `.ipa` do App Store Connect. Przed pierwszą wysyłką warto otworzyć
-`ios/Config/Staging.xcconfig` w tej gałęzi i potwierdzić dostawcę `gemini_live`.
+**Run workflow** z gałęzi, którą chcesz wysłać. Workflow pobiera wskazany commit,
+generuje projekt XcodeGen, podpisuje schemat Staging i wysyła `.ipa` do App Store
+Connect. Przy automatycznym deployu z `master` nie trzeba uruchamiać go ręcznie.
+Przed pierwszą wysyłką warto otworzyć `ios/Config/Staging.xcconfig` i potwierdzić
+dostawcę `gemini_live`.
 
 Po przetworzeniu buildu przez Apple: App Store Connect → aplikacja Emma Beta →
 **TestFlight → Internal Testing**. Utwórz grupę wewnętrzną, dodaj swoje konto

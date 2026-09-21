@@ -1,6 +1,11 @@
 name: Emma · TestFlight
 
 on:
+  push:
+    branches: [master]
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-testflight.yml"
   workflow_dispatch:
 
 permissions:
@@ -17,10 +22,10 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - name: Pobierz gałąź z Gemini Live
+      - name: Pobierz bieżący commit
         uses: actions/checkout@v4
         with:
-          ref: feat/gemini-live-voice
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Wybierz Xcode
