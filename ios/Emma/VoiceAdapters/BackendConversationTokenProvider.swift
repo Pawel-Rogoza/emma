@@ -3,25 +3,23 @@ import Foundation
 
 // MARK: - Token rozmowy z backendu
 //
-// Aplikacja **nie zawiera klucza ElevenLabs**. Klucz żyje wyłącznie na backendzie,
-// a urządzenie otrzymuje krótkotrwały token rozmowy (§5.1). Ten plik jest jedynym
+// Aplikacja **nie zawiera klucza Gemini**. Klucz żyje wyłącznie na backendzie,
+// a urządzenie otrzymuje krótkotrwałe poświadczenie rozmowy (§5.1). Ten plik jest jedynym
 // miejscem, w którym aplikacja prosi o taki token.
 //
-// Kontrakt backendu (zweryfikowany na SDK 3.3.1):
+// Kontrakt backendu:
 //   `POST /api/mobile/v1/voice/conversation-token`
-//   → `{ "token": …, "conversation_id": …, "context_version": …, "session_id": … }`
+//   → `{ "token": …, "model": "gemini-3.8-live", "context_version": …, "session_id": … }`
 //
-// Kontrakt **nie** zwraca `expires_at`: dostawca nie podaje potwierdzonego czasu
-// wygaśnięcia, więc aplikacja go nie wymyśla. Prefiks `/api/mobile/v1` jest
+// Kontrakt może zwracać `expires_at`; gdy go nie ma, aplikacja nie wymyśla czasu.
+// Prefiks `/api/mobile/v1` jest
 // obowiązkowy — trasa bez niego nie istnieje i nginx jej nie przepuszcza.
 //
 // Ścieżka normalna prowadzi przez `BackendVoiceSessionRepository` (`create` wydaje
 // token razem z sesją). Ten typ istnieje wyłącznie po to, by transport umiał
 // domknąć brak tokenu, i sam nigdy nie używa klucza API.
 //
-// Status: nadal **niezweryfikowane na koncie produkcyjnym** (`blocked_external` —
-// brak konta dostawcy). Kod nie deklaruje, że integracja działa; patrz
-// docs/ios/PROVIDER_CONTRACT_TESTS.md.
+// Token jest krótkotrwałym poświadczeniem Gemini Live i nigdy nie jest logowany.
 
 /// Pojedynczy token rozmowy wydany przez backend.
 struct BackendConversationToken: Decodable, Sendable {

@@ -1,12 +1,11 @@
 import XCTest
 @testable import Emma
 
-// MARK: - Kontrakt sesji głosu: obaj dostawcy przez to samo repozytorium
+// MARK: - Kontrakt sesji głosu Gemini Live
 //
-// Backend wydaje token w dwóch różnych kształtach (ElevenLabs ma
-// `conversation_id` bez `expires_at`, Gemini Live odwrotnie). Te testy pilnują,
-// że **jedna** implementacja repozytorium czyta oba, a brak identyfikatora
-// rozmowy nie jest mylony z błędem ani wypełniany pustym napisem.
+// Backend wydaje token Gemini Live z opcjonalnym `expires_at` i bez
+// identyfikatora rozmowy dostawcy. Te testy pilnują, że brak tego identyfikatora
+// nie jest mylony z błędem ani wypełniany pustym napisem.
 //
 // Nie ma tu sieci: `StubURLProtocol` odpowiada na żądania, a odpowiedź na
 // otwarcie sesji odsyła `session_id` wygenerowany przez klienta — bo backend
@@ -95,28 +94,22 @@ final class VoiceSessionContractTests: XCTestCase {
         XCTAssertNil(session.expiresAt)
     }
 
+    func testUnsupportedProviderTokenIsRejected() async throws {
+        stubVoiceFlow { sessionID in
+            """
+            {"token":"unexpected","provider":"other_provider",
+             "context_version":1,"session_id":"\(sessionID)"}
+            """
+        }
+
+        XCTAssertThrowsError(try await makeRepository().create(request()))
+    }
+
     func testExpiryParsesBothISO8601Variants() {
         XCTAssertNotNil(BackendVoiceSessionRepository.parseExpiry("2026-09-15T21:30:00.000Z"))
         XCTAssertNotNil(BackendVoiceSessionRepository.parseExpiry("2026-09-15T21:30:00Z"))
         XCTAssertNil(BackendVoiceSessionRepository.parseExpiry(""))
         XCTAssertNil(BackendVoiceSessionRepository.parseExpiry(nil))
-    }
-
-    // MARK: ElevenLabs (ścieżka domyślna — bez regresji)
-
-    func testElevenLabsShapeStillCarriesConversationID() async throws {
-        stubVoiceFlow { sessionID in
-            """
-            {"token":"tk-eli","provider":"elevenlabs","conversation_id":"cx-777",
-             "context_version":1,"session_id":"\(sessionID)"}
-            """
-        }
-
-        let session = try await makeRepository().create(request())
-        XCTAssertEqual(session.conversationToken, "tk-eli")
-        XCTAssertEqual(session.providerConversationID, "cx-777")
-        // Dostawca nie podaje czasu wygaśnięcia — aplikacja go nie wymyśla.
-        XCTAssertNil(session.expiresAt)
     }
 
     func testMissingSessionIDSessionEchoIsRejected() async throws {

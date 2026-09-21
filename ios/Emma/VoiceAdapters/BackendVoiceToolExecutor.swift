@@ -9,7 +9,7 @@ import Foundation
 // engine i audyt. Aplikacja nie ma ścieżki zapisu.
 //
 // Autoryzacja to bearer **użytkownika** (rozmowa zalogowanej osoby), nie sekret
-// usługi. Sekret usługi zostaje tam, gdzie jest dziś: przy agencie ElevenLabs.
+// usługi. Sekret Gemini pozostaje wyłącznie po stronie backendu.
 
 actor BackendVoiceToolExecutor: VoiceToolExecuting {
 

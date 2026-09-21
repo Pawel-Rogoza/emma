@@ -6,9 +6,9 @@ import SwiftUI
 // koordynatora, a opuszczenie ekranu **nie** kończy rozmowy (§5.6). Nie ma tu
 // drugiego transportu, drugiego subskrybenta ani drugiego silnika audio.
 //
-// Nota `.demo-foot` mówi prawdę o bieżącym środowisku: w Demo nie ma ani kont
-// dostawców, ani integracji z ElevenLabs; poza Demo rozmowa idzie do prawdziwego
-// backendu i dostawcy, a demonstracyjne pozostają tylko te czynności, które
+// Nota `.demo-foot` mówi prawdę o bieżącym środowisku: w Demo nie ma połączenia
+// z backendem; poza Demo rozmowa idzie przez Gemini Live do prawdziwego backendu,
+// a demonstracyjne pozostają tylko te czynności, które
 // naprawdę są symulowane (np. wysyłka wiadomości).
 
 
@@ -433,8 +433,7 @@ struct AssistantScreen: View {
     // MARK: Uczciwa nota o demo (`.demo-foot`)
     //
     // W Demo to mock i nie ma integracji z dostawcą. Poza Demo rozmowa głosowa
-    // naprawdę idzie przez backend do ElevenLabs, więc stara nota „nie ma
-    // integracji z ElevenLabs” byłaby nieprawdą. Nadal mówimy wprost, co jest
+    // naprawdę idzie przez backend do Gemini Live. Nadal mówimy wprost, co jest
     // demonstracyjne: wysyłka wiadomości i odsłuch tekstu (syntezator systemu,
     // nie głos Emmy); WhatsApp pozostaje niepodłączony.
 
@@ -452,11 +451,11 @@ struct AssistantScreen: View {
     private var demoFootText: String {
         if dependencies.configuration.usesMockServices {
             return "Emma działa na przykładowych scenariuszach. Głos jest demonstracyjny: "
-                + "nie ma kont dostawców, więc nie ma integracji z ElevenLabs ani z WhatsApp, "
+                + "nie ma połączenia z backendem, więc rozmowa głosowa pozostaje scenariuszowa, "
                 + "a wysyłka wiadomości jest symulowana. Odsłuch w demo jest scenariuszowy "
                 + "(bez dźwięku); poza demo czyta go syntezator systemu, nie głos Emmy."
         }
-        return "Rozmowa głosowa łączy się z ElevenLabs przez serwer kancelarii "
+        return "Rozmowa głosowa łączy się z Gemini Live przez serwer kancelarii "
             + "(klucz dostawcy nigdy nie trafia do aplikacji). Nadal demonstracyjne: "
             + "wysyłka wiadomości i zapisy akcji są symulowane, WhatsApp nie jest podłączony, "
             + "a odsłuch tekstu czyta syntezator systemu, nie głos Emmy."

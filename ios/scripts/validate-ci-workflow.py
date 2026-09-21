@@ -38,7 +38,7 @@ REQUIRED_PATHS = [
 SECRET_PATTERNS = [
     (r"sk-[A-Za-z0-9]{10,}", "wygląda na klucz API"),
     (r"(?i)\b(api[_-]?key|secret|token)\s*[:=]\s*['\"][^'\"{$][^'\"]{6,}", "wartość sekretu wpisana wprost"),
-    (r"ELEVENLABS_[A-Z_]*KEY", "nazwa klucza dostawcy w workflow"),
+    (r"GEMINI_[A-Z_]*KEY", "nazwa klucza dostawcy w workflow"),
 ]
 
 

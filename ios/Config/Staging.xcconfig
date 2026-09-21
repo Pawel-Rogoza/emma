@@ -1,5 +1,5 @@
 // Konfiguracja Staging — przeznaczona do testów z backendem.
-// Wpisujemy tu wyłącznie adres HTTPS. Kluczy dostawców (Qwen, ElevenLabs, Meta)
+// Wpisujemy tu wyłącznie adres HTTPS. Klucze dostawcy i innych usług
 // NIE wpisujemy do Xcode ani do tego pliku — pozostają wyłącznie na serwerze (§1.8).
 
 #include? "Local.xcconfig"

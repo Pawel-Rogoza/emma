@@ -817,18 +817,16 @@ struct BackendVoiceSessionDTO: Decodable {
     }
 }
 
-/// Odpowiedź `POST /voice/conversation-token`. Kształt zależy od dostawcy:
-///   • ElevenLabs zwraca `conversation_id` i **nie** podaje `expires_at`,
-///   • Gemini Live zwraca `expires_at`/`model` i **nie ma** identyfikatora
-///     rozmowy (Live API go nie wydaje).
-/// Dlatego oba pola są opcjonalne: brak wartości znaczy „dostawca tego nie
-/// podaje”, a nie „udało się wypełnić zerem”.
+/// Odpowiedź `POST /voice/conversation-token` dla Gemini Live. Live API nie
+/// wydaje identyfikatora rozmowy; `expires_at` i `model` są opcjonalne, bo
+/// backend może ich nie zwrócić w każdej wersji kontraktu.
 struct BackendConversationTokenDTO: Decodable {
     let token: String
     let conversationID: String?
     let contextVersion: Int
     let sessionID: String
-    /// Nazwa dostawcy, który wydał token (`elevenlabs` / `gemini_live`).
+    /// Nazwa dostawcy, który wydał token. Musi być `gemini_live`, jeśli pole
+    /// jest obecne.
     let provider: String?
     /// Model wskazany przez backend — aplikacja ma go odesłać w `setup`.
     let model: String?

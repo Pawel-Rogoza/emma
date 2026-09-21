@@ -21,7 +21,7 @@ public final class AudioSessionController {
     }
 
     public private(set) var mode: Mode = .idle
-    /// Czy sesję audio trzyma dostawca rozmowy (WebRTC LiveKit/ElevenLabs).
+    /// Czy sesję audio trzyma transport Gemini Live.
     ///
     /// Wtedy odsłuch i dyktowanie **nie przełączają** kategorii ani nie
     /// dezaktywują sesji: zrobiwszy to, odebrałyby mikrofon i dźwięk trwającej

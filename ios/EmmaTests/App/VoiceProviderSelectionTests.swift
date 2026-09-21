@@ -3,9 +3,8 @@ import XCTest
 
 // MARK: - Wybór dostawcy głosu: konfiguracja i fabryka
 //
-// Przełączenie dostawcy ma być **jedną zmianą konfiguracji** i musi umieć wrócić.
-// Te testy pilnują, że:
-//   • brak wartości w konfiguracji zostawia ElevenLabs (domyślna ścieżka),
+// Konfiguracja głosu ma jedną, jawną ścieżkę: Gemini Live. Te testy pilnują, że:
+//   • brak lub błędna wartość nie uruchamia innego dostawcy,
 //   • Demo nigdy nie tworzy transportu dostawcy (brak sieci i sekretów),
 //   • wybrany dostawca faktycznie trafia do fabryki, a nie do mocka.
 // Bez tego „rollback” byłby obietnicą bez dowodu.
@@ -29,14 +28,14 @@ final class VoiceProviderSelectionTests: XCTestCase {
         return AppConfiguration.resolve(infoDictionary: info, arguments: [])
     }
 
-    func testMissingProviderValueStaysOnElevenLabs() {
+    func testMissingProviderValueUsesGeminiLive() {
         let resolved = configuration(environment: .production, baseURL: "https://example.test", provider: nil)
-        XCTAssertEqual(resolved.voiceProvider, .elevenlabs)
+        XCTAssertEqual(resolved.voiceProvider, .geminiLive)
     }
 
-    func testUnknownProviderValueDoesNotSwitchProvider() {
+    func testUnknownProviderValueUsesGeminiLive() {
         let resolved = configuration(environment: .production, baseURL: "https://example.test", provider: "gemini-3")
-        XCTAssertEqual(resolved.voiceProvider, .elevenlabs)
+        XCTAssertEqual(resolved.voiceProvider, .geminiLive)
     }
 
     func testGeminiLiveIsSelectedFromConfiguration() {
@@ -50,7 +49,7 @@ final class VoiceProviderSelectionTests: XCTestCase {
             infoDictionary: [
                 "EMMAEnvironment": "staging",
                 "EMMAApiBaseURL": "https://example.test",
-                "EMMAVoiceProvider": "elevenlabs",
+                "EMMAVoiceProvider": "gemini_live",
             ],
             arguments: ["-EMMAVoiceProvider", "gemini_live"]
         )

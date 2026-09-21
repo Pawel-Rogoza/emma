@@ -9,8 +9,7 @@
 EMMA_DEVELOPMENT_TEAM = ABCDE12345
 EMMA_API_BASE_URL = https://example.invalid
 
-// Dostawca rozmowy głosowej: elevenlabs (domyślnie) albo gemini_live.
-// Backend musi mieć tę samą wartość w EMMA_VOICE_PROVIDER — inaczej wyda token
-// innego dostawcy, a aplikacja zgłosi rozjazd zamiast udawać, że działa.
-EMMA_VOICE_PROVIDER = elevenlabs
+// Jedyny dostawca rozmowy głosowej Emmy: Gemini Live.
+// Backend musi mieć tę samą wartość w EMMA_VOICE_PROVIDER.
+EMMA_VOICE_PROVIDER = gemini_live
 EMMA_VOICE_MODEL = gemini-3.8-live

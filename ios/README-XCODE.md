@@ -47,8 +47,8 @@ cp Local.xcconfig.example Local.xcconfig
 ```
 
 `Local.xcconfig` jest w `.gitignore` i nigdy nie trafia do repozytorium.
-**Klucze dostawców (ElevenLabs, WhatsApp) nie należą do aplikacji** — aplikacja
-otrzymuje wyłącznie krótkotrwały token rozmowy wydany przez backend.
+**Klucze dostawcy i WhatsApp nie należą do aplikacji** — aplikacja otrzymuje
+wyłącznie krótkotrwałe poświadczenie Gemini Live wydane przez backend.
 
 ## 4. Uruchomienie
 
@@ -89,23 +89,18 @@ Ten skrypt kompiluje i wykonuje logikę domenową oraz sprawdza składnię wszys
 plików Swift, w tym widoków SwiftUI. **Nie kompiluje SwiftUI i nie uruchamia
 symulatora** — to wymaga macOS i Xcode.
 
-## 7. Pakiety zależności
+## 7. Transport głosu
 
-`project.yml` przypina dwie wersje dokładnie:
-
-- `elevenlabs-swift-sdk` `exactVersion: 3.3.1` — oficjalne SDK rozmowy głosowej,
-- `client-sdk-swift` (LiveKit) `exactVersion: 2.16.0` — świadome przypięcie zależności
-  przechodniej, bo kolejne wydania LiveKit wymagają coraz nowszego toolchainu.
-
-Kod adaptera dostawcy jest objęty `#if canImport(ElevenLabs)`, więc projekt zbuduje się
-także bez pobranych pakietów — tylko bez ścieżki dostawcy głosu.
+Gemini Live działa przez natywny `URLSessionWebSocketTask` i `AVAudioEngine`.
+Projekt nie pobiera SDK dostawcy ani zewnętrznych pakietów. Backend wydaje krótkotrwałe
+poświadczenie, a aplikacja wykonuje dozwolone narzędzia przez autoryzowany backend.
 
 ## 8. Czego ten projekt jeszcze nie robi
 
 Uczciwie, bez upiększania:
 
-- **Nie ma zweryfikowanej integracji z dostawcą głosu** — brak konta u dostawcy
-  (`blocked_external`). Adapter jest napisany, ale nieuruchomiony na urządzeniu.
+- **Integracja z Gemini Live wymaga działającego backendu i tokenu sesji.** Demo
+  pozostaje lokalnym mockiem; Staging/TestFlight używa wyłącznie Gemini Live.
 - **WhatsApp nie jest połączony.** Ekran rozmów pokazuje to wprost w stopce listy
   („Wiadomości przykładowe · WhatsApp niepołączony”), a statusy wiadomości są przykładowe.
 - **Nie ma backendu** — repozytorium demo udaje warstwę danych i działa w pamięci.

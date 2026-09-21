@@ -4,8 +4,8 @@ import Foundation
 
 // MARK: - Adapter transportu Gemini Live API (speech-to-speech)
 //
-// Drugi dostawca głosu, obok ElevenLabs. Ten plik jest **jedynym** miejscem,
-// w którym aplikacja rozmawia z Live API:
+// Jedyny transport głosowy Emmy. Ten plik jest **jedynym** miejscem,
+// w którym aplikacja rozmawia z Gemini Live API:
 //   • nie zawiera klucza API — dostaje wyłącznie krótkotrwałe poświadczenie
 //     wydane przez backend (`BackendConversationTokenProvider`),
 //   • nie zawiera instrukcji systemowej ani deklaracji narzędzi — są zablokowane
@@ -16,7 +16,7 @@ import Foundation
 // Podział odpowiedzialności jest celowy: logika protokołu i reguły tury siedzą
 // w `Core/Voice` (testowalne bez telefonu), a tutaj zostaje sieć i audio.
 //
-// Czego Live API nie daje w porównaniu z ElevenLabs Agents:
+// Ograniczenia Live API, które obsługujemy jawnie:
 //   • nie ma identyfikatora rozmowy ani hostowanej pętli agenta,
 //   • nie ma potwierdzonego końca odtwarzania — zdarzenia playbacku są lokalne
 //     i oznaczone jako przybliżone,
@@ -110,8 +110,7 @@ public final class GeminiLiveTransport: VoiceTransport {
         tracker = GeminiLiveTurnTracker()
         microphone.setMuted(false)
 
-        // Sesję audio dla rozmowy ustawiamy tutaj, dokładnie jak w transporcie
-        // ElevenLabs: dostawcy jej nie ustawiają, a bez `.playAndRecord` wejście
+        // Sesję audio dla rozmowy ustawiamy tutaj. Bez `.playAndRecord` wejście
         // audio nie istnieje. Awarię meldujemy po otwarciu kanału zdarzeń.
         audioSession?.setProviderOwnsAudioSession(true)
         let audioActivationFailed = audioSession?.activate(.conversation) == false

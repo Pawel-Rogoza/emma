@@ -109,15 +109,14 @@ final class Stage6ContractTests: XCTestCase {
         )
     }
 
-    /// Skonfigurowany backend wybiera **adapter dostawcy**, nie mock. W tym
-    /// repozytorium SDK `ElevenLabs` jest zależnością, więc ścieżka kompiluje się
-    /// naprawdę; brakuje kont i backendu wydającego token, a nie kodu transportu.
+    /// Skonfigurowany backend wybiera adapter Gemini Live, nie mock.
     /// Odsłuch pozostaje mockiem w obu wariantach — to jest niezamknięta część F05.
     func testConfiguredBackendSelectsProviderAdapterButPlaybackStaysMock() {
         let configured = AppConfiguration(
-            environment: .demo,
+            environment: .staging,
             apiBaseURL: URL(string: "https://example.invalid/api"),
-            defaultLocale: "pl-PL"
+            defaultLocale: "pl-PL",
+            voiceProvider: .geminiLive
         )
         XCTAssertFalse(configured.usesMockServices)
 
@@ -129,17 +128,10 @@ final class Stage6ContractTests: XCTestCase {
             mockScenarioName: "standard-proposal-flow"
         )
 
-        if VoiceServicesFactory.providerIsAvailable(configuration: configured) {
-            XCTAssertTrue(
-                transport is ElevenLabsVoiceTransport,
-                "Z adresem backendu i SDK wybieramy adapter dostawcy, nigdy mocka po cichu"
-            )
-        } else {
-            XCTAssertTrue(
-                transport is MockVoiceTransport,
-                "Bez SDK dostawcy nie ma czym mówić — zostaje jawny mock"
-            )
-        }
+        XCTAssertTrue(
+            transport is GeminiLiveTransport,
+            "Z adresem backendu wybieramy Gemini Live, nigdy mocka po cichu"
+        )
 
         XCTAssertTrue(
             VoiceServicesFactory.makePlaybackService(

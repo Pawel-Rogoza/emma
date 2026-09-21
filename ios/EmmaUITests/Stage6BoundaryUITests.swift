@@ -4,7 +4,7 @@ import XCTest
 //
 // Etap 6 nie zamyka się bez prawdziwych usług (patrz UX_VOICE_STAGES.md), więc
 // jedynym uczciwym zrzutem jest ten, który pokazuje **co jest mockiem, a co nie**:
-// stopka Emmy mówi wprost o scenariuszowym głosie, braku integracji z ElevenLabs
+// stopka Emmy mówi wprost o scenariuszowym głosie, braku połączenia z backendem
 // i WhatsApp oraz o scenariuszowym odsłuchu w demo.
 
 final class Stage6BoundaryUITests: XCTestCase {
@@ -49,7 +49,7 @@ final class Stage6BoundaryUITests: XCTestCase {
                 return "stopka nie mówi o scenariuszowym odsłuchu w demo"
             }
             guard self.application.descendants(matching: .any).matching(
-                NSPredicate(format: "label CONTAINS %@", "nie ma integracji z ElevenLabs")
+                NSPredicate(format: "label CONTAINS %@", "nie ma połączenia z backendem")
             ).firstMatch.exists else {
                 return "stopka nie mówi o braku integracji z dostawcą"
             }

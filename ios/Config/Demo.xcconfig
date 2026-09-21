@@ -21,6 +21,6 @@ EMMA_DEFAULT_LOCALE = pl
 
 // Dostawca rozmowy głosowej w Demo. Demo nie woła dostawcy (brak backendu),
 // ale wartość musi istnieć, żeby klucz w Info.plist nie był pusty.
-EMMA_VOICE_PROVIDER = elevenlabs
+EMMA_VOICE_PROVIDER = gemini_live
 // Model Gemini Live używany, gdy EMMA_VOICE_PROVIDER = gemini_live.
 EMMA_VOICE_MODEL = gemini-3.8-live

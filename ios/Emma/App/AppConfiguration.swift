@@ -5,8 +5,8 @@ import Foundation
 // Wartości pochodzą z `Info.plist`, który z kolei jest wypełniany z plików
 // `.xcconfig` (Demo/Staging/Production). W repozytorium **nie ma żadnych
 // sekretów**: `EMMA_API_BASE_URL` w Demo jest puste, a klucze dostawców
-// (ElevenLabs, WhatsApp) nigdy nie trafiają do aplikacji — aplikacja otrzymuje
-// wyłącznie token rozmowy wygenerowany przez backend (§5.1, §7.3).
+// Sekrety dostawcy i WhatsApp nigdy nie trafiają do aplikacji — aplikacja
+// otrzymuje wyłącznie krótkotrwałe poświadczenie Gemini Live z backendu.
 
 public struct AppConfiguration: Sendable {
 
@@ -28,9 +28,7 @@ public struct AppConfiguration: Sendable {
     /// Adres backendu. Pusty w Demo — aplikacja działa wtedy w pełni lokalnie.
     public let apiBaseURL: URL?
     public let defaultLocale: String
-    /// Który dostawca prowadzi rozmowę głosową. **Domyślnie ElevenLabs**:
-    /// brak wartości w konfiguracji nie może przełączyć dostawcy, bo zmienia to
-    /// także to, kto przetwarza treść rozmowy.
+    /// Dostawca prowadzący rozmowę głosową. Emma używa wyłącznie Gemini Live.
     public let voiceProvider: VoiceProvider
     /// Model dostawcy głosu. Dla Gemini Live backend przypina model w tokenie,
     /// więc aplikacja musi wysłać w `setup` tę samą nazwę.
@@ -44,12 +42,10 @@ public struct AppConfiguration: Sendable {
     /// backendu (`EMMA_VOICE_PROVIDER`); rozjazd jest wykrywany po odpowiedzi
     /// backendu na token, a nie przemilczany.
     public enum VoiceProvider: String, Sendable {
-        case elevenlabs
         case geminiLive = "gemini_live"
 
         public var displayName: String {
             switch self {
-            case .elevenlabs: return "ElevenLabs"
             case .geminiLive: return "Gemini Live"
             }
         }
@@ -59,7 +55,7 @@ public struct AppConfiguration: Sendable {
         environment: Environment,
         apiBaseURL: URL?,
         defaultLocale: String,
-        voiceProvider: VoiceProvider = .elevenlabs,
+        voiceProvider: VoiceProvider = .geminiLive,
         voiceModel: String = "gemini-3.8-live",
         showsUnverifiedProviderState: Bool = false
     ) {
@@ -101,11 +97,11 @@ public struct AppConfiguration: Sendable {
             rawVoiceProviderOverride = arguments[index + 1]
         }
 
-        // Nieznana wartość dostawcy nie przełącza rozmowy „na wszelki wypadek”:
-        // zostaje ElevenLabs, a rozjazd z backendem wyjdzie na jaw przy tokenie.
+        // Nieznana lub pusta wartość nie może uruchomić innego dostawcy.
+        // Jedyną ścieżką głosową Emmy jest Gemini Live.
         let voiceProvider = VoiceProvider(
             rawValue: rawVoiceProviderOverride.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        ) ?? .elevenlabs
+        ) ?? .geminiLive
 
         let trimmed = rawBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         // Demo z adresem backendu jest błędem konfiguracji, nie powodem do awarii:

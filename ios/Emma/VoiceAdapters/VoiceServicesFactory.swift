@@ -17,18 +17,9 @@ public enum VoiceServicesFactory {
 
     /// Czy w tym buildzie i konfiguracji można w ogóle użyć dostawcy.
     public static func providerIsAvailable(configuration: AppConfiguration) -> Bool {
-        switch configuration.voiceProvider {
-        case .geminiLive:
-            // Gemini Live nie potrzebuje żadnego SDK — wystarczy backend, który
-            // wyda poświadczenie sesji.
-            return configuration.apiBaseURL != nil
-        case .elevenlabs:
-            #if canImport(ElevenLabs)
-            return configuration.apiBaseURL != nil
-            #else
-            return false
-            #endif
-        }
+        // Gemini Live nie potrzebuje SDK — wystarczy backend, który wyda
+        // krótkotrwałe poświadczenie sesji.
+        return configuration.apiBaseURL != nil
     }
 
     /// Transport dla nowej sesji rozmowy.
@@ -53,27 +44,14 @@ public enum VoiceServicesFactory {
         audioSession: AudioSessionController? = nil
     ) -> VoiceTransport {
         if providerIsAvailable(configuration: configuration), let baseURL = configuration.apiBaseURL {
-            switch configuration.voiceProvider {
-            case .geminiLive:
-                return GeminiLiveTransport(
-                    tokenProvider: BackendConversationTokenProvider(baseURL: baseURL),
-                    toolExecutor: BackendVoiceToolExecutor(baseURL: baseURL, accessToken: accessToken),
-                    accessToken: accessToken,
-                    installationID: installationID,
-                    model: configuration.voiceModel,
-                    audioSession: audioSession
-                )
-            case .elevenlabs:
-                #if canImport(ElevenLabs)
-                return ElevenLabsVoiceTransport(
-                    tokenProvider: BackendConversationTokenProvider(baseURL: baseURL),
-                    accessToken: accessToken,
-                    installationID: installationID,
-                    // Sesję audio dla rozmowy ustawia transport: SDK tego nie robi.
-                    audioSession: audioSession
-                )
-                #endif
-            }
+            return GeminiLiveTransport(
+                tokenProvider: BackendConversationTokenProvider(baseURL: baseURL),
+                toolExecutor: BackendVoiceToolExecutor(baseURL: baseURL, accessToken: accessToken),
+                accessToken: accessToken,
+                installationID: installationID,
+                model: configuration.voiceModel,
+                audioSession: audioSession
+            )
         }
         // Ścieżka domyślna: deterministyczny mock bez sieci i bez mikrofonu.
         return MockVoiceTransport(

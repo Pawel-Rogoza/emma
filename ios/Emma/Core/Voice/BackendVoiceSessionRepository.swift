@@ -88,6 +88,11 @@ public struct BackendVoiceSessionRepository: VoiceSessionRepository, Sendable {
             throw error
         }
         try Self.verifySessionID(issued.sessionID, matches: sessionID)
+        if let provider = issued.provider, provider != "gemini_live" {
+            throw DomainError.backend(
+                "Backend zwrócił poświadczenie dla nieobsługiwanego dostawcy: \(provider)."
+            )
+        }
 
         // Kontrakt nie niesie pełnego kontekstu — tylko jego wersję. Bierzemy
         // kontekst, o który prosiliśmy, ale z wersją potwierdzoną przez backend,
@@ -103,9 +108,8 @@ public struct BackendVoiceSessionRepository: VoiceSessionRepository, Sendable {
             endpoint: nil,
             transport: request.requestedTransport,
             providerConversationID: issued.conversationID,
-            // ElevenLabs nie podaje `expires_at` (zostaje `nil`); Gemini Live
-            // podaje realny czas, więc go przenosimy — ale wciąż o żywotności
-            // rozstrzyga stan sesji na backendzie, nie zegar telefonu.
+            // Gemini Live może podać realny czas wygaśnięcia; przenosimy go,
+            // ale o żywotności sesji nadal rozstrzyga backend.
             expiresAt: Self.parseExpiry(issued.expiresAt),
             capabilities: .providerUnverified
         )
