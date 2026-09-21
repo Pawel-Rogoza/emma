@@ -154,4 +154,3 @@ final class Stage6ContractTests: XCTestCase {
         )
     }
 }
-
