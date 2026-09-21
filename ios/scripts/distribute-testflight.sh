@@ -105,7 +105,15 @@ fi
 mkdir -p "$(dirname "$api_key_path")"
 printf '%s' "$ASC_PRIVATE_KEY_P8" > "$api_key_path"
 chmod 600 "$api_key_path"
-xcrun altool --upload-app --type ios --file "$ipa_path" \
-  --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+upload_log="${work_dir}/upload.log"
+if ! xcrun altool --upload-app --type ios --file "$ipa_path" \
+  --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" 2>&1 | tee "$upload_log"; then
+  echo 'Transporter nie zdołał wysłać IPA.' >&2
+  exit 1
+fi
+if grep -Eq 'UPLOAD FAILED|Validation failed|Failed to upload package' "$upload_log"; then
+  echo 'Apple odrzuciło IPA podczas walidacji.' >&2
+  exit 1
+fi
 
 echo "Wysłano Emma Staging, build ${GITHUB_RUN_ID}, do App Store Connect."
