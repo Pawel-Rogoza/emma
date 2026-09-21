@@ -49,6 +49,16 @@ public final class VoiceSessionCoordinator {
     /// a nie tylko samej metody.
     private let limitCheckInterval: TimeInterval
     private let sessionStatus: (@MainActor (VoiceSessionID) async -> VoiceSessionStatus?)?
+    /// Zgoda na mikrofon pytana **przed** założeniem sesji. Warstwa logiki nie zna
+    /// `AVFoundation`, więc dostęp do mikrofonu dostaje jako port. `nil` oznacza
+    /// brak sprawdzania (Demo, testy, podglądy) — tam mikrofonu nie ma w ogóle.
+    ///
+    /// To nie jest kosmetyka: SDK dostawcy przy odmowie łączy sesję **bez toru
+    /// mikrofonu** i nie zgłasza tego błędem (patrz `WebRTCConnectionManager`
+    /// w SDK: `enableMic: permissionGranted`). Skutek to rozmowa, w której
+    /// użytkownik mówi w pustkę. Dlatego odmowa kończy start głośno, zanim
+    /// powstanie sesja u dostawcy i na backendzie.
+    private let microphonePermission: (any MicrophonePermissionProviding)?
 
     // MARK: Zasoby wewnętrzne
 
@@ -93,7 +103,9 @@ public final class VoiceSessionCoordinator {
         limitCheckInterval: TimeInterval = 15,
         /// Sposób zapytania backendu o stan sesji. `nil` oznacza tryb bez backendu
         /// (np. testy i Demo), w którym nie ma czego uzgadniać.
-        sessionStatus: (@MainActor (VoiceSessionID) async -> VoiceSessionStatus?)? = nil
+        sessionStatus: (@MainActor (VoiceSessionID) async -> VoiceSessionStatus?)? = nil,
+        /// Zgoda na mikrofon. `nil` = nie pytamy (Demo, testy, podglądy).
+        microphonePermission: (any MicrophonePermissionProviding)? = nil
     ) {
         self.sessionRepository = sessionRepository
         self.actionRepository = actionRepository
@@ -103,6 +115,7 @@ public final class VoiceSessionCoordinator {
         self.sessionLifetime = sessionLifetime
         self.limitCheckInterval = limitCheckInterval
         self.sessionStatus = sessionStatus
+        self.microphonePermission = microphonePermission
         self.state = VoiceUIState()
     }
 
@@ -150,6 +163,18 @@ public final class VoiceSessionCoordinator {
             route: state.route,
             mode: .conversation
         )
+        // Zgoda na mikrofon przed założeniem sesji. Bez niej SDK i tak połączy
+        // rozmowę, ale bez wejścia audio — użytkownik mówi w pustkę, a UI
+        // pokazuje „połączono”. Pytamy więc tutaj i przy odmowie nie tworzymy
+        // ani sesji u dostawcy, ani po stronie backendu.
+        if let microphonePermission, await microphonePermission.requestRecordPermission() == false {
+            state.connection = .failed
+            state.turn = .waiting
+            state.mode = .idle
+            state.microphone = .unavailable
+            state.lastError = FatalErrorKind.microphonePermissionDenied.safeMessage
+            return
+        }
         do {
             let configuration = try await sessionRepository.create(
                 CreateVoiceSession(
@@ -160,6 +185,12 @@ public final class VoiceSessionCoordinator {
                 )
             )
             sessionConfiguration = configuration
+            startedAt = clock.now()
+            lastActivityAt = startedAt
+            // Stróż limitów działa też na ścieżce produkcyjnej. Bez tego limity
+            // czasu i uzgodnienie statusu z backendem działałyby wyłącznie dla
+            // transportu wstrzykniętego przez `attach` (podglądy i testy).
+            startLimitWatchdog()
             let transport = transportFactory(configuration)
             self.transport = transport
             state.sessionID = configuration.sessionID
@@ -375,8 +406,12 @@ public final class VoiceSessionCoordinator {
         do {
             try await service.start(DictationRequest(target: target, language: language))
         } catch {
+            // Nie zgadujemy przyczyny: adapter mówi, czy to brak zgody, brak
+            // rozpoznawania, czy niewydana sesja audio. Wcześniej każdy błąd
+            // pokazywał się jako „rozpoznawanie niedostępne", czyli kłamał.
+            let failure = (error as? any DictationStartFailureMapping)?.dictationFailure ?? .unknown
             handle(
-                dictation: .failed(.recognizerUnavailable),
+                dictation: .failed(failure),
                 frozenTarget: frozenTarget
             )
         }
@@ -636,6 +671,83 @@ public final class VoiceSessionCoordinator {
         }
     }
 
+    /// Korekta terminu zadania („nie, na poniedziałek”, §6-C). Termin jest
+    /// osobnym polem propozycji, więc idzie własną drogą, a nie przez treść.
+    @discardableResult
+    public func rescheduleAction(actionID: ActionID, dueDate: LocalDate?) async -> ActionProposal? {
+        let baseVersion = actionState.proposals[actionID]?.version ?? .initial
+        do {
+            let remote = try await actionRepository.reschedule(
+                RescheduleAction(
+                    actionID: actionID,
+                    expectedVersion: baseVersion,
+                    dueDate: dueDate,
+                    now: clock.now()
+                )
+            )
+            actionState.proposals[remote.id] = remote
+            publishProposalChange(remote)
+            return remote
+        } catch {
+            recordActionFailure(error, fallback: "termin")
+            return nil
+        }
+    }
+
+    /// Korekta odbiorcy albo kontekstu (F14). Zmiana odbiorcy unieważnia zgodę,
+    /// bo dotyczyła innej osoby — pilnuje tego silnik akcji.
+    @discardableResult
+    public func changeActionContext(
+        actionID: ActionID,
+        clientID: ClientID?,
+        caseID: CaseID?,
+        threadID: ThreadID?
+    ) async -> ActionProposal? {
+        let baseVersion = actionState.proposals[actionID]?.version ?? .initial
+        do {
+            let remote = try await actionRepository.changeContext(
+                ChangeActionContext(
+                    actionID: actionID,
+                    expectedVersion: baseVersion,
+                    clientID: clientID,
+                    caseID: caseID,
+                    threadID: threadID,
+                    now: clock.now()
+                )
+            )
+            actionState.proposals[remote.id] = remote
+            publishProposalChange(remote)
+            return remote
+        } catch {
+            recordActionFailure(error, fallback: "odbiorca")
+            return nil
+        }
+    }
+
+    /// Publikacja zmienionej propozycji do stanu ekranu. Jedno miejsce, żeby
+    /// każda korekta (treść, termin, odbiorca) kończyła się tym samym zdarzeniem.
+    private func publishProposalChange(_ proposal: ActionProposal) {
+        var mutable = state
+        internalReducer.apply(
+            VoiceEvent(
+                eventID: "local-proposal-\(proposal.id.rawValue)-\(proposal.version.value)",
+                sessionID: state.sessionID ?? VoiceSessionID("local"),
+                connectionGeneration: state.connectionGeneration,
+                receivedAt: clock.now(),
+                source: .backendActionEngine,
+                payload: .proposalChanged(ProposalSnapshot(proposal: proposal))
+            ),
+            to: &mutable
+        )
+        state = mutable
+    }
+
+    private func recordActionFailure(_ error: Error, fallback: String) {
+        state.lastError = (error as? ActionEngineError)?.safeMessage
+            ?? (error as? DomainError)?.safeMessage
+            ?? DomainError.transportFailure(fallback).safeMessage
+    }
+
     /// Uzbrojenie potwierdzenia głosowego dla konkretnej prezentacji (§8.2).
     public func armVoiceConfirmation(actionID: ActionID, presentationID: String) -> Bool {
         do {
@@ -776,9 +888,22 @@ public final class VoiceSessionCoordinator {
     /// Aplikacja w tle. Domyślnie kończy możliwość wykonywania zapisów głosem,
     /// zachowując szkic (§5.8). M2b rozszerza to zachowanie osobno.
     public func handleApplicationBackgrounded() async {
-        guard state.connection == .connected else { return }
+        // Liczy się samo istnienie sesji, nie stan połączenia: sesja założona
+        // u dostawcy (albo jeszcze w trakcie łączenia) też musi zostać zamknięta,
+        // inaczej zostaje po stronie backendu jako `active`.
+        guard state.sessionID != nil else { return }
         state.lastError = "Rozmowa wstrzymana. Wróć do aplikacji."
         await end(reason: .applicationBackgrounded, preserveDraft: true, revokedCapability: true)
+    }
+
+    /// Powrót aplikacji na pierwszy plan. Sesja mogła zostać przejęta przez inne
+    /// urządzenie albo zamknięta po stronie backendu, a my wciąż mamy połączenie.
+    /// Pytamy więc o faktyczny stan (`GET /voice/sessions/{id}/status`), zamiast
+    /// zgadywać go z zegara (§5.6). Zwykle to no-op: przejście w tło kończy u nas
+    /// sesję, ale ma znaczenie, gdy tło zostało pominięte (np. przerwanie systemowe).
+    public func handleApplicationForegrounded() async {
+        guard state.sessionID != nil else { return }
+        _ = await reconcileSessionWithBackend()
     }
 
     public func handleUserLoggedOut() async {
@@ -800,6 +925,22 @@ public final class VoiceSessionCoordinator {
         await end(reason: .takenOverByAnotherDevice, preserveDraft: true, revokedCapability: true)
     }
 
+    /// Odrzucenie szkicu i propozycji poprzedniej sesji.
+    ///
+    /// „Rozmawiaj” otwiera **nową** rozmowę, więc nie może wskrzeszać cudzej
+    /// propozycji: `end` domyślnie zachowuje szkic (§5.6) i przy zakończeniu
+    /// publikuje ostatnią propozycję, co po czyszczeniu prezentacji wróciłoby
+    /// do historii. To jedyne miejsce, które kasuje zachowany stan bez kończenia
+    /// sesji — celowo osobne od `handleUserLoggedOut`, które zeruje całość.
+    public func discardPreservedPresentation() {
+        actionState = ActionEngine.State()
+        var mutable = state
+        mutable.activeProposal = nil
+        mutable.lastExecution = nil
+        mutable.action = .none
+        state = mutable
+    }
+
     // MARK: - Zakończenie
 
     /// „Zakończ”: odłącza transport, zwalnia mikrofon, zamyka strumienie
@@ -818,8 +959,15 @@ public final class VoiceSessionCoordinator {
 
         if let sessionID = state.sessionID {
             // Backend wygasza sesję także według lease/heartbeat; końcowy request
-            // telefonu nie jest jedynym mechanizmem.
-            try? await sessionRepository.end(sessionID: sessionID)
+            // telefonu nie jest jedynym mechanizmem. Czekamy na `DELETE` **ze
+            // stałym limitem**: bez sieci `URLSession` trzymałby „Zakończ" przez
+            // pełny timeout, a przejście w tło i tak zawiesiłoby proces przed
+            // wysłaniem żądania. Lokalne rozłączenie nie może zależeć od sieci.
+            await Self.endRemoteSession(
+                sessionID: sessionID,
+                repository: sessionRepository,
+                timeout: 3
+            )
         }
         if let transport {
             await transport.disconnect(reason: reason)
@@ -973,6 +1121,26 @@ public final class VoiceSessionCoordinator {
     private func refreshExecutionStatesForOpenActions() async {
         for actionID in actionState.executions.keys {
             await refreshExecutionState(actionID: actionID)
+        }
+    }
+
+    /// Zamknięcie sesji po stronie backendu z ograniczeniem czasu.
+    ///
+    /// `sessionRepository.end` to żądanie sieciowe; bez tego limitu pojedynczy
+    /// brak sieci blokowałby zakończenie rozmowy na cały timeout klienta.
+    /// Lokalny stan i tak jest już rozłączony — wysyłka jest najlepszą próbą.
+    private static func endRemoteSession(
+        sessionID: VoiceSessionID,
+        repository: VoiceSessionRepository,
+        timeout: TimeInterval
+    ) async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { try? await repository.end(sessionID: sessionID) }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+            }
+            await group.next()
+            group.cancelAll()
         }
     }
 }

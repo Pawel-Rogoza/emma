@@ -194,7 +194,7 @@ struct CaseCard: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(clientName)
-                    .font(EmmaTypography.ui(12))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.muted)
 
                 HStack(spacing: 14) {

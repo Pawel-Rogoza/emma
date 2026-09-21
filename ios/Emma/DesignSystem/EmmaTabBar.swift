@@ -68,6 +68,13 @@ public struct EmmaTabBar: View {
                 Text(tab.title)
                     .font(EmmaTypography.tabLabel)
                     .foregroundStyle(isSelected ? EmmaTheme.tabActive : EmmaTheme.tabInactive)
+                    // Pięć stałych kolumn nie mieści etykiet przy największym tekście
+                    // dostępności: „Kalendarz” nachodziło na sąsiednie zakładki.
+                    // Pasek to nawigacja, nie treść — ograniczamy skalę i pozwalamy
+                    // etykiecie zmniejszyć się w jednej linii, zamiast się nakładać.
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             }
             .frame(maxWidth: .infinity, minHeight: EmmaMetrics.tabItemMinHeight)
             .contentShape(Rectangle())

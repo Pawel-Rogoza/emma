@@ -49,6 +49,24 @@ final class AssistantStore: ObservableObject {
         var clientID: ClientID?
     }
 
+    /// Doprecyzowanie, którego Emma nie może rozstrzygnąć sama (F14): kilka osób
+    /// o tym samym imieniu. Trzymamy kandydatów i treść polecenia, żeby odpowiedź
+    /// głosem dokończyła **to samo** zadanie, a nie zaczynała go od nowa.
+    struct PendingClarification: Hashable {
+        var kind: ActionKind
+        var candidates: [ClientID]
+        var text: String?
+        var dueDate: LocalDate?
+        var question: String
+    }
+
+    /// Skąd przyszła tura. Rozróżnienie jest istotne dla F15: jedna tura nie może
+    /// być przetworzona i lokalnie, i u dostawcy.
+    enum CommandOrigin {
+        case typed
+        case voice
+    }
+
     // MARK: Stan publikowany
 
     @Published private(set) var turns: [Turn] = []
@@ -58,6 +76,7 @@ final class AssistantStore: ObservableObject {
     @Published var composer = ""
     @Published var speaksReplies = true
     @Published private(set) var awaitingInput: AwaitingInput?
+    @Published private(set) var pendingClarification: PendingClarification?
     @Published private(set) var clients: [Client] = []
     /// Czy trwa właśnie odsłuch streszczenia.
     @Published private(set) var isPlayingSummary = false
@@ -67,6 +86,15 @@ final class AssistantStore: ObservableObject {
     private weak var dependencies: AppDependencies?
     private var voiceObserver: UUID?
     private var sequence = 0
+    /// Ślady zużytych tur (F04). Historia nie dopisuje tej samej tury dwa razy,
+    /// a karta propozycji powstaje raz na identyfikator propozycji.
+    private var consumedUserTurnID: String?
+    private var consumedAgentTurnID: String?
+    private var localAnswerTurnID: String?
+    private var localProposalTurnID: String?
+    private var adoptedProposalID: ActionID?
+    /// Klienci z ostatnio przedstawionej listy terminów (§6-B).
+    private var lastBriefedClientIDs: [ClientID] = []
     private var linkedCases: [ClientID: CaseID] = [:]
     private var caseNumbers: [CaseID: String] = [:]
 
@@ -178,16 +206,38 @@ final class AssistantStore: ObservableObject {
         await handleCommand(text)
     }
 
-    func handleCommand(_ raw: String) async {
+    func handleCommand(
+        _ raw: String,
+        origin: CommandOrigin = .typed,
+        turnID: String? = nil
+    ) async {
         guard let dependencies else { return }
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        await stopVoiceModes()
+        if origin == .typed { await stopVoiceModes() }
         appendUserTurn(text)
-        let lowered = text.lowercased()
 
-        // 1. Anulowanie.
-        if isBare(lowered, ["anuluj", "rezygnuję"]) {
+        // Odpowiedź na pytanie Emmy („Olena Kovalenko czy Olena Nowak?”) kończy
+        // to samo polecenie, zamiast zaczynać nowe (F14).
+        if let clarification = pendingClarification {
+            if await resolveClarification(clarification, with: text) { return }
+            await answer(clarification.question)
+            return
+        }
+
+        let intent = AssistantIntentParser.parse(text, today: dependencies.today)
+        switch intent.kind {
+        case .confirm:
+            // Zgoda pochodzi z interfejsu, więc dowodem jest `.directUIButton` —
+            // nadal dla prezentacji, którą użytkownik widzi.
+            if let pending = pendingAction {
+                await confirmFromTypedCommand(pending)
+            } else {
+                await answer("Nie ma przygotowanego działania do zatwierdzenia.")
+            }
+            return
+
+        case .cancel:
             if let pending = pendingAction {
                 await cancel(actionID: pending.proposal.id)
             } else {
@@ -195,134 +245,399 @@ final class AssistantStore: ObservableObject {
                 await answer("Anulowano. Możemy przejść do kolejnego polecenia.")
             }
             return
-        }
 
-        // 2. Potwierdzenie. Zgoda pochodzi z interfejsu, więc dowodem jest
-        //    `.directUIButton` — nadal dla prezentacji, którą użytkownik widzi.
-        if isBare(lowered, ["zatwierdź", "wyślij", "zapisz", "tak"]) {
-            if let pending = pendingAction {
-                await confirmFromTypedCommand(pending)
-            } else {
-                await answer("Nie ma przygotowanego działania do zatwierdzenia.")
+        case .correction:
+            guard await applyCorrection(intent, original: text) else {
+                await answer("Nie mam czego poprawić. Podaj pełne polecenie, a przygotuję propozycję.")
+                return
             }
             return
+
+        case .briefing:
+            // Pytanie odczytowe nie kasuje szkicu i nie wymaga zgody (F15).
+            await answer(await briefing(for: intent.dueDate), isSummary: true)
+            return
+
+        case .caseSummary:
+            await runCaseSummary(text, intent: intent, origin: origin, turnID: turnID)
+            return
+
+        case .unknown:
+            // Jedna tura ma jednego właściciela (F15): polecenie, którego lokalny
+            // dialog nie rozpoznaje, dostaje dostawca — ale tylko wtedy, gdy
+            // istnieje sesja. Lokalnie odpowiadamy wyłącznie jako zastępstwo.
+            if origin == .typed, hasActiveSession {
+                if let turnID { localAnswerTurnID = turnID }
+                await forwardTypedTurn(text)
+                return
+            }
+            if origin == .voice, providerOwnsVoice {
+                // W produkcyjnej rozmowie dostawca usłyszał tę turę i odpowiada.
+                // Lokalne „nie rozumiem" dopisywałoby drugą odpowiedź na to samo
+                // pytanie i odbierało Emmie prawo do odpowiedzi (localAnswerTurnID).
+                return
+            }
+            if let turnID { localAnswerTurnID = turnID }
+            await answer(unrecognizedMessage)
+            return
+
+        case .reply, .note, .task, .event:
+            break
         }
 
-        // Zwykłe polecenie w aktywnej sesji trafia też do transportu jako tura tekstowa.
-        await forwardTypedTurn(text)
-
-        // 3. Jedno przygotowane działanie blokuje kolejne polecenia.
+        // Nowa czynność przy oczekującej propozycji: nie tworzymy drugiej karty,
+        // ale mówimy wprost, co można zrobić (poprawić, odsłuchać, anulować).
         if pendingAction != nil {
-            await answer("Działanie czeka na zatwierdzenie. Możesz je poprawić, odsłuchać albo anulować.")
+            await answer("Najpierw zatwierdź albo anuluj przygotowane działanie. Możesz je też poprawić, np. „zmień na 20 minut”.")
             return
         }
 
-        // 4. Treść do przygotowanego szkicu (notatka albo zadanie).
+        // Treść do przygotowanego szkicu (notatka, zadanie, spotkanie).
         if let awaiting = awaitingInput {
             awaitingInput = nil
-            await newAction(kind: awaiting.kind, clientID: awaiting.clientID, text: text)
-            if speaksReplies {
+            let kind = intent.commandKind ?? awaiting.kind
+            if await newAction(kind: kind, clientID: awaiting.clientID, text: text) != nil, speaksReplies, !providerOwnsVoice {
                 await speak("Przygotowałam treść do zatwierdzenia.", language: .pl, isSummary: false, sourceID: nextSourceID("emma-note"))
             }
             return
         }
 
-        // 5. Plan dnia.
-        let wantsBriefing = ["plan", "dzisiejsz", "dzień", "dniu", "kalendarz"].contains { lowered.contains($0) }
-        let excludesBriefing = ["notatk", "wiadomo", "odpow", "zadani"].contains { lowered.contains($0) }
-        if wantsBriefing && !excludesBriefing {
-            await answer(await briefing(), isSummary: true)
-            return
-        }
+        await startIntent(intent, original: text, origin: origin, turnID: turnID)
+    }
 
-        // 6. Rozpoznanie klienta — regułą domenową, nie własnym wyrażeniem regularnym.
-        let resolution = resolveClient(in: text, lowered: lowered)
+    /// Polecenie tworzące akcję: rozwiązanie odbiorcy, brakujące pola i propozycja.
+    private func startIntent(
+        _ intent: AssistantIntent,
+        original: String,
+        origin: CommandOrigin,
+        turnID: String?
+    ) async {
+        guard let dependencies else { return }
+        let lowered = original.lowercased()
+        let resolution = resolveClient(in: original, lowered: lowered)
+        var clientID: ClientID?
         switch resolution {
-        case .multiple:
-            await answer("Wybierz jednego klienta w polu kontekstu. Polecenie dotyczy kilku osób.")
+        case .multiple(let candidates):
+            if intent.kind == .event || intent.kind == .task {
+                // Zadanie i spotkanie mogą poczekać na osobę — pytamy raz i kończymy
+                // to samo polecenie po odpowiedzi, zamiast otwierać selektor.
+                let names = candidates.map { client(id: $0)?.displayName ?? "?" }
+                let question = "Która osoba? " + names.joined(separator: " czy ") + "?"
+                pendingClarification = PendingClarification(
+                    kind: intent.commandKind ?? .task,
+                    candidates: candidates,
+                    text: intent.text,
+                    dueDate: intent.dueDate,
+                    question: question
+                )
+                await answer(question)
+                return
+            }
+            await answer("Polecenie dotyczy kilku osób. Wybierz jednego klienta w polu kontekstu.")
             return
         case .unknown:
             await answer("Nie rozpoznałam wskazanego klienta. Wybierz go w polu kontekstu.")
             return
-        case .resolved, .context:
-            break
+        case .resolved(let id):
+            clientID = id
+        case .context:
+            clientID = dependencies.emmaContext
         }
-        let clientID: ClientID? = {
-            if case .resolved(let id) = resolution { return id }
-            return dependencies.emmaContext
-        }()
 
-        // 7. Rodzaj polecenia. `case` z referencji to podsumowanie sprawy, a nie
-        //    rodzaj akcji, więc obsługujemy je osobno (`ActionKind` go nie zna).
-        let detected: DetectedCommand? = {
-            if lowered.contains("notatk") { return .action(.note) }
-            if lowered.contains("zadani") || lowered.contains("przypomnij") { return .action(.task) }
-            if lowered.contains("odpow") || lowered.contains("wiadomo") { return .action(.reply) }
-            if lowered.contains("podsum") || lowered.contains("przygotuj") || lowered.contains("spraw") { return .caseSummary }
-            return nil
-        }()
-        guard let detected else {
-            await answer("W prototypie mogę omówić dzień lub sprawę, przygotować wiadomość, notatkę i zadanie. Wybierz skrót albo podaj klienta i polecenie.")
+        if case .event = intent.kind {
+            await openEventDraft(intent, clientID: clientID)
             return
         }
 
-        // Podsumowanie sprawy zawsze wymaga klienta; akcja może być firmowa tylko
-        // wtedy, gdy nie dotyczy adresata (zadanie „do listy”).
-        if case .caseSummary = detected {
-            guard let clientID else {
-                await answer("Wybierz klienta w polu kontekstu, żeby powiązać z nim polecenie.")
-                return
-            }
-            dependencies.emmaContext = clientID
-            await answer(await caseSummary(clientID), isSummary: true)
-            return
-        }
-
-        guard case .action(let kind) = detected else { return }
-        if clientID == nil && kind != .task {
+        if intent.requiresRecipient, clientID == nil {
             await answer("Wybierz klienta w polu kontekstu, żeby powiązać z nim polecenie.")
             return
         }
         dependencies.emmaContext = clientID
 
-        // 8. Treść po dwukropku od razu tworzy propozycję.
-        if let colon = text.firstIndex(of: ":"), colon < text.endIndex {
-            let tail = String(text[text.index(after: colon)...]).trimmingCharacters(in: .whitespacesAndNewlines)
-            if !tail.isEmpty {
-                let dueDate = kind == .task && lowered.contains("jutro")
-                    ? dependencies.today.adding(days: 1)
-                    : dependencies.today
-                await newAction(kind: kind, clientID: clientID, text: tail, dueDate: dueDate)
-                if speaksReplies {
-                    await speak("Treść jest gotowa. Sprawdź ją i zatwierdź.", language: .pl, isSummary: false, sourceID: nextSourceID("emma-draft"))
-                }
+        // Brak treści to pytanie, nie zgadywanie (F14).
+        guard let payload = intent.text?.trimmingCharacters(in: .whitespacesAndNewlines), !payload.isEmpty else {
+            if let kind = intent.commandKind, kind == .reply, let clientID {
+                await noteLocalOwnership(origin: origin, turnID: turnID)
+                await prepareReply(clientID)
                 return
             }
-        }
-
-        if kind == .reply, let clientID {
-            await prepareReply(clientID)
+            let kind = intent.commandKind ?? .note
+            awaitingInput = AwaitingInput(kind: kind, clientID: clientID)
+            await answer(slotQuestion(for: kind, clientID: clientID))
             return
         }
 
-        awaitingInput = AwaitingInput(kind: kind, clientID: clientID)
-        await answer(
-            kind == .note
-                ? "Podyktuj treść notatki."
-                : "Podyktuj treść zadania. Domyślnie przypiszę je Tobie na dziś."
-        )
+        await noteLocalOwnership(origin: origin, turnID: turnID)
+        let kind = intent.commandKind ?? .note
+        await newAction(kind: kind, clientID: clientID, text: payload, dueDate: intent.dueDate)
+        await answer(await proposalSummary(kind: kind, intent: intent, clientID: clientID))
     }
 
-    /// Rodzaj polecenia rozpoznany z treści (odpowiada `kind` z referencji, gdzie
-    /// `'case'` oznaczało podsumowanie sprawy).
-    private enum DetectedCommand {
-        case action(ActionKind)
-        case caseSummary
+    /// Pytanie o brakujące pole. Jedno pytanie na turę (§5).
+    private func slotQuestion(for kind: ActionKind, clientID: ClientID?) -> String {
+        let who = clientID.flatMap { client(id: $0)?.displayName }
+        switch kind {
+        case .note:
+            return who.map { "Co zapisać w notatce dla \($0)? Podyktuj lub wpisz treść." }
+                ?? "Co zapisać w notatce? Podyktuj lub wpisz treść."
+        case .task:
+            return who.map { "Jakie zadanie dodać dla \($0)? Wpisz lub podyktuj treść." }
+                ?? "Jakie zadanie dodać? Wpisz lub podyktuj treść."
+        case .reply:
+            return who.map { "Co napisać do \($0)? Podyktuj treść wiadomości." }
+                ?? "Co napisać? Podyktuj treść wiadomości."
+        }
+    }
+
+    /// Potwierdzenie przygotowanej propozycji z podaniem **bezwzględnego** terminu
+    /// (§6-C). Godzina jest jawnie pokazana, a ograniczenie listy zadań wypowiedziane.
+    private func proposalSummary(kind: ActionKind, intent: AssistantIntent, clientID: ClientID?) async -> String {
+        guard let dependencies else { return "Sprawdź treść i zatwierdź." }
+        var parts: [String] = []
+        switch kind {
+        case .reply: parts.append("Wiadomość gotowa do sprawdzenia.")
+        case .note: parts.append("Notatka gotowa do sprawdzenia.")
+        case .task: parts.append("Zadanie gotowe do sprawdzenia.")
+        }
+        if let dueDate = intent.dueDate {
+            parts.append("Termin: \(dueDate.isoString).")
+        }
+        if let dueTime = intent.dueTime {
+            parts.append("Godzina \(dueTime.hhmm) jest w treści polecenia; lista zadań pokazuje samą datę.")
+        }
+        _ = dependencies
+        return parts.joined(separator: " ")
+    }
+
+    /// „Dodaj spotkanie”: otwiera **formularz nowego terminu** z rozpoznanymi
+    /// polami (F14), zamiast odpowiadać briefingiem albo udawać zapis.
+    private func openEventDraft(_ intent: AssistantIntent, clientID: ClientID?) async {
+        guard let dependencies else { return }
+        let title = intent.text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        dependencies.pendingEventDraft = EventDraftSeed(
+            title: (title?.isEmpty == false) ? title : nil,
+            day: intent.dueDate,
+            time: intent.dueTime
+        )
+        dependencies.present(.eventForm(
+            editing: nil,
+            clientID: clientID,
+            caseID: clientID.flatMap { linkedCases[$0] },
+            initialDay: intent.dueDate
+        ))
+        var parts = ["Otwieram formularz nowego terminu"]
+        if let day = intent.dueDate { parts.append("na \(day.isoString)") }
+        if let time = intent.dueTime { parts.append("o \(time.hhmm)") }
+        parts.append("- sprawdź pola i zapisz, żeby termin powstał naprawdę.")
+        await answer(parts.joined(separator: " "))
+    }
+
+    /// Zapisanie właściciela tury: lokalny dialog odpowiedział i utworzył propozycję,
+    /// więc propozycja dostawcy z tej samej tury nie zrobi drugiej karty (F15).
+    private func noteLocalOwnership(origin: CommandOrigin, turnID: String?) {
+        guard origin == .voice, let turnID else { return }
+        localAnswerTurnID = turnID
+        localProposalTurnID = turnID
+    }
+
+    private var unrecognizedMessage: String {
+        "Nie rozpoznałam tego polecenia. Powiedz na przykład: „jakie mam dzisiaj terminy”, „przygotuj odpowiedź do Oleny” albo „dodaj zadanie na jutro”."
+    }
+
+    private var hasActiveSession: Bool {
+        guard let dependencies else { return false }
+        let state = dependencies.voice.state
+        return state.sessionID != nil && state.connection == .connected
+    }
+
+    /// Czy w aktywnej rozmowie mówi Emma od dostawcy. Wtedy lokalny syntezator
+    /// systemowy musi milczeć: jedna sesja ma jeden głos. W Demo transport jest
+    /// mockiem bez własnego audio, więc systemowy odsłuch pozostaje jedynym głosem.
+    private var providerOwnsVoice: Bool {
+        guard let dependencies, !dependencies.configuration.usesMockServices else { return false }
+        return hasActiveSession
+    }
+
+    /// Pytanie odczytowe o dzień. „A jutro?” zmienia zakres daty, nie rodzaj.
+    private func briefing(for date: LocalDate?) async -> String {
+        guard let dependencies else { return "" }
+        let day = date ?? dependencies.today
+        if day != dependencies.today {
+            return await briefing(on: day)
+        }
+        return await briefing()
+    }
+
+    private func runCaseSummary(
+        _ text: String,
+        intent: AssistantIntent,
+        origin: CommandOrigin,
+        turnID: String?
+    ) async {
+        guard let dependencies else { return }
+        let lowered = text.lowercased()
+        let resolution = resolveClient(in: text, lowered: lowered)
+        var clientID: ClientID?
+        switch resolution {
+        case .resolved(let id): clientID = id
+        case .context: clientID = dependencies.emmaContext
+        case .multiple:
+            await answer("Polecenie dotyczy kilku osób. Wybierz jednego klienta w polu kontekstu.")
+            return
+        case .unknown:
+            clientID = dependencies.emmaContext
+        }
+        // „Przygotuj mnie do pierwszego” dotyczy pierwszego terminu z ostatniej
+        // listy, a nie dowolnego klienta (F14/§6-B). Granice listy są znane.
+        if text.lowercased().contains("pierwsz"), let first = lastBriefedClientIDs.first {
+            clientID = first
+        }
+        guard let clientID else {
+            await answer("Wybierz klienta w polu kontekstu, żeby powiązać z nim polecenie.")
+            return
+        }
+        dependencies.emmaContext = clientID
+        await noteLocalOwnership(origin: origin, turnID: turnID)
+        await answer(await caseSummary(clientID), isSummary: true)
+    }
+
+    /// Odpowiedź na pytanie doprecyzowujące: nazwisko, numer opcji albo „pierwszy”.
+    /// Zwraca `true`, gdy odpowiedź rozstrzygnęła i polecenie poszło dalej.
+    private func resolveClarification(_ clarification: PendingClarification, with text: String) async -> Bool {
+        guard let dependencies else { return false }
+        let lowered = text.lowercased()
+        var chosen: ClientID?
+
+        if let index = ordinalIndex(in: lowered), clarification.candidates.indices.contains(index) {
+            chosen = clarification.candidates[index]
+        } else {
+            let names = clarification.candidates.compactMap { client(id: $0) }
+            chosen = matchCandidate(in: lowered, among: names)
+        }
+
+        guard let clientID = chosen, let client = client(id: clientID) else {
+            return false
+        }
+        pendingClarification = nil
+        dependencies.emmaContext = clientID
+        let kind = clarification.kind
+        if let payload = clarification.text, !payload.isEmpty {
+            await newAction(kind: kind, clientID: clientID, text: payload, dueDate: clarification.dueDate)
+            await answer("Dobrze, \(client.displayName). Sprawdź treść i zatwierdź.")
+        } else {
+            awaitingInput = AwaitingInput(kind: kind, clientID: clientID)
+            await answer(slotQuestion(for: kind, clientID: clientID))
+        }
+        return true
+    }
+
+    /// Wybór osoby spośród kandydatów. Nazwisko rozstrzyga, bo `PersonResolver`
+    /// celowo łączy osoby po imieniu — przy dwóch Olenach imię nie wystarcza,
+    /// a to właśnie ten przypadek kazał Emmie dopytać (F14).
+    private func matchCandidate(in lowered: String, among candidates: [Client]) -> ClientID? {
+        let tokens = { (client: Client) in
+            client.displayName
+                .lowercased()
+                .split(whereSeparator: { $0 == " " || $0 == "-" })
+                .map(String.init)
+        }
+        // 1. Nazwisko (ostatni człon) jest najmocniejszym sygnałem.
+        let bySurname = candidates.filter { candidate in
+            guard let surname = tokens(candidate).last, surname.count >= 4 else { return false }
+            return lowered.contains(surname)
+        }
+        if bySurname.count == 1 { return bySurname[0].id }
+        // 2. Pełne imię i nazwisko razem.
+        let byFullName = candidates.filter { lowered.contains($0.displayName.lowercased()) }
+        if byFullName.count == 1 { return byFullName[0].id }
+        // 3. Inicjał nazwiska: „nowak” albo „N.” — ostatnia deska ratunku.
+        if case .resolved(let id) = PersonResolver.resolve(lowered, among: candidates) { return id }
+        return nil
+    }
+
+    /// „pierwsza”, „druga”, „trzecia” — wybór pozycji bez dotykania ekranu (§5).
+    private func ordinalIndex(in lowered: String) -> Int? {
+        let ordinals = ["pierwsz": 0, "drug": 1, "trzeci": 2, "czwart": 3, "piąt": 4]
+        for (form, index) in ordinals where lowered.contains(form) { return index }
+        return nil
+    }
+
+    /// Poprawka oczekującej propozycji: treść, termin albo odbiorca (§6-A, §6-C).
+    @discardableResult
+    private func applyCorrection(_ intent: AssistantIntent, original: String) async -> Bool {
+        guard let dependencies, let pending = pendingAction, let revision = intent.revision else { return false }
+        let actionID = pending.proposal.id
+        var didSomething = false
+
+        // Zmiana odbiorcy („nie, do Dmytro”) to inna zgoda niż nowa treść: dotyczy
+        // innej osoby, więc silnik akcji unieważnia uzbrojenie (F14).
+        if let recipient = revision.recipient,
+           case .resolved(let newClient) = PersonResolver.resolve(recipient, among: clients),
+           newClient != pending.proposal.clientID {
+            if let changed = await dependencies.voice.changeActionContext(
+                actionID: actionID,
+                clientID: newClient,
+                caseID: linkedCases[newClient],
+                threadID: nil
+            ) {
+                replaceProposal(changed)
+                let name = client(id: newClient)?.displayName ?? Client.unknownDisplayName
+                await answer("Zmieniłam odbiorcę na \(name). Zgoda na poprzednią wersję nie obowiązuje.")
+                return true
+            }
+        }
+
+        if let newText = revision.text {
+            if let revised = await dependencies.voice.reviseAction(actionID: actionID, newText: newText) {
+                replaceProposal(revised)
+                didSomething = true
+                await answer("Poprawiłam treść. Zgoda na poprzednią wersję nie obowiązuje.")
+            }
+        } else if let quantity = revision.quantity, let unit = revision.unit,
+                  let replaced = replacingQuantity(in: pending.proposal.text, with: quantity, unit: unit) {
+            if let revised = await dependencies.voice.reviseAction(actionID: actionID, newText: replaced) {
+                replaceProposal(revised)
+                didSomething = true
+                await answer("Poprawiłam na \(quantity) \(unit). Zgoda na poprzednią wersję nie obowiązuje.")
+            }
+        }
+
+        if let date = revision.date, pending.proposal.kind == .task {
+            if let rescheduled = await dependencies.voice.rescheduleAction(actionID: actionID, dueDate: date) {
+                replaceProposal(rescheduled)
+                didSomething = true
+                await answer("Nowy termin to \(date.isoString). Zgoda na poprzednią wersję nie obowiązuje.")
+            }
+        }
+
+        return didSomething
+    }
+
+    /// Podmiana ilości w treści („spóźnię się 15 minut” → „spóźnię się 20 minut”).
+    /// Nie zmieniamy nic, gdy w treści nie ma liczby z tą samą jednostką.
+    private func replacingQuantity(in text: String, with value: Int, unit: String) -> String? {
+        let pattern = #"\b(\d{1,3})(\s*)([a-ząćęłńóśźż]+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(text.startIndex..., in: text)
+        guard let match = regex.firstMatch(in: text, range: range),
+              let numberRange = Range(match.range(at: 1), in: text),
+              let unitRange = Range(match.range(at: 3), in: text),
+              text[unitRange].lowercased().hasPrefix(String(unit.prefix(3))) else { return nil }
+        var replaced = text
+        replaced.replaceSubrange(numberRange, with: String(value))
+        return replaced
+    }
+
+    private func replaceProposal(_ proposal: ActionProposal) {
+        guard let index = actionIndex(proposal.id), case .action(var action) = turns[index] else { return }
+        action.proposal = proposal
+        turns[index] = .action(action)
     }
 
     private enum ClientResolution {
         case resolved(ClientID)
-        case multiple
+        case multiple([ClientID])
         case unknown
         case context
     }
@@ -334,8 +649,8 @@ final class AssistantStore: ObservableObject {
         switch PersonResolver.resolve(text, among: clients) {
         case .resolved(let clientID):
             return .resolved(clientID)
-        case .multiple:
-            return .multiple
+        case .multiple(let candidates):
+            return .multiple(candidates)
         case .unknown, .none:
             let addressed = ["do ", "dla ", "klienta "].contains { lowered.contains($0) }
             return addressed ? .unknown : .context
@@ -395,7 +710,7 @@ final class AssistantStore: ObservableObject {
     func prepareReply(_ clientID: ClientID) async {
         guard let client = client(id: clientID) else { return }
         guard let turn = await newAction(kind: .reply, clientID: clientID, text: await draftText(clientID)) else { return }
-        if speaksReplies {
+        if speaksReplies, !providerOwnsVoice {
             await speak(
                 "Przygotowałam wiadomość do \(client.displayName). Sprawdź treść lub odsłuchaj ją przed zatwierdzeniem.",
                 language: .pl,
@@ -434,9 +749,26 @@ final class AssistantStore: ObservableObject {
 
     /// Potwierdzenie z karty na ekranie — jedyna droga wykonania, gdy prezentacja
     /// nie jest uzbrojona dla głosu.
-    func confirm(actionID: ActionID) async {
-        guard let index = actionIndex(actionID), case .action(let action) = turns[index] else { return }
+    ///
+    /// `text` to treść **widoczna** w karcie w chwili dotknięcia. Jeśli różni się od
+    /// ostatniej wersji znanej koordynatorowi (np. użytkownik pisał i od razu
+    /// zatwierdził, przed odroczoną korektą), najpierw wysyłamy rewizję i zatwierdzamy
+    /// dokładnie ją. Dzięki temu wykonana treść zawsze równa się widocznej (F03).
+    func confirm(actionID: ActionID, text: String) async {
+        guard let index = actionIndex(actionID), case .action(var action) = turns[index] else { return }
         guard action.proposal.state == .proposed else { return }
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        if trimmed != action.proposal.text {
+            guard let revised = await dependencies?.voice.reviseAction(actionID: actionID, newText: trimmed) else {
+                await answer("Nie udało się zapisać poprawki treści. Spróbuj ponownie.")
+                return
+            }
+            action.proposal = revised
+            turns[index] = .action(action)
+        }
         await performConfirmation(action.proposal, origin: .directUIButton)
     }
 
@@ -527,6 +859,39 @@ final class AssistantStore: ObservableObject {
 
     // MARK: Głos: sesja, dyktowanie, odsłuch
 
+    /// „Rozmawiaj”: nowa rozmowa z Emmą od czystego stanu.
+    ///
+    /// Nie dziedziczymy wątku klienta ani historii poprzedniej rozmowy: kontekst
+    /// wraca do całej kancelarii, a prezentacja (tury, propozycje, doprecyzowania,
+    /// szkic w polu) jest czyszczona. Koordynator odrzuca też zachowany szkic,
+    /// żeby zakończenie nowej sesji nie wskrzesiło starej propozycji. Dzięki temu
+    /// przycisk nie odtwarza scenki klienta (np. Oleny) z danych demo.
+    func startNewConversation() async {
+        guard let dependencies else { return }
+        dependencies.emmaContext = nil
+        dependencies.pendingEmmaAction = nil
+        dependencies.pendingVoiceStart = false
+        resetPresentation()
+        dependencies.voice.discardPreservedPresentation()
+        await startConversation()
+    }
+
+    /// Czyszczenie stanu prezentacji przed nową rozmową. Numeracja identyfikatorów
+    /// zostaje — ma rosnąć w obrębie procesu, a nie zaczynać się od nowa.
+    private func resetPresentation() {
+        turns.removeAll()
+        composer = ""
+        awaitingInput = nil
+        pendingClarification = nil
+        consumedUserTurnID = nil
+        consumedAgentTurnID = nil
+        localAnswerTurnID = nil
+        localProposalTurnID = nil
+        adoptedProposalID = nil
+        lastBriefedClientIDs = []
+        isPlayingSummary = false
+    }
+
     /// Jedna sesja na proces. Wznowienie nie tworzy drugiego połączenia (§5.3).
     func startConversation() async {
         guard let dependencies else { return }
@@ -541,7 +906,11 @@ final class AssistantStore: ObservableObject {
         await dependencies.voice.startConversation(
             context: currentContext(),
             user: dependencies.currentUser,
-            installationID: InstallationIdentifier.current,
+            // Jeden identyfikator instalacji dla całej aplikacji (FIX A): ten sam,
+            // którym podpisuje się logowanie (`AuthStore`). Wcześniej warstwa głosu
+            // generowała własny identyfikator, więc backend odrzucał każde
+            // `POST /voice/sessions` jako należące do innej instalacji (403).
+            installationID: InstallationIdentity.current(),
             // Jedna decyzja „mock czy dostawca” dla całej aplikacji. W Demo zawsze
             // mock (bez sieci i bez kont), ale to fabryka o tym mówi, a nie ekran.
             transportFactory: { [dependencies] configuration in
@@ -575,7 +944,14 @@ final class AssistantStore: ObservableObject {
     func endSession() async {
         guard let dependencies else { return }
         isPlayingSummary = false
-        await dependencies.voice.end(reason: .userRequested, preserveDraft: true, revokedCapability: false)
+        // Jedna ścieżka zakończenia dla docku i globalnego mini-panelu (F06).
+        await dependencies.endVoiceSession()
+    }
+
+    /// Wyciszenie mikrofonu z docku Emmy. Ta sama metoda, której używa mini-panel.
+    func toggleMicrophone() async {
+        guard let dependencies else { return }
+        await dependencies.toggleVoiceMicrophone()
     }
 
     /// Przełączenie odpowiedzi głosowych. Referencja przy tej okazji zatrzymuje
@@ -623,14 +999,15 @@ final class AssistantStore: ObservableObject {
     }
 
     /// `speakAction` z referencji: wiadomość czytamy w języku klienta, resztę po polsku.
-    func speakAction(actionID: ActionID) async {
+    /// Odsłuch czyta **bieżący szkic** przekazany z karty, nie wersję sprzed edycji (F03).
+    func speakAction(actionID: ActionID, text: String) async {
         guard let index = actionIndex(actionID), case .action(let action) = turns[index] else { return }
-        let text = action.proposal.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        let spoken = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !spoken.isEmpty else { return }
         let clientLanguage = action.proposal.clientID
             .flatMap { clientID in clients.first { $0.id == clientID }?.language }
         await speak(
-            text,
+            spoken,
             language: action.proposal.kind == .reply ? (clientLanguage ?? .pl) : .pl,
             isSummary: false,
             sourceID: nextSourceID("emma-action")
@@ -668,32 +1045,30 @@ final class AssistantStore: ObservableObject {
 
     func briefing() async -> String {
         guard let dependencies else { return "" }
-        let today = dependencies.today
-        let events = ((try? await dependencies.repository.events(in: .day(today))) ?? [])
-            .filter { $0.status != .finished }
-        let tasks = ((try? await dependencies.repository.tasks(
-            filter: TaskFilter(scope: .open, dueOnOrBefore: today)
-        )) ?? [])
-        let waiting = clients.filter { $0.needsReply }
+        return await briefing(on: dependencies.today)
+    }
 
-        var lines: [String] = []
-        let schedule = events.map { event -> String in
-            let name = clientName(for: event.clientID) ?? Client.unknownDisplayName
-            let pending = event.status == .toConfirm ? " Termin czeka na potwierdzenie." : ""
-            return "\(event.time.hhmm): \(name), \(event.title).\(pending)"
-        }.joined(separator: "\n")
-        lines.append("Dzisiaj w zespole: \(EmmaPlural.label(events.count, "wydarzenie", "wydarzenia", "wydarzeń")). \(schedule)")
-        lines.append("")
-        let tasksLine = tasks.isEmpty
-            ? "brak otwartych zadań na dziś"
-            : tasks.map(\.title).joined(separator: "; ")
-        lines.append("Do załatwienia: \(tasksLine).")
-        lines.append(
-            waiting.isEmpty
-                ? "Wszystkie rozmowy zaopiekowane."
-                : "Na odpowiedź czekają: \(waiting.map(\.displayName).joined(separator: ", "))."
+    /// Briefing wskazanego dnia („A jutro?” zmienia zakres daty, §6-B).
+    /// Lista pierwszego dnia zapamiętuje klientów, żeby „przygotuj mnie do
+    /// pierwszego” odnosiło się do tego, co użytkownik właśnie usłyszał.
+    func briefing(on day: LocalDate) async -> String {
+        guard let dependencies else { return "" }
+        // Brak odpisu błędu na pustą kolekcję: `nil` jedzie do `EmmaBriefing` i znaczy
+        // „nie udało się sprawdzić”, a `[]` znaczy „sprawdzone, nic nie ma” (F02).
+        let events = try? await dependencies.repository.events(in: .day(day))
+        let tasks = try? await dependencies.repository.tasks(
+            filter: TaskFilter(scope: .open, dueOnOrBefore: day)
         )
-        return lines.joined(separator: "\n")
+        let names = Dictionary(uniqueKeysWithValues: clients.map { ($0.id, $0.displayName) })
+        lastBriefedClientIDs = (events ?? [])
+            .sorted { ($0.day, $0.time) < ($1.day, $1.time) }
+            .compactMap { $0.clientID }
+        return EmmaBriefing.briefing(
+            events: events,
+            tasks: tasks,
+            waitingForReply: clients.filter { $0.needsReply },
+            clientNames: names
+        )
     }
 
     func caseSummary(_ clientID: ClientID) async -> String {
@@ -784,9 +1159,15 @@ final class AssistantStore: ObservableObject {
 
     var statusText: String { voiceState.statusHeadline }
 
-    var isMicrophoneCapturing: Bool { voiceState.microphone == .capturing }
+    var isMicrophoneCapturing: Bool { voiceState.isCapturingMicrophone }
 
     var isDictating: Bool { voiceState.mode == .dictation }
+
+    /// Puste pole nie wysyła (F07/§4). Reguła w jednym miejscu, żeby przycisk
+    /// i `sendComposer()` nie mogły się rozjechać.
+    var canSendComposer: Bool {
+        !composer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var contextTitle: String {
         // Nazwa kontekstu firmowego pochodzi z reguły domenowej, a nie z literału
@@ -836,6 +1217,49 @@ final class AssistantStore: ObservableObject {
         if !state.isPlaybackActive, state.mode != .playback {
             isPlayingSummary = false
         }
+        consumeVoiceTurn(state)
+        adoptProviderProposal(state)
+    }
+
+    /// Domknięcie przepływu głos → historia (F04).
+    ///
+    /// Jedna wypowiedź to jedna tura: rozstrzyga identyfikator tury, nie treść,
+    /// więc powtórzona publikacja tego samego stanu nic nie dopisze, a to samo
+    /// „tak” wypowiedziane dwa razy to dwie osobne tury.
+    private func consumeVoiceTurn(_ state: VoiceUIState) {
+        if let turnID = state.committedUserTurnID,
+           turnID != consumedUserTurnID,
+           !state.committedUserTranscript.isEmpty {
+            consumedUserTurnID = turnID
+            let transcript = state.committedUserTranscript
+            Task { await self.handleCommand(transcript, origin: .voice, turnID: turnID) }
+        }
+        guard let agentTurnID = state.agentTurnID,
+              agentTurnID != consumedAgentTurnID,
+              !state.agentText.isEmpty else { return }
+        consumedAgentTurnID = agentTurnID
+        // Jeden właściciel tury (F15): gdy lokalny dialog już odpowiedział na tę
+        // wypowiedź, tekst dostawcy nie dubluje odpowiedzi w historii.
+        guard localAnswerTurnID != consumedUserTurnID else { return }
+        appendAssistantTurn(state.agentText, isSummary: false)
+    }
+
+    /// Propozycja dostawcy trafia do historii jako karta (F04). Jedna propozycja
+    /// to jedna karta: ten sam identyfikator aktualizuje istniejącą, nie tworzy
+    /// drugiej. Propozycja z tury, którą lokalny dialog już obsłużył, nie tworzy
+    /// drugiej karty na tę samą wypowiedź (F15).
+    private func adoptProviderProposal(_ state: VoiceUIState) {
+        guard let proposal = state.activeProposal else { return }
+        guard proposal.id != adoptedProposalID else { return }
+        if let turnID = consumedUserTurnID, turnID == localProposalTurnID { return }
+        adoptedProposalID = proposal.id
+        if let index = actionIndex(proposal.id), case .action(var action) = turns[index] {
+            action.proposal = proposal
+            turns[index] = .action(action)
+        } else {
+            turns.append(.action(ActionTurn(proposal: proposal, execution: nil)))
+        }
+        projectExpiredProposals()
     }
 
     private func updateExecution(_ execution: ActionExecution) {
@@ -879,9 +1303,14 @@ final class AssistantStore: ObservableObject {
     }
 
     /// `answer(text, read)` z referencji.
+    ///
+    /// Automatyczna odpowiedź nie jest czytana na głos, gdy trwa rozmowa
+    /// z Emmą od dostawcy: wtedy mówi Emma, a systemowy syntezator byłby
+    /// drugim, obcym głosem w tej samej sesji (zgłoszenie „prototyp gada").
+    /// Świadomy odsłuch („Odsłuchaj", `readTurn`/`speakAction`) nadal działa.
     private func answer(_ text: String, isSummary: Bool = false, read: Bool = true) async {
         let id = appendAssistantTurn(text, isSummary: isSummary)
-        guard read, speaksReplies else { return }
+        guard read, speaksReplies, !providerOwnsVoice else { return }
         await speak(text, language: .pl, isSummary: isSummary, sourceID: "emma-turn-\(id)")
     }
 
@@ -909,19 +1338,7 @@ enum AssistantStoreRegistry {
     @MainActor static let shared = AssistantStore()
 }
 
-// MARK: - Identyfikator instalacji
-//
-// Stabilny, lokalny i jawny — nie jest sekretem i nie jest kluczem dostawcy (§1.8).
-
-enum InstallationIdentifier {
-    private static let key = "emma.installation-id"
-
-    static var current: String {
-        if let existing = UserDefaults.standard.string(forKey: key), !existing.isEmpty {
-            return existing
-        }
-        let created = "demo-installation-\(UUID().uuidString.lowercased())"
-        UserDefaults.standard.set(created, forKey: key)
-        return created
-    }
-}
+// Identyfikator instalacji ma jedno źródło: `InstallationIdentity`
+// (`Features/Auth/KeychainMobileSessionStore.swift`). Trzymanie drugiego,
+// niezależnego identyfikatora dla głosu („demo-installation-…”) dawało dwa
+// różne `installation_id` w jednej instalacji i backend odpowiadał 403.

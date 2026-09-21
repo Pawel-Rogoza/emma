@@ -141,6 +141,62 @@ final class ScreenshotCaptureUITests: XCTestCase {
             profile.tap()
             return nil
         }
+
+        closeSheet()
+
+        capture("12-termin-formularz", description: "Formularz terminu otwarty z wybranego dnia kalendarza") {
+            selectTab("calendar")
+            let add = application.buttons["Dodaj termin na ten dzień"]
+            guard add.waitForExistence(timeout: 10) else { return "brak przycisku „Dodaj termin na ten dzień”" }
+            add.tap()
+            guard application.staticTexts["Nowy termin"].waitForExistence(timeout: 10) else {
+                return "formularz terminu się nie otworzył"
+            }
+            return nil
+        }
+
+        closeSheet()
+
+        capture("13-zadanie-formularz", description: "Formularz nowego zadania") {
+            selectTab("today")
+            let tasks = application.buttons["Wszystkie zadania"]
+            guard tasks.waitForExistence(timeout: 10) else { return "brak wejścia do zadań" }
+            tasks.tap()
+            let add = application.buttons["Dodaj zadanie"]
+            guard add.waitForExistence(timeout: 10) else { return "brak przycisku „Dodaj zadanie”" }
+            add.tap()
+            guard application.staticTexts["Nowe zadanie"].waitForExistence(timeout: 10) else {
+                return "formularz zadania się nie otworzył"
+            }
+            return nil
+        }
+
+        closeSheet()
+
+        capture("14-nowa-rozmowa", description: "Arkusz nowej rozmowy z wyszukiwaniem kontaktu") {
+            // Świeży start: po scenie 08 zakładka „Rozmowy” pamięta otwarty wątek,
+            // a arkusz nowej rozmowy jest dostępny właśnie z listy rozmów.
+            application.terminate()
+            application.launch()
+            _ = application.buttons["tab.today"].waitForExistence(timeout: 20)
+            selectTab("messages")
+            let newConversation = application.buttons["Nowa rozmowa"]
+            guard newConversation.waitForExistence(timeout: 10) else { return "brak przycisku „Nowa rozmowa”" }
+            newConversation.tap()
+            guard application.staticTexts["Nowa rozmowa"].waitForExistence(timeout: 10) else {
+                return "arkusz nowej rozmowy się nie otworzył"
+            }
+            return nil
+        }
+    }
+
+    /// Zamknięcie arkusza przyciskiem „Zamknij”; brak arkusza nie jest błędem sceny.
+    private func closeSheet() {
+        let close = application.buttons["Zamknij"]
+        if close.waitForExistence(timeout: 5) {
+            close.tap()
+            _ = application.buttons["tab.today"].waitForExistence(timeout: 3)
+        }
     }
 
     // MARK: Pomocnicze

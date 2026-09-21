@@ -26,6 +26,26 @@ public protocol DictationService: AnyObject {
     func cancel() async
 }
 
+/// Zamiana błędu startu dyktowania na rodzaj pokazywany użytkownikowi.
+///
+/// Protokół żyje w `Core`, bo koordynator nie zna adapterów (pakiet logiki nie
+/// kompiluje warstwy `VoiceAdapters`). Dzięki temu nie musimy zgadywać przyczyny:
+/// adapter mówi wprost, czy to brak zgody, brak rozpoznawania, czy sesja audio.
+public protocol DictationStartFailureMapping {
+    var dictationFailure: DictationFailure { get }
+}
+
+/// Port zgody na mikrofon. Rdzeń nie zna `AVFoundation`, więc pyta o zgodę przez
+/// ten protokół; adapter systemowy (`MicrophonePermission`) żyje w `VoiceAdapters`.
+///
+/// Zgoda jest warunkiem wejścia do rozmowy, a nie kosmetyką: SDK dostawcy przy
+/// odmowie łączy sesję bez toru mikrofonu i nie zgłasza tego błędem.
+@MainActor
+public protocol MicrophonePermissionProviding: Sendable {
+    /// Zgoda na mikrofon, z systemowym pytaniem, gdy jest jeszcze nierozstrzygnięta.
+    func requestRecordPermission() async -> Bool
+}
+
 @MainActor
 public protocol SpeechPlaybackService: AnyObject {
     func play(_ request: SpeechPlaybackRequest) async throws
@@ -45,6 +65,8 @@ public protocol VoiceSessionRepository: Sendable {
 public protocol AssistantActionRepository: Sendable {
     func prepare(_ request: PrepareAction) async throws -> ActionProposal
     func revise(_ request: ReviseAction) async throws -> ActionProposal
+    func reschedule(_ request: RescheduleAction) async throws -> ActionProposal
+    func changeContext(_ request: ChangeActionContext) async throws -> ActionProposal
     func confirm(_ request: ConfirmAction) async throws -> ActionExecution
     func cancel(_ request: CancelAction) async throws -> ActionExecution
     func status(actionID: ActionID) async throws -> ActionExecution
@@ -60,6 +82,8 @@ public protocol ClientRepository: Sendable {
     func client(id: ClientID) async throws -> Client?
     func createClient(_ draft: NewClientDraft) async throws -> Client
     func updateClient(_ client: Client, expectedVersion: Version) async throws -> Client
+    /// Usunięcie zgłoszenia. Kartoteki nie usuwa — patrz `BackendRepository`.
+    func deleteClient(_ client: Client, expectedVersion: Version) async throws
 }
 
 public protocol CaseRepository: Sendable {
@@ -71,6 +95,8 @@ public protocol CaseRepository: Sendable {
 }
 
 public protocol TaskRepository: Sendable {
+    /// Pojedyncze zadanie po identyfikatorze (szczegół otwarty z listy lub karty).
+    func task(id: TaskID) async throws -> TaskItem?
     func tasks(filter: TaskFilter) async throws -> [TaskItem]
     func createTask(_ draft: NewTaskDraft) async throws -> TaskItem
     func updateTask(_ task: TaskItem, expectedVersion: Version) async throws -> TaskItem
@@ -116,6 +142,9 @@ public protocol MessagingRepository: Sendable {
         status: MessageTransport,
         at date: Date
     ) async throws -> Message?
+    /// Suma nieprzeczytanych wiadomości dla plakietki zakładki.
+    func unreadTotal(userID: UserID) async throws -> Int
+
 }
 
 public protocol UserRepository: Sendable {
@@ -329,6 +358,11 @@ public enum DomainError: Error, Equatable, Sendable {
     case notConfigured(String)
     case transportFailure(String)
     case unknownOutcome(String)
+    /// Komunikat backendu przeniesiony bez zmian. Używany, gdy kontrakt zna
+    /// przypadki, których domena nie modeluje osobno (np. 403 na cudzą sesję
+    /// albo 409 z bieżącą wersją kontekstu) — wtedy liczy się polskie zdanie
+    /// z `BackendRepositoryError.safeMessage`, a nie własne zgadywanie.
+    case backend(String)
 
     public var safeMessage: String {
         switch self {
@@ -342,6 +376,7 @@ public enum DomainError: Error, Equatable, Sendable {
         case .notConfigured(let what): return "Nie skonfigurowano: \(what)."
         case .transportFailure(let what): return "Błąd komunikacji: \(what)."
         case .unknownOutcome(let what): return "Nieznany wynik operacji: \(what). Bez automatycznego ponowienia."
+        case .backend(let message): return message
         }
     }
 

@@ -101,6 +101,8 @@ public enum EmmaMetrics {
     public static let emmaContextMinHeight: CGFloat = 41
     /// `.mic-button` i `.send-button`
     public static let emmaComposerButtonSize: CGFloat = 43
+    /// Główne wejście w rozmowę „Rozmawiaj” (etap 4 audytu: mikrofon 56–64 pt).
+    public static let emmaVoiceButtonSize: CGFloat = 56
     /// `.emma-action .draft` — minimalna wysokość szkicu
     public static let actionDraftMinHeight: CGFloat = 130
 

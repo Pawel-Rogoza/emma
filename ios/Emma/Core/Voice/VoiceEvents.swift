@@ -81,7 +81,10 @@ public struct VoiceSessionConfiguration: Hashable, Codable, Sendable {
     public var transport: VoiceTransportKind
     /// Identyfikator rozmowy u dostawcy, jeśli backend go zna.
     public var providerConversationID: String?
-    public var expiresAt: Date
+    /// Czas wygaśnięcia poświadczenia, **jeśli** dostawca go podaje. `nil` znaczy
+    /// „nieznany” — nie wymyślamy daty, a o żywotności sesji rozstrzyga backend
+    /// (`GET /voice/sessions/{id}/status`).
+    public var expiresAt: Date?
     public var capabilities: VoiceCapabilities
 
     public init(
@@ -92,7 +95,7 @@ public struct VoiceSessionConfiguration: Hashable, Codable, Sendable {
         endpoint: String? = nil,
         transport: VoiceTransportKind = .webrtc,
         providerConversationID: String? = nil,
-        expiresAt: Date,
+        expiresAt: Date?,
         capabilities: VoiceCapabilities
     ) {
         self.sessionID = sessionID
@@ -354,6 +357,10 @@ public enum RecoverableErrorKind: String, Codable, Sendable {
 
 public enum FatalErrorKind: String, Codable, Sendable {
     case microphonePermissionDenied
+    /// Zgoda jest, ale tor mikrofonu nie powstał (np. mikrofon zajęty przez inną
+    /// aplikację albo sesja audio nie oddała wejścia). Osobny przypadek, bo
+    /// komunikat o uprawnieniach byłby wtedy mylący.
+    case microphoneUnavailable
     case speechRecognitionPermissionDenied
     case authenticationFailed
     case sessionRevoked
@@ -366,6 +373,8 @@ public enum FatalErrorKind: String, Codable, Sendable {
         switch self {
         case .microphonePermissionDenied:
             return "Brak dostępu do mikrofonu. Możesz pisać tekstem albo zmienić uprawnienia w Ustawieniach."
+        case .microphoneUnavailable:
+            return "Mikrofon nie przekazuje dźwięku. Sprawdź, czy nie używa go inna aplikacja, albo pisz tekstem."
         case .speechRecognitionPermissionDenied:
             return "Brak dostępu do rozpoznawania mowy. Możesz pisać tekstem."
         case .authenticationFailed:

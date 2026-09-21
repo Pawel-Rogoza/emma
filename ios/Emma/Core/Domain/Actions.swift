@@ -181,6 +181,7 @@ public enum ActionEngineError: Error, Equatable, Sendable {
     case proposalExpired
     case emptyText
     case missingRecipient
+    case notATask
     case stalePresentation(expected: String, received: String)
     case versionConflict(expected: Version, current: Version)
     case duplicateExecution
@@ -195,6 +196,7 @@ public enum ActionEngineError: Error, Equatable, Sendable {
         case .proposalExpired: return "Propozycja wygasła. Przygotuj ją ponownie."
         case .emptyText: return "Treść nie może być pusta."
         case .missingRecipient: return "Wybierz klienta, do którego należy działanie."
+        case .notATask: return "Termin zmieniamy tylko w zadaniu."
         case .stalePresentation: return "Ta propozycja została już zastąpiona nowszą wersją."
         case .versionConflict(let expected, let current):
             return "Konflikt wersji: oczekiwano \(expected), aktualnie \(current)."
@@ -331,6 +333,38 @@ public struct ActionEngine: Sendable {
         proposal.presentationID = previous.presentationID + "#r\(proposal.version.value)"
         state.proposals[actionID] = proposal
         // Zgoda na poprzednią treść nie działa.
+        state.armedPresentationID = nil
+        return proposal
+    }
+
+    /// Zmiana terminu zadania („nie, na poniedziałek”). Termin jest osobnym
+    /// polem propozycji, więc sama poprawka treści nie wystarczy: karta musi
+    /// pokazywać nową datę, a wcześniejsza zgoda przestaje obowiązywać.
+    public func reschedule(
+        actionID: ActionID,
+        dueDate: LocalDate?,
+        now: Date,
+        into state: inout State
+    ) throws -> ActionProposal {
+        guard var proposal = state.proposals[actionID] else { throw ActionEngineError.proposalNotFound }
+        guard proposal.state.isActionable else {
+            throw ActionEngineError.proposalNotActionable(proposal.state)
+        }
+        guard proposal.kind == .task else { throw ActionEngineError.notATask }
+        let previous = proposal
+        proposal.taskDueDate = dueDate
+        proposal.version = previous.version.next()
+        proposal.payloadHash = ActionEngine.payloadHash(
+            kind: proposal.kind,
+            text: proposal.text,
+            clientID: proposal.clientID,
+            caseID: proposal.caseID,
+            threadID: proposal.threadID
+        )
+        proposal.presentedAt = now
+        proposal.expiresAt = now.addingTimeInterval(confirmationWindow)
+        proposal.presentationID = previous.presentationID + "#d\(proposal.version.value)"
+        state.proposals[actionID] = proposal
         state.armedPresentationID = nil
         return proposal
     }

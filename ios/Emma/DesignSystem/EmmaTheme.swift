@@ -7,6 +7,13 @@ import SwiftUI
 // Szczegóły i pochodzenie każdego tokenu: docs/ios/DESIGN_CONTRACT.md §1.
 //
 // Zasada: widoki nie zawierają literałów kolorów. Wyłącznie te tokeny.
+//
+// Kontrast (F09 audytu UX): tokeny tekstowe, które wypadały poniżej 4,5:1 dla
+// zwykłego tekstu, mają ciemniejsze wartości — ale wyłącznie takie, które już
+// występują w regułach referencji (kontrola `design-token-diff.py` zgłosiłaby
+// „kolory spoza referencji” jako błąd). Np. `mutedSoft` 3,50:1 → 4,89:1,
+// `taskDateText` 3,00:1 → 4,64:1, `dockStatusText` 2,68:1 → 4,93:1.
+// Każda zmiana jest zarejestrowana w docs/ios/DESIGN_DEVIATIONS.md.
 
 public enum EmmaTheme {
 
@@ -15,13 +22,13 @@ public enum EmmaTheme {
     public static let surface = Color.white
     public static let ink = Color(hex: 0x152337)
     public static let muted = Color(hex: 0x687688)
-    public static let mutedSoft = Color(hex: 0x7A8492)
+    public static let mutedSoft = Color(hex: 0x5F6D7D)
     public static let border = Color(hex: 0xE2E7ED)
     public static let cardBorder = Color(hex: 0xE8ECF0)
     public static let rowSeparator = Color(hex: 0xEDF0F4)
     public static let checkboxBorder = Color(hex: 0xCBD4DF)
-    public static let taskMetaText = Color(hex: 0x8A95A3)
-    public static let taskDateText = Color(hex: 0x8B96A5)
+    public static let taskMetaText = Color(hex: 0x66768B)
+    public static let taskDateText = Color(hex: 0x66768B)
 
     // Akcenty
     public static let accent = Color(hex: 0x3B61D9)
@@ -56,14 +63,14 @@ public enum EmmaTheme {
     public static let chatHeaderBorder = Color(hex: 0xE1E6ED)
     public static let bubbleIncoming = Color.white
     public static let bubbleOutgoing = Color(hex: 0xDFE8F1)
-    public static let bubbleMeta = Color(hex: 0x738398)
+    public static let bubbleMeta = Color(hex: 0x66768B)
     public static let composerBorder = Color(hex: 0xDCE3EC)
     public static let quoteRule = Color(hex: 0x7895B5)
     public static let quoteBackground = Color(hex: 0xEAF0F6)
-    public static let receiptDefault = Color(hex: 0x82909E)
+    public static let receiptDefault = Color(hex: 0x4E6882)
     public static let receiptRead = Color(hex: 0x2674D8)
     public static let chatDayChip = Color(hex: 0xE5EAF0)
-    public static let chatDayChipText = Color(hex: 0x788697)
+    public static let chatDayChipText = Color(hex: 0x4E6882)
     public static let dictationAccent = Color(hex: 0x9A622C)
     // Tłumaczenia wiadomości usunięte z interfejsu na życzenie właściciela
     // (zespół rozumie uk/ru) — tokeny `.bubble-translation` świadomie bez
@@ -85,7 +92,7 @@ public enum EmmaTheme {
     // Tokeny awatara zalogowanego użytkownika (`avatarBackground`/`avatarText`)
     // usunięte razem z plakietką „KR” w nagłówkach — konto jest jedno i wspólne.
     public static let personAvatarBackground = Color(hex: 0xEAF0F4)
-    public static let personAvatarText = Color(hex: 0x62778A)
+    public static let personAvatarText = Color(hex: 0x4E6882)
 
     // Kalendarz
     public static let daySelected = Color(hex: 0x1C314B)
@@ -93,19 +100,19 @@ public enum EmmaTheme {
     public static let daySelectedLabel = Color(hex: 0xBFCCDF)
     public static let dayTodayDot = Color(hex: 0x8BA0B7)
     public static let weekControlBackground = Color(hex: 0xEDF1F5)
-    public static let weekControlText = Color(hex: 0x69819B)
+    public static let weekControlText = Color(hex: 0x526F91)
 
     // Pasek zakładek
     public static let tabBarBackground = Color(hex: 0xFBFCFD)
     public static let tabBarBorder = Color(hex: 0xE1E7EE)
     public static let tabActive = Color(hex: 0x254D9D)
-    public static let tabInactive = Color(hex: 0x8A93A0)
+    public static let tabInactive = Color(hex: 0x5F6D7D)
     public static let tabEmmaChip = Color(hex: 0x1A2E47)
     public static let tabEmmaChipText = Color.white
 
     // Pozostałe
     public static let contextStripBackground = Color(hex: 0xEAF0F6)
-    public static let contextStripText = Color(hex: 0x6B84A0)
+    public static let contextStripText = Color(hex: 0x526F91)
     public static let contextStripBorder = Color(hex: 0xDFE7EF)
     public static let activityMarker = Color(hex: 0xA6B5C7)
     /// `.case-emma` — początek gradientu tła (110°)
@@ -115,7 +122,7 @@ public enum EmmaTheme {
     /// `.case-emma` — obramowanie karty
     public static let caseEmmaBorder = Color(hex: 0xDFE7EF)
     /// `.case-emma small` — podtytuł karty
-    public static let caseEmmaSubtitle = Color(hex: 0x8494A7)
+    public static let caseEmmaSubtitle = Color(hex: 0x526F91)
     /// `.case-emma>svg` — ikona odsłuchu
     public static let caseEmmaIcon = Color(hex: 0x557799)
     public static let linkedCaseBackground = Color(hex: 0xEDF2F8)
@@ -151,11 +158,11 @@ public enum EmmaTheme {
     // widokach prywatne kolory rozjeżdżają się przy pierwszej zmianie wzorca.
 
     /// `.emma-intro p`
-    public static let emmaIntroText = Color(hex: 0x7F8D9E)
+    public static let emmaIntroText = Color(hex: 0x5F6D7D)
     /// `.emma-turn` — obramowanie wypowiedzi
     public static let emmaTurnBorder = Color(hex: 0xE4EAF1)
     /// `.emma-turn > span` — kto mówi
-    public static let emmaTurnLabel = Color(hex: 0x728AA4)
+    public static let emmaTurnLabel = Color(hex: 0x526F91)
     /// `.listen-text` — „Odsłuchaj”
     public static let emmaListenText = Color(hex: 0x5F80A2)
     /// `.emma-suggestions button svg`
@@ -163,11 +170,11 @@ public enum EmmaTheme {
     /// `.emma-suggestions button svg:last-child`
     public static let emmaSuggestionChevron = Color(hex: 0x9EAFBF)
     /// `.emma-suggestions small`
-    public static let emmaSuggestionSubtitle = Color(hex: 0x8D9AAB)
+    public static let emmaSuggestionSubtitle = Color(hex: 0x66768B)
     /// `.voice-status-line`
-    public static let emmaStatusText = Color(hex: 0x8395A9)
+    public static let emmaStatusText = Color(hex: 0x536B88)
     /// `.demo-foot` — nota o danych przykładowych
-    public static let emmaDemoFootText = Color(hex: 0x8E9AAA)
+    public static let emmaDemoFootText = Color(hex: 0x5F6D7D)
     /// `.assistant-compose` — obramowanie pola polecenia
     public static let emmaComposerBorder = Color(hex: 0xD8E3EE)
     /// `.mic-button` — tekst na przycisku mikrofonu
@@ -181,13 +188,13 @@ public enum EmmaTheme {
     /// `#assistant-dock` — górne obramowanie
     public static let dockBorder = Color(hex: 0xE3E9F0)
     /// `.voice-controls-row` — etykieta stanu
-    public static let dockStatusText = Color(hex: 0x8A9AAC)
+    public static let dockStatusText = Color(hex: 0x5F6D7D)
     /// `.voice-controls-row .text-button`
-    public static let dockActionText = Color(hex: 0x8196AD)
+    public static let dockActionText = Color(hex: 0x4C7399)
     /// `.emma-action-heading span:first-child`
-    public static let actionHeadingText = Color(hex: 0x617F9F)
+    public static let actionHeadingText = Color(hex: 0x526F91)
     /// `.action-meta`
-    public static let actionMetaText = Color(hex: 0x8796A6)
+    public static let actionMetaText = Color(hex: 0x66768B)
 }
 
 extension Color {

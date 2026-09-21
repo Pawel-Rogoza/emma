@@ -39,7 +39,9 @@ final class CaseStore: ObservableObject {
     @Published var tab: Tab = .overview
 
     func load(_ dependencies: AppDependencies, caseID: CaseID) async {
-        phase = .loading
+        // Jak na „Dzisiaj” i „Zadaniach”: odświeżenie po zapisie nie cofa listy
+        // do stanu ładowania, więc sprawa zachowuje pozycję i wybraną zakładkę.
+        if !phase.hasLoaded { phase = .loading }
         do {
             guard let legalCase = try await dependencies.repository.legalCase(id: caseID) else {
                 phase = .failed(ScreenLoad.failure(for: DomainError.notFound(resource: "sprawa", id: caseID.rawValue), fallback: "Nie znaleziono sprawy."))
@@ -103,6 +105,7 @@ struct CaseScreen: View {
         .background(EmmaTheme.bg)
         .scrollIndicators(.hidden)
         .navigationBarBackButtonHidden(true)
+        .emmaPreservesSwipeBack()
         .task(id: dependencies.dataVersion) { await store.load(dependencies, caseID: caseID) }
     }
 
@@ -193,7 +196,7 @@ struct CaseScreen: View {
                         .font(EmmaTypography.ui(13, .medium))
                         .foregroundStyle(EmmaTheme.ink)
                     Text("Emma · notatki, terminy, kolejne kroki")
-                        .font(EmmaTypography.ui(10))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.caseEmmaSubtitle)
                 }
                 Spacer(minLength: 0)
@@ -238,7 +241,7 @@ struct CaseScreen: View {
         .padding(.bottom, 4)
 
         SectionHeader("Kolejny termin", actionTitle: "Dodaj") {
-            dependencies.present(.eventForm(editing: nil, clientID: model.client.id, caseID: model.legalCase.id))
+            dependencies.present(.eventForm(editing: nil, clientID: model.client.id, caseID: model.legalCase.id, initialDay: nil))
         }
         if model.upcomingEvents.isEmpty {
             emptyCard("Brak kolejnego terminu", "Dodaj konsultację lub termin dotyczący sprawy.")
@@ -302,7 +305,7 @@ struct CaseScreen: View {
             VStack(spacing: 0) {
                 if model.activity.isEmpty {
                     Text("Brak zdarzeń w historii.")
-                        .font(EmmaTypography.ui(12))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.muted)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
@@ -326,7 +329,7 @@ struct CaseScreen: View {
             VStack(spacing: 0) {
                 if tasks.isEmpty {
                     Text(empty)
-                        .font(EmmaTypography.ui(12))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.muted)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 15)

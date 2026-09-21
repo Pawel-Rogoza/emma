@@ -17,7 +17,7 @@ struct AccountActionsSection: View {
                 .foregroundStyle(EmmaTheme.muted)
 
             Text("Aplikacja blokuje się, gdy wychodzi w tło. Wrócić możesz przez \(unlockName).")
-                .font(EmmaTypography.ui(12))
+                .font(EmmaTypography.caption())
                 .foregroundStyle(EmmaTheme.mutedSoft)
                 .fixedSize(horizontal: false, vertical: true)
 

@@ -194,7 +194,12 @@ Cienie (skalowane z rozmiarem):
 `inset -5 -5 12 #FFFFFF52`, `inset 3 0 9 #E5E9FB80`, `0 0 25 #9CBFDD20`;
 dla `.hero`: `inset -12 -12 28`, `inset 7 0 24`, `0 16 42 #688BAC20` (linia 4).
 
-Animacja: `breathe` (`scale 1.08`) **tylko** w stanie aktywnym (listening/speaking/requesting).
+Animacja: `breathe` **bez zmiany skali** — oddychanie niosą wyłącznie ruch głowy, uszy
+i światło (stan aktywny: listening/speaking/requesting). Skala `1.08` z pierwotnego
+projektu została usunięta, bo przy aktualizacji SwiftUI SceneKit interpolował transform
+węzła i postać na chwilę się rozciągała (zob. `EmmaOrb`). Obwiednia postaci jest stała,
+a obrazek zapasowy używa tej samej widocznej wielkości co relief (`reliefMatchScale`),
+żeby przełączenie renderu nie wyglądało jak rośnięcie i zmniejszanie.
 `Reduce Motion` zatrzymuje puls i pozostawia czytelną etykietę stanu. Brak stałego pulsowania aplikacji.
 
 ## 5. Shell i nawigacja

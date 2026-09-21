@@ -65,7 +65,7 @@ public enum AppSheet: Hashable, Identifiable, Sendable {
     // Praca kancelarii
     case note(clientID: ClientID, caseID: CaseID?)
     case taskForm(editing: TaskID?, clientID: ClientID?, caseID: CaseID?)
-    case eventForm(editing: EventID?, clientID: ClientID?, caseID: CaseID?)
+    case eventForm(editing: EventID?, clientID: ClientID?, caseID: CaseID?, initialDay: LocalDate?)
     case eventDetail(EventID)
     case taskDetail(TaskID)
 
@@ -88,8 +88,9 @@ public enum AppSheet: Hashable, Identifiable, Sendable {
             return "note-\(clientID.rawValue)-\(caseID?.rawValue ?? "none")"
         case .taskForm(let taskID, let clientID, let caseID):
             return "task-\(taskID?.rawValue ?? "new")-\(clientID?.rawValue ?? "none")-\(caseID?.rawValue ?? "none")"
-        case .eventForm(let eventID, let clientID, let caseID):
-            return "event-\(eventID?.rawValue ?? "new")-\(clientID?.rawValue ?? "none")-\(caseID?.rawValue ?? "none")"
+        case .eventForm(let eventID, let clientID, let caseID, let initialDay):
+            let day = initialDay?.isoString ?? "none"
+            return "event-\(eventID?.rawValue ?? "new")-\(clientID?.rawValue ?? "none")-\(caseID?.rawValue ?? "none")-\(day)"
         case .eventDetail(let eventID): return "event-detail-\(eventID.rawValue)"
         case .taskDetail(let taskID): return "task-detail-\(taskID.rawValue)"
         case .newConversation: return "new-conversation"

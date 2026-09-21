@@ -78,7 +78,7 @@ struct TodayEventRow: View {
                             .foregroundStyle(isPast ? EmmaTheme.muted : EmmaTheme.ink)
                         if event.durationMinutes > 0 {
                             Text("· \(event.durationMinutes) min")
-                                .font(EmmaTypography.ui(11))
+                                .font(EmmaTypography.caption())
                                 .foregroundStyle(EmmaTheme.mutedSoft)
                         }
                     }
@@ -94,16 +94,16 @@ struct TodayEventRow: View {
                             StatusPill("Teraz", kind: .green)
                         } else if isPast {
                             Text("Minęło")
-                                .font(EmmaTypography.ui(11))
+                                .font(EmmaTypography.caption())
                                 .foregroundStyle(EmmaTheme.mutedSoft)
                         } else {
                             Text(event.status.rawValue)
-                                .font(EmmaTypography.ui(11))
+                                .font(EmmaTypography.caption())
                                 .foregroundStyle(EmmaTheme.muted)
                         }
                         if !event.place.isEmpty {
                             Text("· \(event.place)")
-                                .font(EmmaTypography.ui(11))
+                                .font(EmmaTypography.caption())
                                 .foregroundStyle(EmmaTheme.mutedSoft)
                                 .lineLimit(1)
                         }
@@ -167,7 +167,7 @@ struct EventRow: View {
                                 .font(EmmaTypography.ui(14, .semibold))
                                 .foregroundStyle(hasPassed ? EmmaTheme.muted : EmmaTheme.ink)
                             Text(dependencies.dateText.dayLabel(event.day))
-                                .font(EmmaTypography.ui(10))
+                                .font(EmmaTypography.caption())
                                 .foregroundStyle(EmmaTheme.mutedSoft)
                         }
                         .frame(minWidth: 51, alignment: .leading)
@@ -180,7 +180,7 @@ struct EventRow: View {
                                 .multilineTextAlignment(.leading)
                                 .fixedSize(horizontal: false, vertical: true)
                             Text(hasPassed ? "Minęło · \(event.status.rawValue)" : event.status.rawValue)
-                                .font(EmmaTypography.ui(11))
+                                .font(EmmaTypography.caption())
                                 .foregroundStyle(EmmaTheme.mutedSoft)
                                 .multilineTextAlignment(.leading)
                                 .fixedSize(horizontal: false, vertical: true)

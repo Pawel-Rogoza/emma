@@ -37,6 +37,10 @@ final class MessagesStore: ObservableObject {
 
     struct Model {
         var rows: [Row]
+        /// Pełny, nieprzefiltrowany zbiór wierszy. Bez niego czyszczenie wyszukiwania
+        /// filtrowało ponownie już przefiltrowaną listę i nie odtwarzało utraconych
+        /// pozycji (F11).
+        var allRows: [Row]
         var searchQuery: String
         var filter: Filter
     }
@@ -80,8 +84,11 @@ final class MessagesStore: ObservableObject {
                 )
             }
 
-            rows = filterAndSort(rows)
-            phase = .loaded(Model(rows: rows, searchQuery: searchText, filter: filter))
+            // Pełny zbiór zapisujemy osobno, a filtrowanie liczymy z niego — nie z wyniku.
+            let allRows = rows
+            phase = .loaded(
+                Model(rows: filterAndSort(allRows), allRows: allRows, searchQuery: searchText, filter: filter)
+            )
         } catch {
             phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać rozmów."))
         }
@@ -105,10 +112,18 @@ final class MessagesStore: ObservableObject {
     }
 
     /// Ponowne filtrowanie bez odpytywania repozytorium — używane przy zmianie
-    /// filtra i wpisywaniu tekstu.
+    /// filtra i wpisywaniu tekstu. Liczone jest z pełnego zbioru `allRows`, więc
+    /// wyczyszczenie zapytania przywraca całą listę (F11).
     func applyLocalFilter() async {
         guard let model = phase.value else { return }
-        phase = .loaded(Model(rows: filterAndSort(model.rows), searchQuery: searchText, filter: filter))
+        phase = .loaded(
+            Model(
+                rows: filterAndSort(model.allRows),
+                allRows: model.allRows,
+                searchQuery: searchText,
+                filter: filter
+            )
+        )
     }
 }
 
@@ -186,7 +201,7 @@ struct MessagesScreen: View {
                     }
 
                     Text("Wiadomości przykładowe · WhatsApp niepołączony")
-                        .font(EmmaTypography.ui(11))
+                        .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.mutedSoft)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, 14)

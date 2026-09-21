@@ -187,6 +187,10 @@ public struct ScheduledEvent: Identifiable, Hashable, Codable, Sendable {
     public var kind: EventKind
     public var status: EventStatus
     public var place: String
+    /// Termin całodniowy (np. upływ terminu na dokumenty). Backend to wie
+    /// (`all_day`), a aplikacja nie miała dotąd gdzie tego zapisać — bez tego
+    /// pola termin całodniowy musiałby udawać termin o północy.
+    public var isAllDay: Bool
     public var version: Version
 
     public init(
@@ -200,6 +204,7 @@ public struct ScheduledEvent: Identifiable, Hashable, Codable, Sendable {
         kind: EventKind,
         status: EventStatus,
         place: String,
+        isAllDay: Bool = false,
         version: Version = .initial
     ) {
         self.id = id
@@ -212,6 +217,7 @@ public struct ScheduledEvent: Identifiable, Hashable, Codable, Sendable {
         self.kind = kind
         self.status = status
         self.place = place
+        self.isAllDay = isAllDay
         self.version = version
     }
 

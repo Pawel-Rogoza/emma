@@ -43,6 +43,10 @@
 	<string>$(EMMA_API_BASE_URL)</string>
 	<key>EMMADefaultLocale</key>
 	<string>$(EMMA_DEFAULT_LOCALE)</string>
+	<key>EMMAVoiceProvider</key>
+	<string>$(EMMA_VOICE_PROVIDER)</string>
+	<key>EMMAVoiceModel</key>
+	<string>$(EMMA_VOICE_MODEL)</string>
 
 	<!-- Uprawnienia pobierane przy pierwszym użyciu funkcji, nie przy starcie (§5.7).
 	     Mikrofon opisuje rozmowę z Emmą, nie nagrywanie w tle. -->
@@ -70,6 +74,13 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UIUserInterfaceStyle</key>
 	<string>Light</string>

@@ -1,0 +1,7 @@
+Zrzuty ekranu Emmy — etap 5 (dialog intencji, poprawki, spotkanie)
+Data: 2026-09-13T15:05:28Z
+Uwaga: zrzut „NIE UDAŁO SIĘ” oznacza, że ekran nie osiągnął założonego stanu.
+Zrzut i tak powstał — pokazuje, co było na ekranie w tym momencie.
+Niejednoznaczne imię (dwie Oleny) nie występuje w zestawie demo, więc
+doprecyzowanie głosem sprawdza test jednostkowy na wstrzykniętych danych.
+zapisano · 33-emma-schemat-przy-szkicu.png · §6-B — pytanie o terminy nie kasuje przygotowanej wiadomości
