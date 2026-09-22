@@ -14,15 +14,26 @@ import Foundation
 actor BackendVoiceToolExecutor: VoiceToolExecuting {
 
     private let baseURL: URL?
-    private let accessToken: String?
+    private let tokens: VoiceAccessTokenSource
     private let session: URLSession
     private let timeout: TimeInterval
 
-    init(baseURL: URL?, accessToken: String?, session: URLSession = .shared, timeout: TimeInterval = 15) {
+    /// Token pobierany przy każdym wywołaniu: rozmowa trwa dłużej niż token dostępu.
+    init(
+        baseURL: URL?,
+        tokens: VoiceAccessTokenSource,
+        session: URLSession = .shared,
+        timeout: TimeInterval = 15
+    ) {
         self.baseURL = baseURL
-        self.accessToken = accessToken
+        self.tokens = tokens
         self.session = session
         self.timeout = timeout
+    }
+
+    /// Stały token — testy i podglądy.
+    init(baseURL: URL?, accessToken: String?, session: URLSession = .shared, timeout: TimeInterval = 15) {
+        self.init(baseURL: baseURL, tokens: .fixed(accessToken), session: session, timeout: timeout)
     }
 
     nonisolated func execute(toolName: String, argumentsJSON: String) async throws -> String {
@@ -35,24 +46,13 @@ actor BackendVoiceToolExecutor: VoiceToolExecuting {
             throw VoiceToolExecutionError.unknownTool(toolName)
         }
 
-        var request = URLRequest(url: baseURL.appendingPathComponent("api/mobile/v1/voice/tools/\(toolName)"))
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let accessToken {
-            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        }
-        request.httpBody = Data(argumentsJSON.utf8)
-        request.timeoutInterval = timeout
-
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            throw VoiceToolExecutionError.failed("Nie udało się sprawdzić danych w kancelarii.")
-        }
-        guard let http = response as? HTTPURLResponse else {
-            throw VoiceToolExecutionError.failed("Nieprawidłowa odpowiedź backendu.")
+        let url = baseURL.appendingPathComponent("api/mobile/v1/voice/tools/\(toolName)")
+        var (data, http) = try await post(url: url, body: argumentsJSON, token: await tokens.current())
+        // Token wygasł w trakcie rozmowy: jedno odnowienie i jedno ponowienie,
+        // jak w `BackendAPIClient`. Drugie 401 to już koniec sesji.
+        if http.statusCode == 401, let refresh = tokens.refresh,
+           let refreshed = await refresh(), !refreshed.isEmpty {
+            (data, http) = try await post(url: url, body: argumentsJSON, token: refreshed)
         }
         switch http.statusCode {
         case 200...299:
@@ -74,6 +74,29 @@ actor BackendVoiceToolExecutor: VoiceToolExecuting {
         // Odsyłamy modelowi dokładnie to, co zwrócił backend — bez własnej
         // interpretacji i bez rozszerzania zakresu danych.
         return String(decoding: data, as: UTF8.self)
+    }
+
+    private nonisolated func post(url: URL, body: String, token: String?) async throws -> (Data, HTTPURLResponse) {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token, !token.isEmpty {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = Data(body.utf8)
+        request.timeoutInterval = timeout
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw VoiceToolExecutionError.failed("Nie udało się sprawdzić danych w kancelarii.")
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw VoiceToolExecutionError.failed("Nieprawidłowa odpowiedź backendu.")
+        }
+        return (data, http)
     }
 
     private nonisolated func message(from data: Data) -> String? {

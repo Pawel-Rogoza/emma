@@ -78,6 +78,55 @@ final class VoiceToolAndAudioTests: XCTestCase {
         }
     }
 
+    /// Rozmowa trwa dłużej niż token dostępu (30 min). Pierwsze 401 to wygasły
+    /// token, nie koniec sesji: jedno odnowienie i jedno ponowienie narzędzia.
+    func testExpiredTokenIsRefreshedOnceAndToolRetried() async throws {
+        StubURLProtocol.respond(sequence: [
+            (json: Data(#"{"code":"unauthorized"}"#.utf8), status: 401),
+            (json: Data(#"{"tool":"search_clients","result":{"ok":true}}"#.utf8), status: 200),
+        ])
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let executor = BackendVoiceToolExecutor(
+            baseURL: baseURL,
+            tokens: VoiceAccessTokenSource(current: { "token-wygasly" }, refresh: { "token-odnowiony" }),
+            session: URLSession(configuration: configuration)
+        )
+
+        let result = try await executor.execute(toolName: "search_clients", argumentsJSON: "{}")
+
+        XCTAssertTrue(result.contains("\"ok\":true"))
+        XCTAssertEqual(
+            StubURLProtocol.allRequests.map { $0.value(forHTTPHeaderField: "Authorization") },
+            ["Bearer token-wygasly", "Bearer token-odnowiony"]
+        )
+    }
+
+    /// Backend wysyła `expires_at` z milisekundami. Strategia `.iso8601` ich nie
+    /// przyjmuje, a błąd dekodowania kończył wznowienie rozmowy po `goAway`.
+    func testConversationTokenAcceptsMillisecondExpiry() async throws {
+        StubURLProtocol.respond(
+            json: Data(#"{"token":"auth_tokens/atrapa","expires_at":"2099-01-01T10:00:00.844Z","context_version":1}"#.utf8),
+            status: 200
+        )
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let provider = BackendConversationTokenProvider(
+            baseURL: baseURL,
+            session: URLSession(configuration: configuration)
+        )
+
+        let issued = try await provider.fetchToken(
+            sessionID: VoiceSessionID("sesja-1"),
+            contextVersion: Version(1),
+            installationID: "instalacja-1",
+            accessToken: "token-uzytkownika"
+        )
+
+        XCTAssertEqual(issued.token, "auth_tokens/atrapa")
+        XCTAssertNotNil(issued.expiresAt)
+    }
+
     func testUnknownToolNameIsRejectedBeforeAnyRequest() async throws {
         StubURLProtocol.respond(json: Data("{}".utf8), status: 200)
         do {
@@ -98,6 +147,17 @@ final class VoiceToolAndAudioTests: XCTestCase {
         } catch let error as VoiceToolExecutionError {
             XCTAssertEqual(error, .failed(error.safeMessage))
         }
+    }
+
+    /// Pełny dupleks dostaje fragmenty ~20 ms; do gniazda idą porcje ≥ 40 ms,
+    /// bez gubienia i bez przestawiania bajtów.
+    func testChunkAccumulatorEmitsWholeChunksInOrder() {
+        let accumulator = PCMChunkAccumulator(minimumBytes: 4)
+        XCTAssertNil(accumulator.append(Data([1, 2])))
+        XCTAssertEqual(accumulator.append(Data([3, 4, 5])), Data([1, 2, 3, 4, 5]))
+        XCTAssertNil(accumulator.append(Data([6])))
+        XCTAssertEqual(accumulator.append(Data([7, 8, 9])), Data([6, 7, 8, 9]))
+        XCTAssertEqual(GeminiLiveDefaults.minimumChunkBytes, 1_280, "40 ms przy 16 kHz, 16 bit")
     }
 
     func testToolErrorPayloadIsValidJSON() {

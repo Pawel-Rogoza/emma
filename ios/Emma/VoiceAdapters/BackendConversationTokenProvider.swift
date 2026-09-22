@@ -69,7 +69,20 @@ actor BackendConversationTokenProvider {
         self.baseURL = baseURL
         self.session = session
         self.decoder = JSONDecoder()
-        self.decoder.dateDecodingStrategy = .iso8601
+        // Nie `.iso8601`: ta strategia odrzuca ułamki sekund, a backend wysyła
+        // `expires_at` z milisekundami (`…09.844Z`). Całe dekodowanie kończyło
+        // się wtedy `malformedResponse`, czyli nieudanym wznowieniem po `goAway`.
+        self.decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let raw = try container.decode(String.self)
+            guard let date = MobileAuthClient.parseISO8601(raw) else {
+                throw DecodingError.dataCorruptedError(
+                    in: container,
+                    debugDescription: "Nieznany format expires_at: \(raw)"
+                )
+            }
+            return date
+        }
     }
 
     /// Czy dostawca głosu może w ogóle zostać użyty w tej konfiguracji.

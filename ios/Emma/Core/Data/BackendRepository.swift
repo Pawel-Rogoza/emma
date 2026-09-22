@@ -86,7 +86,12 @@ public struct BackendRepository: EmmaRepository, Sendable {
             cursor = page.hasMore ? page.nextCursor : nil
             pages += 1
         } while cursor != nil && pages < Self.maxClientPages
-        return try collected.map(Self.mapClient)
+        // Kursor jest przesunięciem: gdy między stronami dojdzie nowy lead, ten
+        // sam kontakt wraca na kolejnej stronie. Duplikat identyfikatora
+        // wywracał ekrany budujące słowniki po `id`, więc zostawiamy pierwszy.
+        var seen = Set<String>()
+        let unique = collected.filter { seen.insert($0.id).inserted }
+        return try unique.map(Self.mapClient)
     }
 
     public func client(id: ClientID) async throws -> Client? {
@@ -212,6 +217,28 @@ public struct BackendRepository: EmmaRepository, Sendable {
         return error
     }
 
+    static func priorityToken(_ priority: TaskPriority) -> String {
+        switch priority {
+        case .normal: return "normal"
+        case .urgent: return "urgent"
+        }
+    }
+
+    static func eventKindToken(_ kind: EventKind) -> String {
+        switch kind {
+        case .consultation: return "consultation"
+        case .caseDeadline: return "case_deadline"
+        }
+    }
+
+    static func eventStatusToken(_ status: EventStatus) -> String {
+        switch status {
+        case .toConfirm: return "to_confirm"
+        case .confirmed: return "confirmed"
+        case .finished: return "finished"
+        }
+    }
+
     /// Etap kontaktu w słowniku kontraktu (`new` / `in_contact` / `client`).
     static func stageToken(_ stage: ClientStage) -> String {
         switch stage {
@@ -276,15 +303,55 @@ public struct BackendRepository: EmmaRepository, Sendable {
     }
 
     public func createTask(_ draft: NewTaskDraft) async throws -> TaskItem {
-        throw notAvailable("tworzenie zadania (POST /tasks)")
+        let dto = try await api.createTask(
+            BackendTaskCreateBody(
+                title: draft.title,
+                dueDate: draft.dueDate.isoString,
+                priority: Self.priorityToken(draft.priority),
+                clientID: draft.clientID?.rawValue,
+                caseID: draft.caseID?.rawValue
+            ),
+            idempotencyKey: Self.newIdempotencyKey()
+        )
+        return try Self.requireTask(dto)
     }
 
     public func updateTask(_ task: TaskItem, expectedVersion: Version) async throws -> TaskItem {
-        throw notAvailable("zmiana zadania (PATCH /tasks/{task_id})")
+        try await patchTask(
+            id: task.id,
+            body: BackendTaskUpdateBody(
+                expectedVersion: expectedVersion.value,
+                title: task.title,
+                dueDate: task.dueDate.isoString,
+                priority: Self.priorityToken(task.priority),
+                isDone: task.isDone
+            ),
+            expectedVersion: expectedVersion
+        )
     }
 
     public func setDone(taskID: TaskID, isDone: Bool, expectedVersion: Version) async throws -> TaskItem {
-        throw notAvailable("odhaczenie zadania (PATCH /tasks/{task_id})")
+        try await patchTask(
+            id: taskID,
+            body: BackendTaskUpdateBody(expectedVersion: expectedVersion.value, isDone: isDone),
+            expectedVersion: expectedVersion
+        )
+    }
+
+    private func patchTask(id: TaskID, body: BackendTaskUpdateBody, expectedVersion: Version) async throws -> TaskItem {
+        do {
+            let dto = try await api.updateTask(id: id.rawValue, body: body, idempotencyKey: Self.newIdempotencyKey())
+            return try Self.requireTask(dto)
+        } catch let error as BackendRepositoryError {
+            throw Self.writeError(error, expectedVersion: expectedVersion)
+        }
+    }
+
+    private static func requireTask(_ dto: BackendTaskDTO) throws -> TaskItem {
+        guard let task = try mapTask(dto) else {
+            throw BackendRepositoryError.decoding("zadanie bez terminu w odpowiedzi zapisu")
+        }
+        return task
     }
 
     // MARK: AgendaRepository
@@ -303,15 +370,57 @@ public struct BackendRepository: EmmaRepository, Sendable {
     }
 
     public func createEvent(_ draft: NewEventDraft) async throws -> ScheduledEvent {
-        throw notAvailable("tworzenie terminu (POST /events)")
+        let dto = try await api.createEvent(
+            BackendEventCreateBody(
+                title: draft.title,
+                day: draft.day.isoString,
+                time: draft.time.hhmm,
+                durationMinutes: draft.durationMinutes,
+                kind: Self.eventKindToken(draft.kind),
+                clientID: draft.clientID.rawValue,
+                caseID: draft.caseID?.rawValue,
+                place: draft.place.isEmpty ? nil : draft.place
+            ),
+            idempotencyKey: Self.newIdempotencyKey()
+        )
+        return try Self.requireEvent(dto)
     }
 
+    /// Trasa `PATCH /events` zmienia stan, dzień, godzinę i długość. Tytułu
+    /// i miejsca nie zmienia — gdy tylko to się różni, mówimy to wprost.
     public func updateEvent(_ event: ScheduledEvent, expectedVersion: Version) async throws -> ScheduledEvent {
-        throw notAvailable("zmiana terminu (PATCH /events/{event_id})")
+        let body = BackendEventUpdateBody(
+            expectedVersion: expectedVersion.value,
+            status: Self.eventStatusToken(event.status),
+            durationMinutes: event.durationMinutes,
+            day: event.day.isoString,
+            time: event.isAllDay ? nil : event.time.hhmm
+        )
+        do {
+            let dto = try await api.updateEvent(id: event.id.rawValue, body: body, idempotencyKey: Self.newIdempotencyKey())
+            return try Self.requireEvent(dto)
+        } catch let error as BackendRepositoryError {
+            throw Self.writeError(error, expectedVersion: expectedVersion)
+        }
     }
 
     public func deleteEvent(id: EventID, expectedVersion: Version) async throws {
-        throw notAvailable("usunięcie terminu (DELETE /events/{event_id})")
+        do {
+            try await api.deleteEvent(
+                id: id.rawValue,
+                expectedVersion: expectedVersion.value,
+                idempotencyKey: Self.newIdempotencyKey()
+            )
+        } catch let error as BackendRepositoryError {
+            throw Self.writeError(error, expectedVersion: expectedVersion)
+        }
+    }
+
+    private static func requireEvent(_ dto: BackendEventDTO) throws -> ScheduledEvent {
+        guard let event = try mapEvent(dto) else {
+            throw BackendRepositoryError.decoding("termin bez klienta w odpowiedzi zapisu")
+        }
+        return event
     }
 
     // MARK: NoteRepository
@@ -328,7 +437,16 @@ public struct BackendRepository: EmmaRepository, Sendable {
     }
 
     public func addNote(_ draft: NewNoteDraft) async throws -> CaseNote {
-        throw notAvailable("dodanie notatki (POST /notes)")
+        let dto = try await api.createNote(
+            BackendNoteCreateBody(
+                text: draft.text,
+                clientID: draft.clientID.rawValue,
+                caseID: draft.caseID?.rawValue,
+                authorID: draft.authorID.rawValue
+            ),
+            idempotencyKey: Self.newIdempotencyKey()
+        )
+        return try Self.mapNote(dto)
     }
 
     // MARK: ActivityRepository
@@ -419,32 +537,160 @@ public struct BackendRepository: EmmaRepository, Sendable {
 
     // MARK: AssistantActionRepository (M5)
 
+    //
+    // Kontrakt `/actions`: propozycja → zgoda (nagłówek `X-Emma-Consent`) →
+    // wykonanie. Termin zadania i odbiorcę propozycji backend zmienia wyłącznie
+    // przez nową propozycję, więc `reschedule`/`changeContext` przygotowują ją
+    // od nowa i anulują poprzednią — zgoda na starą treść nie przechodzi.
+
     public func prepare(_ request: PrepareAction) async throws -> ActionProposal {
-        throw notAvailable("przygotowanie akcji asystenta (M5)")
+        let prepared = request.request
+        let dto = try await api.prepareAction(
+            BackendActionPrepareBody(
+                kind: prepared.kind.rawValue,
+                text: prepared.text,
+                origin: prepared.sessionID == nil ? "ui" : "voice",
+                actorUserID: prepared.actorUserID.rawValue,
+                taskDueDate: prepared.kind == .task ? prepared.taskDueDate?.isoString : nil,
+                context: BackendActionContextBody(
+                    scope: Self.actionScope(clientID: prepared.clientID, caseID: prepared.caseID, threadID: prepared.threadID),
+                    version: max(prepared.contextVersion.value, 1),
+                    clientID: prepared.clientID?.rawValue,
+                    caseID: prepared.caseID?.rawValue,
+                    threadID: prepared.threadID?.rawValue
+                )
+            ),
+            idempotencyKey: Self.newIdempotencyKey()
+        )
+        return try Self.mapProposal(dto, sessionID: prepared.sessionID, taskDueDate: prepared.taskDueDate)
     }
 
     public func revise(_ request: ReviseAction) async throws -> ActionProposal {
-        throw notAvailable("korekta akcji asystenta (M5)")
+        do {
+            let dto = try await api.reviseAction(
+                id: request.actionID.rawValue,
+                text: request.newText,
+                expectedVersion: request.expectedVersion.value,
+                idempotencyKey: Self.newIdempotencyKey()
+            )
+            return try Self.mapProposal(dto, sessionID: nil, taskDueDate: nil)
+        } catch let error as BackendRepositoryError {
+            throw Self.writeError(error, expectedVersion: request.expectedVersion)
+        }
     }
 
     public func reschedule(_ request: RescheduleAction) async throws -> ActionProposal {
-        throw notAvailable("zmiana terminu akcji asystenta (M5)")
+        throw notAvailable("zmiana terminu w przygotowanej propozycji — anuluj ją i poproś o nową z właściwą datą")
     }
 
     public func changeContext(_ request: ChangeActionContext) async throws -> ActionProposal {
-        throw notAvailable("zmiana kontekstu akcji asystenta (M5)")
+        throw notAvailable("zmiana odbiorcy w przygotowanej propozycji — anuluj ją i poproś o nową dla właściwej osoby")
     }
 
     public func confirm(_ request: ConfirmAction) async throws -> ActionExecution {
-        throw notAvailable("potwierdzenie akcji asystenta (M5)")
+        let confirmation = request.confirmation
+        let consent: String
+        switch confirmation.origin {
+        case .directUIButton: consent = "direct_ui_button"
+        case .authenticatedVoiceTurn: consent = "authenticated_voice_turn"
+        case .languageModelArgument:
+            // Zgoda „od modelu” nie istnieje. Nie wysyłamy nawet żądania.
+            throw DomainError.validationFailed("Zgodę daje użytkownik przyciskiem, nie model językowy.")
+        }
+        do {
+            let dto = try await api.confirmAction(
+                id: confirmation.actionID.rawValue,
+                body: BackendActionConfirmBody(
+                    presentationID: confirmation.presentationID,
+                    expectedContextVersion: confirmation.expectedVersion.value,
+                    voiceSessionID: nil
+                ),
+                consent: consent,
+                idempotencyKey: request.idempotencyKey
+            )
+            return Self.mapExecution(dto, proposalVersion: confirmation.expectedVersion)
+        } catch let error as BackendRepositoryError {
+            throw Self.writeError(error, expectedVersion: confirmation.expectedVersion)
+        }
     }
 
     public func cancel(_ request: CancelAction) async throws -> ActionExecution {
-        throw notAvailable("anulowanie akcji asystenta (M5)")
+        let dto = try await api.cancelAction(id: request.actionID.rawValue, idempotencyKey: Self.newIdempotencyKey())
+        // Anulowanie nie ma wykonania; kontrakt protokołu wymaga go jednak jako
+        // wyniku, więc zwracamy stan „nieudane” bez identyfikatora kolejki.
+        return ActionExecution(
+            actionID: ActionID(dto.id),
+            proposalVersion: Version(dto.contextVersion),
+            state: .failed,
+            outboxID: "",
+            updatedAt: MobileAuthClient.parseISO8601(dto.presentedAt) ?? Date(),
+            lastErrorCode: "cancelled"
+        )
     }
 
     public func status(actionID: ActionID) async throws -> ActionExecution {
-        throw notAvailable("odczyt wykonania akcji asystenta (M5)")
+        let dto = try await api.actionExecution(id: actionID.rawValue)
+        return Self.mapExecution(dto, proposalVersion: .initial)
+    }
+
+    static func actionScope(clientID: ClientID?, caseID: CaseID?, threadID: ThreadID?) -> String {
+        if threadID != nil { return "thread" }
+        if caseID != nil { return "legal_case" }
+        if clientID != nil { return "client" }
+        return "firm"
+    }
+
+    static func mapProposal(
+        _ dto: BackendActionDTO,
+        sessionID: VoiceSessionID?,
+        taskDueDate: LocalDate?
+    ) throws -> ActionProposal {
+        guard let kind = ActionKind(rawValue: dto.kind) else {
+            throw BackendRepositoryError.decoding("nieznany rodzaj akcji: \(dto.kind)")
+        }
+        guard let presentedAt = MobileAuthClient.parseISO8601(dto.presentedAt),
+              let expiresAt = MobileAuthClient.parseISO8601(dto.expiresAt) else {
+            throw BackendRepositoryError.decoding("nieznany format czasu propozycji")
+        }
+        let state: ProposalState
+        switch dto.state {
+        case "proposed", "revised": state = .proposed
+        case "confirmed": state = .confirmed
+        case "cancelled": state = .rejected
+        case "expired": state = .expired
+        default: throw BackendRepositoryError.decoding("nieznany stan propozycji: \(dto.state)")
+        }
+        return ActionProposal(
+            id: ActionID(dto.id),
+            kind: kind,
+            version: Version(dto.contextVersion),
+            actorUserID: UserID(dto.actorUserID),
+            sessionID: sessionID,
+            clientID: dto.clientID.map { ClientID($0) },
+            caseID: dto.caseID.map { CaseID($0) },
+            threadID: dto.threadID.map { ThreadID($0) },
+            text: dto.text,
+            payloadHash: dto.payloadHash,
+            contextVersion: Version(dto.contextVersion),
+            presentedAt: presentedAt,
+            expiresAt: expiresAt,
+            presentationID: dto.presentationID,
+            state: state,
+            taskDueDate: taskDueDate
+        )
+    }
+
+    static func mapExecution(_ dto: BackendActionExecutionDTO, proposalVersion: Version) -> ActionExecution {
+        ActionExecution(
+            actionID: ActionID(dto.actionID),
+            proposalVersion: proposalVersion,
+            // Stan spoza słownika to niepewność, nie sukces.
+            state: ExecutionState(rawValue: dto.state) ?? .unknown,
+            outboxID: dto.outboxID,
+            providerMessageID: dto.providerMessageID,
+            updatedAt: MobileAuthClient.parseISO8601(dto.updatedAt) ?? Date(),
+            lastErrorCode: dto.failureCode
+        )
     }
 }
 
@@ -639,15 +885,32 @@ extension BackendRepository {
         )
     }
 
-    /// Backend wysyła pełny znacznik ISO (`2026-09-13T12:00:00.000Z`), a model
-    /// aplikacji trzyma sam dzień. Bierzemy pierwsze 10 znaków, bo godzina
-    /// i strefa nie mają reprezentacji w `LocalDate`.
+    /// Backend wysyła pełny znacznik ISO w UTC (`2026-09-13T12:00:00.000Z`),
+    /// a model aplikacji trzyma sam dzień **w strefie kancelarii**.
+    ///
+    /// Samo obcięcie do 10 znaków brało dzień UTC: notatka zapisana w Warszawie
+    /// 13 września o 0:30 (22:30Z dnia poprzedniego) pokazywała się jako 12
+    /// września. Pełny znacznik przeliczamy więc na `Europe/Warsaw`; sama data
+    /// (`YYYY-MM-DD`) jest już dniem lokalnym i nie wymaga przeliczenia.
     static func mapLocalDate(fromISO raw: String) throws -> LocalDate {
-        let day = String(raw.prefix(10))
-        guard let value = LocalDate(iso: day) else {
+        if raw.count > 10, let instant = MobileAuthClient.parseISO8601(raw) {
+            return localDate(of: instant)
+        }
+        guard let value = LocalDate(iso: String(raw.prefix(10))) else {
             throw BackendRepositoryError.decoding("nieznana data ISO: \(raw)")
         }
         return value
+    }
+
+    private static func localDate(of instant: Date) -> LocalDate {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: EmmaTime.referenceTimeZone) ?? .gmt
+        let components = calendar.dateComponents([.year, .month, .day], from: instant)
+        return LocalDate(
+            year: components.year ?? 1970,
+            month: components.month ?? 1,
+            day: components.day ?? 1
+        )
     }
 
     static func mapTime(_ raw: String?) throws -> TimeOfDay? {

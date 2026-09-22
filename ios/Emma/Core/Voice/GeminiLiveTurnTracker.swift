@@ -66,7 +66,10 @@ public struct GeminiLiveTurnTracker: Sendable {
         case .toolCall(let call):
             outcome.toolCall = call
             outcome.payloads.append(
-                .toolProgress(ToolProgress(label: "Sprawdzam dane w kancelarii", toolName: call.name))
+                .toolProgress(ToolProgress(
+                    label: VoiceAppTools.isAppTool(call.name) ? "Pracuję w aplikacji" : "Sprawdzam dane w kancelarii",
+                    toolName: call.name
+                ))
             )
 
         case .toolCallCancellation(let ids):

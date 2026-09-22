@@ -380,7 +380,9 @@ public struct VoiceStateReducer: Sendable {
             }
 
         case .contextAccepted(let version):
-            state.contextVersion = version
+            // Wersja kontekstu tylko rośnie (kontrakt backendu). Potwierdzenie
+            // wcześniejszej zmiany, które dotarło po kolejnej, nie cofa wersji.
+            state.contextVersion = max(state.contextVersion ?? version, version)
 
         case .interruption(let reason):
             state.lastInterruption = reason

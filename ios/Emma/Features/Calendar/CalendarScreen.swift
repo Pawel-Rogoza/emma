@@ -69,7 +69,7 @@ final class CalendarStore: ObservableObject {
                         .filter { $0.status != .finished }
                         .sorted { $0.time < $1.time },
                     daysWithEvents: markers,
-                    clientNames: Dictionary(uniqueKeysWithValues: clients.map { ($0.id, $0.displayName) })
+                    clientNames: Dictionary(clients.map { ($0.id, $0.displayName) }, uniquingKeysWith: { first, _ in first })
                 )
             )
         } catch {

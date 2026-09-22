@@ -165,6 +165,45 @@ final class BackendRepositoryTests: XCTestCase {
         XCTAssertEqual(entry.createdAt, LocalDate(year: 2026, month: 9, day: 12))
     }
 
+    /// 22:30Z to już 0:30 następnego dnia w Warszawie (CEST). Obcięcie znacznika
+    /// do daty UTC przesuwało wieczorne notatki o dzień wstecz.
+    func testLateEveningUTCInstantMapsToWarsawDay() throws {
+        XCTAssertEqual(
+            try BackendRepository.mapLocalDate(fromISO: "2026-09-13T22:30:00.000Z"),
+            LocalDate(year: 2026, month: 9, day: 14)
+        )
+        XCTAssertEqual(
+            try BackendRepository.mapLocalDate(fromISO: "2026-09-13T21:59:59Z"),
+            LocalDate(year: 2026, month: 9, day: 13)
+        )
+        // Sama data jest już dniem lokalnym — bez przeliczania strefy.
+        XCTAssertEqual(
+            try BackendRepository.mapLocalDate(fromISO: "2026-09-13"),
+            LocalDate(year: 2026, month: 9, day: 13)
+        )
+    }
+
+    /// Kursor to przesunięcie: nowy lead między stronami przesuwa listę i ten sam
+    /// kontakt wraca na drugiej stronie. Ekrany budują słowniki po `id`, więc
+    /// duplikat nie może wyjść z repozytorium.
+    func testClientRepeatedAcrossPagesIsReturnedOnce() async throws {
+        let item = #"""
+        {"id":"client-12","display_name":"Olena Kowalenko","initials":"OK","language":"pl",
+         "topic":"Sprawa spadkowa","stage":"client","source":"whatsapp","created_at":"2026-08-01",
+         "briefing":null,"incoming_message":null,"incoming_translation":null,"incoming_time":null,
+         "needs_reply":false,"version":5}
+        """#
+        StubURLProtocol.respond(sequence: [
+            (json: Data(#"{"items":[\#(item)],"next_cursor":"30","has_more":true}"#.utf8), status: 200),
+            (json: Data(#"{"items":[\#(item)],"next_cursor":null,"has_more":false}"#.utf8), status: 200),
+        ])
+
+        let clients = try await makeRepository().clients(matching: "", stage: nil)
+
+        XCTAssertEqual(StubURLProtocol.requestCount, 2)
+        XCTAssertEqual(clients.map(\.id.rawValue), ["client-12"])
+    }
+
     // MARK: Brak trasy w backendzie
 
     // MARK: Nowe zgłoszenie (POST /clients)
@@ -379,13 +418,6 @@ final class BackendRepositoryTests: XCTestCase {
         // zgłaszają brak, zamiast zwracać pustkę.
         await assertNotAvailable { _ = try await repository.task(id: TaskID("task-3")) }
         await assertNotAvailable { _ = try await repository.event(id: EventID("event-1")) }
-        await assertNotAvailable { _ = try await repository.addNote(NewNoteDraft(
-            clientID: ClientID("client-12"),
-            caseID: nil,
-            text: "Notatka",
-            authorID: UserID("user-1"),
-            createdAt: LocalDate(year: 2026, month: 9, day: 14)
-        )) }
     }
 
     func testVoiceAndAssistantActionsThrowNotAvailableInBackend() async {
@@ -398,26 +430,127 @@ final class BackendRepositoryTests: XCTestCase {
                 installationID: "instalacja-1"
             ))
         }
-        await assertNotAvailable { _ = try await repository.prepare(PrepareAction(PrepareActionRequest(
+    }
+
+    // MARK: Zapis i akcje asystenta
+
+    /// Zadanie z formularza trafia do `POST /tasks` z kluczem idempotencji.
+    /// Wcześniej repozytorium zgłaszało brak trasy, choć backend ją miał.
+    func testCreateTaskPostsContractBody() async throws {
+        StubURLProtocol.respond(json: Data(#"""
+        {"id":"task-77","title":"Zadzwonić do sądu","client_id":"client-12","case_id":"case-041",
+         "due_date":"2026-09-16","is_done":false,"priority":"urgent","version":1}
+        """#.utf8), status: 201)
+
+        let task = try await makeRepository().createTask(NewTaskDraft(
+            title: "Zadzwonić do sądu",
+            clientID: ClientID("client-12"),
+            caseID: CaseID("case-041"),
+            dueDate: LocalDate(year: 2026, month: 9, day: 16),
+            priority: .urgent
+        ))
+
+        XCTAssertEqual(task.id.rawValue, "task-77")
+        let request = try XCTUnwrap(StubURLProtocol.lastRequest)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.path, "/api/mobile/v1/tasks")
+        XCTAssertNotNil(request.value(forHTTPHeaderField: "Idempotency-Key"))
+        XCTAssertEqual(StubURLProtocol.lastBody?["due_date"] as? String, "2026-09-16")
+        XCTAssertEqual(StubURLProtocol.lastBody?["priority"] as? String, "urgent")
+        XCTAssertEqual(StubURLProtocol.lastBody?["case_id"] as? String, "case-041")
+    }
+
+    /// Odhaczenie wysyła wyłącznie `is_done` i wersję — bez nadpisywania
+    /// tytułu czy terminu tym, co akurat było na ekranie.
+    func testSetDoneSendsOnlyDoneFlagAndVersion() async throws {
+        StubURLProtocol.respond(json: Data(#"""
+        {"id":"task-77","title":"Zadzwonić do sądu","client_id":null,"case_id":null,
+         "due_date":"2026-09-16","is_done":true,"priority":"normal","version":2}
+        """#.utf8), status: 200)
+
+        let task = try await makeRepository().setDone(taskID: TaskID("task-77"), isDone: true, expectedVersion: Version(1))
+
+        XCTAssertTrue(task.isDone)
+        XCTAssertEqual(StubURLProtocol.lastRequest?.httpMethod, "PATCH")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/mobile/v1/tasks/task-77")
+        XCTAssertEqual(Set(StubURLProtocol.lastBody?.keys.map { $0 } ?? []), ["expected_version", "is_done"])
+    }
+
+    func testPrepareActionMapsBackendProposal() async throws {
+        StubURLProtocol.respond(json: Data(Self.proposalJSON.utf8), status: 201)
+
+        let proposal = try await makeRepository().prepare(PrepareAction(PrepareActionRequest(
             actionID: ActionID("action-1"),
-            kind: .reply,
+            kind: .note,
             actorUserID: UserID("user-1"),
-            text: "Treść",
+            clientID: ClientID("client-12"),
+            text: "Klient dosłał pełnomocnictwo",
             contextVersion: .initial,
-            presentationID: "presentation-1",
+            presentationID: "lokalna-prezentacja",
             now: Date()
-        ))) }
-        await assertNotAvailable { _ = try await repository.confirm(ConfirmAction(
+        )))
+
+        // Identyfikator i prezentacja pochodzą z backendu — to je potwierdza `/confirm`.
+        XCTAssertEqual(proposal.id.rawValue, "action-9b1")
+        XCTAssertEqual(proposal.presentationID, "prez-42")
+        XCTAssertEqual(proposal.state, .proposed)
+        XCTAssertEqual(proposal.version, Version(1))
+        let context = try XCTUnwrap(StubURLProtocol.lastBody?["context"] as? [String: Any])
+        XCTAssertEqual(context["scope"] as? String, "client")
+        XCTAssertEqual(StubURLProtocol.lastBody?["origin"] as? String, "ui")
+    }
+
+    /// Zgoda jedzie w nagłówku `X-Emma-Consent` razem z identyfikatorem
+    /// prezentacji. Zgoda „od modelu” nie wychodzi z telefonu wcale.
+    func testConfirmSendsConsentHeaderAndRefusesModelConsent() async throws {
+        StubURLProtocol.respond(json: Data(#"""
+        {"action_id":"action-9b1","state":"accepted","outbox_id":"outbox-1","provider_message_id":null,
+         "updated_at":"2026-09-16T10:00:00.123Z","failure_code":null,"retryable":false}
+        """#.utf8), status: 202)
+        let repository = makeRepository()
+
+        let execution = try await repository.confirm(ConfirmAction(
             confirmation: ActionEngine.Confirmation(
-                actionID: ActionID("action-1"),
-                expectedVersion: .initial,
-                presentationID: "presentation-1",
+                actionID: ActionID("action-9b1"),
+                expectedVersion: Version(1),
+                presentationID: "prez-42",
                 origin: .directUIButton,
                 now: Date()
             ),
-            idempotencyKey: "idem-1"
-        )) }
+            idempotencyKey: "confirm-1"
+        ))
+
+        XCTAssertEqual(execution.state, .accepted)
+        let request = try XCTUnwrap(StubURLProtocol.lastRequest)
+        XCTAssertEqual(request.url?.path, "/api/mobile/v1/actions/action-9b1/confirm")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Emma-Consent"), "direct_ui_button")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Idempotency-Key"), "confirm-1")
+        XCTAssertEqual(StubURLProtocol.lastBody?["presentation_id"] as? String, "prez-42")
+
+        StubURLProtocol.reset()
+        do {
+            _ = try await repository.confirm(ConfirmAction(
+                confirmation: ActionEngine.Confirmation(
+                    actionID: ActionID("action-9b1"),
+                    expectedVersion: Version(1),
+                    presentationID: "prez-42",
+                    origin: .languageModelArgument,
+                    now: Date()
+                ),
+                idempotencyKey: "confirm-2"
+            ))
+            XCTFail("Zgoda od modelu nie może zostać wysłana")
+        } catch {
+            XCTAssertEqual(StubURLProtocol.requestCount, 0)
+        }
     }
+
+    private static let proposalJSON = #"""
+    {"id":"action-9b1","kind":"note","actor_user_id":"user-1","client_id":"client-12","case_id":null,
+     "thread_id":null,"text":"Klient dosłał pełnomocnictwo","payload_hash":"abc","context_version":1,
+     "presented_at":"2026-09-16T10:00:00.000Z","expires_at":"2026-09-16T10:15:00.000Z",
+     "presentation_id":"prez-42","state":"proposed"}
+    """#
 
     // MARK: Rozmowy
 

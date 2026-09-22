@@ -185,6 +185,17 @@ final class AssistantIntentTests: XCTestCase {
         XCTAssertEqual(parse("spotkanie 12.09.2027").dueDate, LocalDate(year: 2027, month: 9, day: 12))
     }
 
+    /// Dzień, którego nie ma w kalendarzu, nie jest terminem — wcześniej parser
+    /// zwracał `2026-09-31`, który szedł dalej do porównań i do backendu.
+    func testNonexistentDatesAreRejected() {
+        XCTAssertNil(parse("spotkanie 31 września").dueDate)
+        XCTAssertNil(parse("spotkanie 30.02").dueDate)
+        // Luty 2027 nie ma 29 dnia — najbliższy istniejący 29 lutego to 2028.
+        XCTAssertEqual(parse("spotkanie 29 lutego").dueDate, LocalDate(year: 2028, month: 2, day: 29))
+        XCTAssertNil(LocalDate(checkedYear: 2026, month: 2, day: 29))
+        XCTAssertEqual(LocalDate(checkedYear: 2028, month: 2, day: 29), LocalDate(year: 2028, month: 2, day: 29))
+    }
+
     func testTimesWithPrepositions() {
         XCTAssertEqual(parse("zadanie na jutro do 14").dueTime, TimeOfDay(hhmm: "14:00"))
         XCTAssertEqual(parse("spotkanie o 11:30").dueTime, TimeOfDay(hhmm: "11:30"))

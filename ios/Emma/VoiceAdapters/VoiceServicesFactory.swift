@@ -35,19 +35,25 @@ public enum VoiceServicesFactory {
     ///   - installationID: identyfikator instalacji; potrzebny tylko wtedy, gdy
     ///     transport musiałby sam poprosić backend o token rozmowy (ścieżka
     ///     awaryjna — normalnie token przychodzi już w konfiguracji sesji).
+    ///   - tokens: źródło tokenu użytkownika z odnawianiem. Gdy go brak, transport
+    ///     używa stałego `accessToken` (testy, podglądy).
     public static func makeTransport(
         configuration: AppConfiguration,
         fixtureName: String?,
         accessToken: String?,
+        tokens: VoiceAccessTokenSource? = nil,
+        appTools: @escaping @MainActor () -> (any VoiceAppToolHandling)? = { nil },
         installationID: String,
         mockScenarioName: String,
         audioSession: AudioSessionController? = nil
     ) -> VoiceTransport {
         if providerIsAvailable(configuration: configuration), let baseURL = configuration.apiBaseURL {
+            let tokens = tokens ?? .fixed(accessToken)
             return GeminiLiveTransport(
                 tokenProvider: BackendConversationTokenProvider(baseURL: baseURL),
-                toolExecutor: BackendVoiceToolExecutor(baseURL: baseURL, accessToken: accessToken),
-                accessToken: accessToken,
+                toolExecutor: BackendVoiceToolExecutor(baseURL: baseURL, tokens: tokens),
+                tokens: tokens,
+                appTools: appTools,
                 installationID: installationID,
                 model: configuration.voiceModel,
                 audioSession: audioSession
