@@ -20,6 +20,11 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- Deklaracja eksportowa: aplikacja używa wyłącznie szyfrowania systemu
+	     (HTTPS/TLS, pęk kluczy), które jest zwolnione z dokumentacji eksportowej.
+	     Bez tego klucza każdy build w TestFlight stoi na „Missing Compliance”. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 
