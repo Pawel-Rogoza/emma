@@ -58,6 +58,9 @@ public final class GeminiLiveTransport: VoiceTransport {
     /// Token użytkownika pobierany przy każdym wydaniu poświadczenia — rozmowa
     /// (z wznowieniami po `goAway`) żyje dłużej niż token dostępu.
     private let tokens: VoiceAccessTokenSource
+    /// Wykonawca narzędzi `app_*` (nawigacja, propozycje). Rozwiązywany przy
+    /// każdym wywołaniu, bo ekran Emmy podpina się dopiero po starcie rozmowy.
+    private let appTools: @MainActor () -> (any VoiceAppToolHandling)?
     private let installationID: String
     private let audioSession: AudioSessionController?
     private let model: String
@@ -87,6 +90,7 @@ public final class GeminiLiveTransport: VoiceTransport {
         tokenProvider: BackendConversationTokenProvider,
         toolExecutor: any VoiceToolExecuting,
         tokens: VoiceAccessTokenSource,
+        appTools: @escaping @MainActor () -> (any VoiceAppToolHandling)? = { nil },
         installationID: String,
         model: String,
         audioSession: AudioSessionController? = nil,
@@ -96,6 +100,7 @@ public final class GeminiLiveTransport: VoiceTransport {
         self.tokenProvider = tokenProvider
         self.toolExecutor = toolExecutor
         self.tokens = tokens
+        self.appTools = appTools
         self.installationID = installationID
         self.model = model
         self.audioSession = audioSession
@@ -532,10 +537,20 @@ public final class GeminiLiveTransport: VoiceTransport {
                 }
             }
             do {
-                let result = try await self.toolExecutor.execute(
-                    toolName: call.name,
-                    argumentsJSON: call.argumentsJSON
-                )
+                let result: String
+                if VoiceAppTools.isAppTool(call.name) {
+                    // Sterowanie aplikacją wykonuje się lokalnie — bez sieci,
+                    // więc model dostaje wynik w milisekundach.
+                    guard let handler = self.appTools() else {
+                        throw VoiceToolExecutionError.failed("Ekran Emmy nie jest gotowy — spróbuj ponownie za chwilę.")
+                    }
+                    result = await handler.handleAppTool(name: call.name, argumentsJSON: call.argumentsJSON)
+                } else {
+                    result = try await self.toolExecutor.execute(
+                        toolName: call.name,
+                        argumentsJSON: call.argumentsJSON
+                    )
+                }
                 guard !Task.isCancelled, !self.isClosing,
                       self.generation == callGeneration, self.socket === callSocket else { return }
                 try await self.send(.toolResponse(id: call.id, name: call.name, resultJSON: result))

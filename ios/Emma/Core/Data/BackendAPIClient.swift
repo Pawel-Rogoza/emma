@@ -81,6 +81,8 @@ public struct BackendAPIClient: Sendable {
         /// nie istnieje i nginx jej nie przepuszcza.
         case voiceSessions = "api/mobile/v1/voice/sessions"
         case voiceConversationToken = "api/mobile/v1/voice/conversation-token"
+        case notes = "api/mobile/v1/notes"
+        case actions = "api/mobile/v1/actions"
     }
 
     /// Domyślny rozmiar strony z kontraktu (`limit`, maks. 100). Repozytorium
@@ -291,6 +293,96 @@ public struct BackendAPIClient: Sendable {
         return response.items
     }
 
+    // MARK: Zapis danych kancelarii
+    //
+    // Trasy istniały w backendzie od dawna, a repozytorium zgłaszało je jako
+    // niedostępne — dlatego „Zatwierdź” i formularze nic nie zapisywały.
+
+    /// `POST /api/mobile/v1/tasks`.
+    func createTask(_ body: BackendTaskCreateBody, idempotencyKey: String) async throws -> BackendTaskDTO {
+        try await send("POST", path: Endpoint.tasks.rawValue, body: body, idempotencyKey: idempotencyKey)
+    }
+
+    /// `PATCH /api/mobile/v1/tasks/{task_id}` — pola `nil` nie są wysyłane.
+    func updateTask(id: String, body: BackendTaskUpdateBody, idempotencyKey: String) async throws -> BackendTaskDTO {
+        try await send("PATCH", path: "\(Endpoint.tasks.rawValue)/\(id)", body: body, idempotencyKey: idempotencyKey)
+    }
+
+    /// `POST /api/mobile/v1/events`.
+    func createEvent(_ body: BackendEventCreateBody, idempotencyKey: String) async throws -> BackendEventDTO {
+        try await send("POST", path: Endpoint.events.rawValue, body: body, idempotencyKey: idempotencyKey)
+    }
+
+    /// `PATCH /api/mobile/v1/events/{event_id}` — backend zmienia stan, dzień,
+    /// godzinę i długość; tytułu ani miejsca ta trasa nie przyjmuje.
+    func updateEvent(id: String, body: BackendEventUpdateBody, idempotencyKey: String) async throws -> BackendEventDTO {
+        try await send("PATCH", path: "\(Endpoint.events.rawValue)/\(id)", body: body, idempotencyKey: idempotencyKey)
+    }
+
+    /// `DELETE /api/mobile/v1/events/{event_id}` z `expected_version` w ciele.
+    func deleteEvent(id: String, expectedVersion: Int, idempotencyKey: String) async throws {
+        try await sendNoContent(
+            "DELETE",
+            path: "\(Endpoint.events.rawValue)/\(id)",
+            body: BackendExpectedVersionBody(expectedVersion: expectedVersion),
+            idempotencyKey: idempotencyKey
+        )
+    }
+
+    /// `POST /api/mobile/v1/notes`.
+    func createNote(_ body: BackendNoteCreateBody, idempotencyKey: String) async throws -> BackendNoteDTO {
+        try await send("POST", path: Endpoint.notes.rawValue, body: body, idempotencyKey: idempotencyKey)
+    }
+
+    // MARK: Akcje asystenta (propozycja → zgoda → wykonanie)
+
+    /// `POST /api/mobile/v1/actions` — propozycja; niczego nie wykonuje.
+    func prepareAction(_ body: BackendActionPrepareBody, idempotencyKey: String) async throws -> BackendActionDTO {
+        try await send("POST", path: Endpoint.actions.rawValue, body: body, idempotencyKey: idempotencyKey)
+    }
+
+    /// `PATCH /api/mobile/v1/actions/{id}` — korekta treści; unieważnia zgodę.
+    func reviseAction(id: String, text: String, expectedVersion: Int, idempotencyKey: String) async throws -> BackendActionDTO {
+        try await send(
+            "PATCH",
+            path: "\(Endpoint.actions.rawValue)/\(id)",
+            body: BackendActionReviseBody(text: text, expectedVersion: expectedVersion),
+            idempotencyKey: idempotencyKey
+        )
+    }
+
+    /// `POST /api/mobile/v1/actions/{id}/confirm`. Pochodzenie zgody jedzie
+    /// w nagłówku `X-Emma-Consent` — backend odrzuca zgodę „od modelu”.
+    func confirmAction(
+        id: String,
+        body: BackendActionConfirmBody,
+        consent: String,
+        idempotencyKey: String
+    ) async throws -> BackendActionExecutionDTO {
+        try await send(
+            "POST",
+            path: "\(Endpoint.actions.rawValue)/\(id)/confirm",
+            body: body,
+            idempotencyKey: idempotencyKey,
+            headers: ["X-Emma-Consent": consent]
+        )
+    }
+
+    /// `POST /api/mobile/v1/actions/{id}/cancel`.
+    func cancelAction(id: String, idempotencyKey: String) async throws -> BackendActionDTO {
+        try await send(
+            "POST",
+            path: "\(Endpoint.actions.rawValue)/\(id)/cancel",
+            body: BackendEmptyBody(),
+            idempotencyKey: idempotencyKey
+        )
+    }
+
+    /// `GET /api/mobile/v1/actions/{id}/execution`.
+    func actionExecution(id: String) async throws -> BackendActionExecutionDTO {
+        try await get("\(Endpoint.actions.rawValue)/\(id)/execution", query: [])
+    }
+
     // MARK: Głos (M5)
     //
     // Trasy sesji głosu. `Idempotency-Key` pochodzi od wywołującego (repozytorium),
@@ -391,6 +483,7 @@ public struct BackendAPIClient: Sendable {
         method: String = "GET",
         body: Data? = nil,
         idempotencyKey: String? = nil,
+        headers: [String: String] = [:],
         token: String?
     ) throws -> URLRequest {
         guard var components = URLComponents(
@@ -421,6 +514,9 @@ public struct BackendAPIClient: Sendable {
         if let token, !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
+        for (name, value) in headers {
+            request.setValue(value, forHTTPHeaderField: name)
+        }
         return request
     }
 
@@ -430,7 +526,8 @@ public struct BackendAPIClient: Sendable {
         _ method: String,
         path: String,
         body: B,
-        idempotencyKey: String
+        idempotencyKey: String,
+        headers: [String: String] = [:]
     ) async throws -> T {
         let encoded: Data
         do {
@@ -444,6 +541,7 @@ public struct BackendAPIClient: Sendable {
                 method: method,
                 body: encoded,
                 idempotencyKey: idempotencyKey,
+                headers: headers,
                 token: token
             )
         }
@@ -791,6 +889,193 @@ struct BackendCaseDetail: Decodable {
     enum CodingKeys: String, CodingKey {
         case tasks, events, notes, activity
         case legalCase = "case"
+    }
+}
+
+// MARK: - Kształty JSON-a zapisu
+
+struct BackendEmptyBody: Encodable {}
+
+struct BackendExpectedVersionBody: Encodable {
+    let expectedVersion: Int
+    enum CodingKeys: String, CodingKey { case expectedVersion = "expected_version" }
+}
+
+struct BackendTaskCreateBody: Encodable {
+    let title: String
+    let dueDate: String
+    let priority: String
+    let clientID: String?
+    let caseID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case title, priority
+        case dueDate = "due_date"
+        case clientID = "client_id"
+        case caseID = "case_id"
+    }
+}
+
+struct BackendTaskUpdateBody: Encodable {
+    var expectedVersion: Int
+    var title: String?
+    var dueDate: String?
+    var priority: String?
+    var isDone: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case title, priority
+        case expectedVersion = "expected_version"
+        case dueDate = "due_date"
+        case isDone = "is_done"
+    }
+}
+
+struct BackendEventCreateBody: Encodable {
+    let title: String
+    let day: String
+    let time: String
+    let durationMinutes: Int
+    let kind: String
+    let clientID: String
+    let caseID: String?
+    let place: String?
+
+    enum CodingKeys: String, CodingKey {
+        case title, day, time, kind, place
+        case durationMinutes = "duration_minutes"
+        case clientID = "client_id"
+        case caseID = "case_id"
+    }
+}
+
+struct BackendEventUpdateBody: Encodable {
+    var expectedVersion: Int
+    var status: String?
+    var durationMinutes: Int?
+    var day: String?
+    var time: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status, day, time
+        case expectedVersion = "expected_version"
+        case durationMinutes = "duration_minutes"
+    }
+}
+
+struct BackendNoteCreateBody: Encodable {
+    let text: String
+    let clientID: String
+    let caseID: String?
+    let authorID: String
+
+    enum CodingKeys: String, CodingKey {
+        case text
+        case clientID = "client_id"
+        case caseID = "case_id"
+        case authorID = "author_id"
+    }
+}
+
+// MARK: - Kształty JSON-a akcji
+
+struct BackendActionContextBody: Encodable {
+    let scope: String
+    let version: Int
+    let clientID: String?
+    let caseID: String?
+    let threadID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case scope, version
+        case clientID = "client_id"
+        case caseID = "case_id"
+        case threadID = "thread_id"
+    }
+}
+
+struct BackendActionPrepareBody: Encodable {
+    let kind: String
+    let text: String
+    let origin: String
+    let actorUserID: String
+    let taskDueDate: String?
+    let context: BackendActionContextBody
+
+    enum CodingKeys: String, CodingKey {
+        case kind, text, origin, context
+        case actorUserID = "actor_user_id"
+        case taskDueDate = "task_due_date"
+    }
+}
+
+struct BackendActionReviseBody: Encodable {
+    let text: String
+    let expectedVersion: Int
+    enum CodingKeys: String, CodingKey {
+        case text
+        case expectedVersion = "expected_version"
+    }
+}
+
+struct BackendActionConfirmBody: Encodable {
+    let presentationID: String
+    let expectedContextVersion: Int
+    let voiceSessionID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case presentationID = "presentation_id"
+        case expectedContextVersion = "expected_context_version"
+        case voiceSessionID = "voice_session_id"
+    }
+}
+
+/// Propozycja akcji z backendu. `context_version` rośnie przy każdej korekcie
+/// i pełni rolę wersji propozycji (`expected_version` w `PATCH`).
+struct BackendActionDTO: Decodable {
+    let id: String
+    let kind: String
+    let actorUserID: String
+    let clientID: String?
+    let caseID: String?
+    let threadID: String?
+    let text: String
+    let payloadHash: String
+    let contextVersion: Int
+    let presentedAt: String
+    let expiresAt: String
+    let presentationID: String
+    let state: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind, text, state
+        case actorUserID = "actor_user_id"
+        case clientID = "client_id"
+        case caseID = "case_id"
+        case threadID = "thread_id"
+        case payloadHash = "payload_hash"
+        case contextVersion = "context_version"
+        case presentedAt = "presented_at"
+        case expiresAt = "expires_at"
+        case presentationID = "presentation_id"
+    }
+}
+
+struct BackendActionExecutionDTO: Decodable {
+    let actionID: String
+    let state: String
+    let outboxID: String
+    let providerMessageID: String?
+    let updatedAt: String
+    let failureCode: String?
+
+    enum CodingKeys: String, CodingKey {
+        case state
+        case actionID = "action_id"
+        case outboxID = "outbox_id"
+        case providerMessageID = "provider_message_id"
+        case updatedAt = "updated_at"
+        case failureCode = "failure_code"
     }
 }
 

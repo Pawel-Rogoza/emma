@@ -72,3 +72,24 @@ public struct VoiceAccessTokenSource: Sendable {
         VoiceAccessTokenSource(current: { token })
     }
 }
+
+// MARK: - Narzędzia aplikacji (sterowanie interfejsem przez model)
+
+/// Narzędzia z prefiksem `app_` wykonuje **aplikacja**, nie backend: otwierają
+/// ekrany i przygotowują propozycje w tym samym silniku akcji, którego używa
+/// interfejs. Żadne z nich nie zapisuje danych ani nie daje zgody — zatwierdzenie
+/// zostaje przyciskiem na ekranie (bramka `/actions/{id}/confirm`).
+///
+/// Deklaracje narzędzi są blokowane w tokenie po stronie backendu
+/// (`adwokat-app-project/src/lib/crm/voice/appTools.ts`); nazwy muszą się zgadzać.
+@MainActor
+public protocol VoiceAppToolHandling: AnyObject {
+    /// Wynik jako obiekt JSON (tekst), odsyłany modelowi w `toolResponse`.
+    func handleAppTool(name: String, argumentsJSON: String) async -> String
+}
+
+public enum VoiceAppTools {
+    public static let prefix = "app_"
+
+    public static func isAppTool(_ name: String) -> Bool { name.hasPrefix(prefix) }
+}

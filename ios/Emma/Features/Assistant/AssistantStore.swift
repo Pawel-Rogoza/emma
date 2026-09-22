@@ -83,7 +83,7 @@ final class AssistantStore: ObservableObject {
 
     // MARK: Zależności wewnętrzne
 
-    private weak var dependencies: AppDependencies?
+    private(set) weak var dependencies: AppDependencies?
     private var voiceObserver: UUID?
     private var sequence = 0
     /// Ślady zużytych tur (F04). Historia nie dopisuje tej samej tury dwa razy,
@@ -109,6 +109,9 @@ final class AssistantStore: ObservableObject {
         voiceObserver = dependencies.voice.addObserver { [weak self] state in
             self?.apply(voiceState: state)
         }
+        // Narzędzia `app_*` Gemini Live wykonuje ten ekran: to on pokazuje
+        // karty propozycji i zna powiązania klient → sprawa.
+        dependencies.appToolHandler = self
     }
 
     /// Wejście na ekran: dane prezentacji plus odłożony skrót z innego ekranu.
@@ -222,6 +225,13 @@ final class AssistantStore: ObservableObject {
         guard !text.isEmpty else { return }
         if origin == .typed { await stopVoiceModes() }
         appendUserTurn(text)
+
+        // W rozmowie Gemini Live turą rządzi model: słyszy wypowiedź i steruje
+        // aplikacją narzędziami `app_*`. Lokalny parser tej samej transkrypcji
+        // (która przychodzi dopiero po odpowiedzi modelu) tworzył drugą,
+        // niezależną reakcję — np. kartę, o której model nic nie wiedział.
+        // Parser zostaje dla tekstu wpisanego i dla trybu Demo.
+        if origin == .voice, providerOwnsVoice { return }
 
         // Odpowiedź na pytanie Emmy („Olena Kovalenko czy Olena Nowak?”) kończy
         // to samo polecenie, zamiast zaczynać nowe (F14).
@@ -460,7 +470,7 @@ final class AssistantStore: ObservableObject {
     /// Czy w aktywnej rozmowie mówi Emma od dostawcy. Wtedy lokalny syntezator
     /// systemowy musi milczeć: jedna sesja ma jeden głos. W Demo transport jest
     /// mockiem bez własnego audio, więc systemowy odsłuch pozostaje jedynym głosem.
-    private var providerOwnsVoice: Bool {
+    var providerOwnsVoice: Bool {
         guard let dependencies, !dependencies.configuration.usesMockServices else { return false }
         return hasActiveSession
     }
@@ -704,7 +714,14 @@ final class AssistantStore: ObservableObject {
             presentationID: nextPresentationID(kind: kind),
             taskDueDate: kind == .task ? (dueDate ?? dependencies.today) : nil
         )
-        guard let proposal else { return nil }
+        guard let proposal else {
+            // Backend odrzucił propozycję — powód musi trafić do rozmowy,
+            // inaczej polecenie „znika” bez śladu.
+            if let reason = dependencies.voice.state.lastError {
+                await answer(reason)
+            }
+            return nil
+        }
 
         awaitingInput = nil
         let turn = ActionTurn(proposal: proposal, execution: nil)

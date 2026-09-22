@@ -67,7 +67,7 @@ ENUM_SCOPED_HOLDERS = {"EmmaRadii", "EmmaSpacing", "EmmaMetrics", "EmmaTheme", "
 
 MEMBER_PATTERN = re.compile(
     r"^\s*(?:@\w+(?:\([^)]*\))?\s+)*"
-    r"(?:public\s+|private(?:\(set\))?\s+|internal\s+|fileprivate\s+|static\s+|final\s+|override\s+|nonisolated\s+)*"
+    r"(?:public\s+|private(?:\(set\))?\s+|internal\s+|fileprivate\s+|static\s+|final\s+|override\s+|nonisolated\s+|weak\s+)*"
     r"(?:func|var|let)\s+([A-Za-z_][A-Za-z0-9_]*)",
     re.MULTILINE,
 )

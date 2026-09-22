@@ -42,6 +42,7 @@ public enum VoiceServicesFactory {
         fixtureName: String?,
         accessToken: String?,
         tokens: VoiceAccessTokenSource? = nil,
+        appTools: @escaping @MainActor () -> (any VoiceAppToolHandling)? = { nil },
         installationID: String,
         mockScenarioName: String,
         audioSession: AudioSessionController? = nil
@@ -52,6 +53,7 @@ public enum VoiceServicesFactory {
                 tokenProvider: BackendConversationTokenProvider(baseURL: baseURL),
                 toolExecutor: BackendVoiceToolExecutor(baseURL: baseURL, tokens: tokens),
                 tokens: tokens,
+                appTools: appTools,
                 installationID: installationID,
                 model: configuration.voiceModel,
                 audioSession: audioSession

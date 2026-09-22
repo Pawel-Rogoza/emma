@@ -615,9 +615,15 @@ public final class VoiceSessionCoordinator {
             taskDueDate: taskDueDate
         )
         // Auto-rewizja lokalna: nowa propozycja zastępuje poprzednią, nieaktywną.
-        let local = actionEngine.prepare(request, into: &actionState)
+        _ = actionEngine.prepare(request, into: &actionState)
         do {
             let remote = try await actionRepository.prepare(PrepareAction(request))
+            // Backend nadaje własny identyfikator i identyfikator prezentacji.
+            // Lokalna kopia pod tymczasowym ID zostałaby „wiszącą” propozycją,
+            // której nie da się potwierdzić — zostaje tylko wersja z backendu.
+            if remote.id != actionID {
+                actionState.proposals.removeValue(forKey: actionID)
+            }
             actionState.proposals[remote.id] = remote
             var mutable = state
             internalReducer.apply(
@@ -635,22 +641,15 @@ public final class VoiceSessionCoordinator {
             state = mutable
             return remote
         } catch {
+            // Propozycja, której backend nie przyjął, nie może wyglądać na
+            // gotową do zatwierdzenia: „Zatwierdź” skończyłby się 404, bo
+            // backend jej nie zna. Pokazujemy powód (np. „zadanie musi wskazywać
+            // sprawę”) i nie publikujemy karty.
+            actionState.proposals.removeValue(forKey: actionID)
             state.lastError = (error as? DomainError)?.safeMessage
+                ?? (error as? BackendRepositoryError)?.safeMessage
                 ?? DomainError.transportFailure("propozycja").safeMessage
-            var mutable = state
-            internalReducer.apply(
-                VoiceEvent(
-                    eventID: "local-proposal-\(actionID)",
-                    sessionID: state.sessionID ?? VoiceSessionID("local"),
-                    connectionGeneration: state.connectionGeneration,
-                    receivedAt: clock.now(),
-                    source: .backendActionEngine,
-                    payload: .proposalChanged(ProposalSnapshot(proposal: local))
-                ),
-                to: &mutable
-            )
-            state = mutable
-            return local
+            return nil
         }
     }
 

@@ -109,6 +109,9 @@ public final class AppDependencies: ObservableObject {
     }
 
     private var toastTask: Task<Void, Never>?
+    /// Wykonawca narzędzi `app_*` dla Gemini Live. Podpina go ekran Emmy
+    /// (`AssistantStore.attach`); słaba referencja, żeby nie trzymać ekranu.
+    public weak var appToolHandler: (any VoiceAppToolHandling)?
 
     // MARK: Tworzenie
 
@@ -273,6 +276,7 @@ public final class AppDependencies: ObservableObject {
             fixtureName: fixtureName,
             accessToken: accessToken,
             tokens: voiceTokens,
+            appTools: { [weak self] in self?.appToolHandler },
             // Ten sam identyfikator instalacji co w logowaniu (FIX A).
             installationID: InstallationIdentity.current(),
             mockScenarioName: voiceScenarioName,
