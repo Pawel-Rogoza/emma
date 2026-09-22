@@ -122,10 +122,16 @@ final class AssistantStore: ObservableObject {
         guard let dependencies else { return }
         clients = (try? await dependencies.repository.clients(matching: "", stage: nil)) ?? []
         let cases = (try? await dependencies.repository.cases(status: nil)) ?? []
+        // Klient może mieć kilka prowadzonych spraw. `uniqueKeysWithValues`
+        // zatrzymywał wtedy aplikację (duplikat klucza), więc świadomie wiążemy
+        // kontekst z najnowszą sprawą.
         linkedCases = Dictionary(
-            uniqueKeysWithValues: cases.filter { $0.status.isActive }.map { ($0.clientID, $0.id) }
+            cases.filter { $0.status.isActive }
+                .sorted { $0.createdAt > $1.createdAt }
+                .map { ($0.clientID, $0.id) },
+            uniquingKeysWith: { newest, _ in newest }
         )
-        caseNumbers = Dictionary(uniqueKeysWithValues: cases.map { ($0.id, $0.number) })
+        caseNumbers = Dictionary(cases.map { ($0.id, $0.number) }, uniquingKeysWith: { first, _ in first })
         projectExpiredProposals()
     }
 
@@ -1059,7 +1065,7 @@ final class AssistantStore: ObservableObject {
         let tasks = try? await dependencies.repository.tasks(
             filter: TaskFilter(scope: .open, dueOnOrBefore: day)
         )
-        let names = Dictionary(uniqueKeysWithValues: clients.map { ($0.id, $0.displayName) })
+        let names = Dictionary(clients.map { ($0.id, $0.displayName) }, uniquingKeysWith: { first, _ in first })
         lastBriefedClientIDs = (events ?? [])
             .sorted { ($0.day, $0.time) < ($1.day, $1.time) }
             .compactMap { $0.clientID }

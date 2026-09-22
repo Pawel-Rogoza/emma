@@ -53,6 +53,10 @@ final class AuthStore: ObservableObject {
     /// Sesja mobilna istnieje tylko wtedy, gdy skonfigurowano backend.
     private let session: MobileSessionKeeper?
     private static let signedInKey = "emma.auth.signedIn"
+    /// Wylogowanie biegnące w tle (zamknięcie rozmowy, unieważnienie na
+    /// serwerze). Kolejne logowanie czeka na jego koniec — inaczej spóźnione
+    /// `signOut()` aktora sesji skasowałoby świeżo zalogowaną sesję.
+    private var pendingSignOut: Task<Void, Never>?
 
     /// Powód zakończenia sesji. Rozdzielamy wylogowanie od zmiany konta, bo
     /// koordynator głosu kończy rozmowę inaczej w każdej z tych sytuacji
@@ -89,9 +93,10 @@ final class AuthStore: ObservableObject {
         // Testy interfejsu i zrzuty ekranu startują z `--skip-auth`: dzięki temu
         // nie zależą od biometrii symulatora ani od zapamiętanej sesji. To jedyne
         // miejsce, w którym dostęp da się pominąć — zwykły start zawsze przechodzi
-        // przez logowanie i Face ID.
+        // przez logowanie i Face ID. Obejście działa wyłącznie bez backendu (Demo):
+        // z prawdziwymi danymi kancelarii nie ma ścieżki z pominięciem logowania.
         let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("--skip-auth") {
+        if arguments.contains("--skip-auth"), self.session == nil {
             self.state = .unlocked
         } else if arguments.contains("--reset-auth") {
             // Wymusza czysty start na ekranie logowania (test scenariusza logowania).
@@ -150,6 +155,10 @@ final class AuthStore: ObservableObject {
 
         isAuthenticating = true
         defer { isAuthenticating = false }
+        if let pending = pendingSignOut {
+            await pending.value
+            pendingSignOut = nil
+        }
         do {
             let result = try await session.signIn(
                 email: trimmed,
@@ -268,7 +277,10 @@ final class AuthStore: ObservableObject {
         onUserChanged?(nil)
         let session = self.session
         let notify = onSessionEnded
-        Task {
+        // Kolejność celowa: najpierw rozmowa (jej `DELETE` potrzebuje jeszcze
+        // tokenu), potem unieważnienie sesji. Zadanie zapamiętujemy, żeby
+        // ponowne logowanie poczekało na jego koniec.
+        pendingSignOut = Task {
             await notify?(.loggedOut)
             await session?.signOut()
         }

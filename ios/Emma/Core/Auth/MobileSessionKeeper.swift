@@ -66,6 +66,11 @@ public actor MobileSessionKeeper {
 
     private var session: MobileAuthSession?
     private var refreshTask: Task<MobileAuthSession, Error>?
+    /// Licznik zmian tożsamości sesji (logowanie, wylogowanie). Aktor jest
+    /// reentrant: odświeżenie czeka na sieć, a w tym czasie może przejść
+    /// wylogowanie albo nowe logowanie. Bez tego licznika spóźniona odpowiedź
+    /// `refresh` nadpisywała świeżą sesję starą (albo wskrzeszała wylogowaną).
+    private var epoch = 0
 
     /// Czy na urządzeniu była zapamiętana sesja w chwili startu. `let` na aktorze
     /// jest dostępny bez `await` — `AuthStore` potrzebuje tej odpowiedzi
@@ -113,6 +118,7 @@ public actor MobileSessionKeeper {
         )
         try? store.save(result)
         session = result
+        epoch += 1
         refreshTask?.cancel()
         refreshTask = nil
         return result
@@ -135,7 +141,14 @@ public actor MobileSessionKeeper {
     @discardableResult
     public func refresh() async throws -> MobileAuthSession {
         if let inFlight = refreshTask {
-            return try await inFlight.value
+            let joinedEpoch = epoch
+            do {
+                let refreshed = try await inFlight.value
+                return try resolveStale(joinedEpoch) ?? refreshed
+            } catch {
+                if let current = try resolveStale(joinedEpoch) { return current }
+                throw error
+            }
         }
         guard let current = session else {
             throw MobileAuthError.unauthorized(nil)
@@ -149,22 +162,41 @@ public actor MobileSessionKeeper {
             )
         }
         refreshTask = task
-        defer { refreshTask = nil }
+        let startedEpoch = epoch
+        // Czyścimy tylko **własne** zadanie: w czasie `await` mogło powstać nowe
+        // (po logowaniu), którego nie wolno zgubić.
+        defer { if refreshTask == task { refreshTask = nil } }
         do {
             let refreshed = try await task.value
+            // Sesja zmieniła się w trakcie (wylogowanie / nowe logowanie):
+            // wynik dotyczy poprzedniej tożsamości i nie może jej nadpisać.
+            if let current = try resolveStale(startedEpoch) { return current }
             try? store.save(refreshed)
             session = refreshed
             return refreshed
         } catch {
+            // Błąd dotyczy poprzedniej tożsamości — nowej sesji nie ruszamy.
+            if let current = try resolveStale(startedEpoch) { return current }
             // Token odświeżania też przestał działać (wylogowanie na innym
             // urządzeniu albo wygaśnięcie) — czyścimy sesję, żeby aplikacja nie
             // wyglądała na zalogowaną bez możliwości wykonania żądania.
             if case MobileAuthError.unauthorized = error {
                 try? store.clear()
                 session = nil
+                epoch += 1
             }
             throw error
         }
+    }
+
+    /// Rozstrzygnięcie odświeżenia, które skończyło się po zmianie tożsamości.
+    /// `nil` = sesja ta sama, wynik jest aktualny. Inaczej zwracamy bieżącą
+    /// sesję (świeże logowanie) albo `unauthorized`, gdy w międzyczasie nastąpiło
+    /// wylogowanie.
+    private func resolveStale(_ startedEpoch: Int) throws -> MobileAuthSession? {
+        guard epoch != startedEpoch else { return nil }
+        guard let session else { throw MobileAuthError.unauthorized(nil) }
+        return session
     }
 
     /// Wylogowanie z powiadomieniem serwera. Nieudane powiadomienie nie blokuje
@@ -173,15 +205,20 @@ public actor MobileSessionKeeper {
     public func signOut(reason: String = "logout") async {
         refreshTask?.cancel()
         refreshTask = nil
-        if let current = session {
+        // Lokalny stan czyścimy **przed** `await` na serwer: w trakcie
+        // unieważniania użytkownik może się już zalogować ponownie, a wtedy
+        // czyszczenie po powrocie z sieci skasowałoby jego nową sesję.
+        let current = session
+        try? store.clear()
+        session = nil
+        epoch += 1
+        if let current {
             try? await client.revokeSession(
                 accessToken: current.accessToken,
                 installationID: installationID,
                 reason: reason
             )
         }
-        try? store.clear()
-        session = nil
     }
 
     /// Zmiana konta na tym samym urządzeniu: unieważniamy poprzednią instalację

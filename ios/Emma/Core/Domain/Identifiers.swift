@@ -203,6 +203,15 @@ public struct LocalDate: Hashable, Codable, Sendable, Comparable, CustomStringCo
         guard day <= daysInMonth else { return nil }
     }
 
+    /// Data z komponentów, ale tylko istniejąca w kalendarzu. Wolny tekst
+    /// („31 września”, „30.02”) nie może dać daty, której nie ma — dalej szłaby
+    /// jako `2026-09-31` do backendu i do porównań terminów.
+    public init?(checkedYear year: Int, month: Int, day: Int) {
+        guard year > 0, (1...12).contains(month), day >= 1 else { return nil }
+        self.init(year: year, month: month, day: day)
+        guard day <= daysInMonth else { return nil }
+    }
+
     public var isoString: String {
         String(format: "%04d-%02d-%02d", year, month, day)
     }

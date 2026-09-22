@@ -558,6 +558,41 @@ final class VoiceStateReducerTests: XCTestCase {
 /// Stub portu zgody na mikrofon. Liczy pytania — test ma dowieść nie tylko
 /// wyniku, ale i tego, że port w ogóle został zapytany **przed** startem sesji.
 @MainActor
+/// Zgoda na mikrofon, która czeka na ręczne zwolnienie — pozwala zatrzymać
+/// start rozmowy dokładnie w oknie „pytam o zgodę”.
+@MainActor
+private final class GatedMicrophonePermission: MicrophonePermissionProviding {
+    private(set) var askCount = 0
+    private var continuation: CheckedContinuation<Bool, Never>?
+
+    func requestRecordPermission() async -> Bool {
+        askCount += 1
+        return await withCheckedContinuation { continuation = $0 }
+    }
+
+    func grant() {
+        continuation?.resume(returning: true)
+        continuation = nil
+    }
+}
+
+/// Transport, którego połączenie się nie udaje. Liczy rozłączenia, żeby test
+/// widział, czy koordynator posprzątał po nieudanym starcie.
+@MainActor
+private final class FailingConnectTransport: VoiceTransport {
+    let capabilities = VoiceCapabilities.providerUnverified
+    private(set) var disconnectCount = 0
+    func connect(_ session: VoiceSessionConfiguration) async throws {
+        throw DomainError.transportFailure("test")
+    }
+    func events() -> AsyncStream<VoiceEvent> { AsyncStream { $0.finish() } }
+    func setMicrophoneMuted(_ muted: Bool) async throws {}
+    func interrupt(_ request: InterruptionRequest) async throws {}
+    func updateContext(_ context: AssistantContext) async throws {}
+    func sendTextTurn(_ input: AssistantTextInput) async throws {}
+    func disconnect(reason: VoiceEndReason) async { disconnectCount += 1 }
+}
+
 private final class StubMicrophonePermission: MicrophonePermissionProviding {
     private let granted: Bool
     private(set) var asked = false
@@ -717,6 +752,87 @@ final class VoiceSessionCoordinatorTests: XCTestCase {
         XCTAssertTrue(permission.asked, "Port zgody nie został zapytany")
         XCTAssertNotNil(granted.state.sessionID, "Zgodna rozmowa musi założyć sesję")
         XCTAssertNotEqual(granted.state.connection, .failed)
+    }
+
+    /// Podwójne dotknięcie „Rozmawiaj”: drugi start w trakcie pierwszego nie
+    /// zakłada drugiej sesji (i nie osieroca transportu z otwartym mikrofonem).
+    func testConcurrentStartCreatesSingleTransport() async throws {
+        let permission = GatedMicrophonePermission()
+        let gated = VoiceSessionCoordinator(
+            sessionRepository: repository,
+            actionRepository: repository,
+            clock: clock,
+            microphonePermission: permission
+        )
+        let first = Task { @MainActor in
+            await gated.startConversation(
+                context: AssistantContext(scope: .firm),
+                user: DemoFixtures.dataset().user,
+                installationID: "install-test",
+                transportFactory: { _ in
+                    MockVoiceTransport(scenario: VoiceScenario(name: "manual", steps: []), delayProvider: { _ in })
+                }
+            )
+        }
+        for _ in 0..<100 where permission.askCount == 0 { await Task.yield() }
+        XCTAssertEqual(permission.askCount, 1, "Pierwszy start czeka na zgodę")
+
+        var secondFactoryCalls = 0
+        await gated.startConversation(
+            context: AssistantContext(scope: .firm),
+            user: DemoFixtures.dataset().user,
+            installationID: "install-test",
+            transportFactory: { _ in
+                secondFactoryCalls += 1
+                return MockVoiceTransport(scenario: VoiceScenario(name: "manual", steps: []), delayProvider: { _ in })
+            }
+        )
+        XCTAssertEqual(secondFactoryCalls, 0, "Drugi start nie może budować drugiego transportu")
+        XCTAssertEqual(permission.askCount, 1, "Drugi start nie pyta ponownie o zgodę")
+
+        permission.grant()
+        await first.value
+        XCTAssertNotNil(gated.state.sessionID, "Pierwszy start kończy się normalnie")
+    }
+
+    /// Nieudane połączenie zamyka transport i sesję na backendzie, zamiast
+    /// zostawić je aktywne do wygaśnięcia dzierżawy.
+    func testFailedConnectCleansUpTransportAndBackendSession() async throws {
+        let failing = FailingConnectTransport()
+        var createdSessionID: VoiceSessionID?
+        await coordinator.startConversation(
+            context: AssistantContext(scope: .firm),
+            user: DemoFixtures.dataset().user,
+            installationID: "install-test",
+            transportFactory: { configuration in
+                createdSessionID = configuration.sessionID
+                return failing
+            }
+        )
+        XCTAssertEqual(coordinator.state.connection, .failed)
+        XCTAssertNil(coordinator.state.sessionID)
+        XCTAssertEqual(failing.disconnectCount, 1, "Transport po nieudanym starcie musi być rozłączony")
+        let sessionID = try XCTUnwrap(createdSessionID)
+        let status = try await repository.fetchStatus(sessionID: sessionID)
+        XCTAssertFalse(status.isActive, "Sesja na backendzie musi zostać zamknięta")
+    }
+
+    /// Wersja kontekstu potwierdzona przez backend trafia do stanu, więc druga
+    /// zmiana kontekstu w tej samej rozmowie nie kończy się konfliktem wersji.
+    func testConsecutiveContextUpdatesAdvanceVersion() async {
+        await coordinator.startConversation(
+            context: AssistantContext(scope: .firm),
+            user: DemoFixtures.dataset().user,
+            installationID: "install-test",
+            transportFactory: { _ in
+                MockVoiceTransport(scenario: VoiceScenario(name: "manual", steps: []), delayProvider: { _ in })
+            }
+        )
+        let initial = coordinator.state.contextVersion ?? .initial
+        await coordinator.updateContext(AssistantContext.client(DemoFixtures.dmytroID))
+        await coordinator.updateContext(AssistantContext.client(DemoFixtures.olenaID))
+        XCTAssertNil(coordinator.state.lastError)
+        XCTAssertEqual(coordinator.state.contextVersion, initial.next().next())
     }
 
     func testDictationResultGoesToFrozenTargetAndExecutesNothing() async throws {

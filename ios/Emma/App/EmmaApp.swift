@@ -82,15 +82,21 @@ struct EmmaApp: App {
             // Przejście w tło wstrzymuje mikrofon i blokuje zapisy głosem,
             // ale nie usuwa przygotowanego szkicu (§5.6). Wychodząc w tło
             // zamykamy też dostęp — powrót wymaga Face ID.
-            if phase == .background {
+            //
+            // Tylko `.background`, nie `.inactive`: stan nieaktywny to także
+            // ściągnięte Centrum powiadomień, Centrum sterowania czy systemowy
+            // alert — rozmowa nie może się wtedy urywać. Prawdziwe wyjście
+            // z aplikacji i tak przechodzi przez `.background`.
+            switch phase {
+            case .background:
                 auth.lock()
-            }
-            if phase != .active {
                 Task { await dependencies.voice.handleApplicationBackgrounded() }
-            } else {
+            case .active:
                 // Powrót na pierwszy plan: pytamy backend o faktyczny stan sesji,
                 // żeby przejęcie przez inne urządzenie nie uszło uwadze (§5.6).
                 Task { await dependencies.voice.handleApplicationForegrounded() }
+            default:
+                break
             }
         }
     }

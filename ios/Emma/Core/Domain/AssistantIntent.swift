@@ -289,18 +289,24 @@ public enum AssistantIntentParser {
             guard let range = lowered.range(of: month) else { continue }
             let before = String(lowered[lowered.startIndex..<range.lowerBound])
             guard let day = lastNumber(in: before), (1...31).contains(day) else { continue }
-            let candidate = LocalDate(year: today.year, month: index + 1, day: day)
-            if candidate < today { return LocalDate(year: today.year + 1, month: index + 1, day: day) }
-            return candidate
+            // Najbliższe **istniejące** wystąpienie: „29 lutego” w roku bez
+            // przestępnego dnia przechodzi na kolejny rok, a „31 września” nie
+            // jest datą wcale.
+            for year in today.year...(today.year + 4) {
+                if let candidate = LocalDate(checkedYear: year, month: index + 1, day: day), candidate >= today {
+                    return candidate
+                }
+            }
+            return nil
         }
         // „12.09” albo „12.09.2026”.
         if let dotted = firstMatch(in: lowered, pattern: #"(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?"#),
            let day = Int(dotted[0]), let month = Int(dotted[1]),
            (1...31).contains(day), (1...12).contains(month) {
             let year = dotted.count > 2 ? Int(dotted[2]) ?? today.year : today.year
-            let candidate = LocalDate(year: year, month: month, day: day)
-            if year == today.year, candidate < today {
-                return LocalDate(year: today.year + 1, month: month, day: day)
+            guard let candidate = LocalDate(checkedYear: year, month: month, day: day) else { return nil }
+            if dotted.count <= 2, candidate < today {
+                return LocalDate(checkedYear: today.year + 1, month: month, day: day)
             }
             return candidate
         }

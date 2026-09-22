@@ -47,7 +47,7 @@ final class TasksStore: ObservableObject {
             phase = .loaded(
                 Model(
                     tasks: tasks.sorted { $0.dueDate < $1.dueDate },
-                    clientNames: Dictionary(uniqueKeysWithValues: clients.map { ($0.id, $0.displayName) })
+                    clientNames: Dictionary(clients.map { ($0.id, $0.displayName) }, uniquingKeysWith: { first, _ in first })
                 )
             )
         } catch {

@@ -25,6 +25,9 @@ final class MobileSessionKeeperTests: XCTestCase {
         var revokeError: MobileAuthError?
         /// Opóźnienie odnowienia: pozwala wywołać dwa odświeżenia równolegle.
         var refreshDelay: UInt64 = 0
+        /// Serwer, który odpowiada mimo anulowania po stronie klienta — tak
+        /// wygląda odpowiedź, która „zdążyła” wrócić tuż przed wylogowaniem.
+        var refreshIgnoresCancellation = false
 
         func login(
             email: String,
@@ -48,7 +51,13 @@ final class MobileSessionKeeperTests: XCTestCase {
                 let result = refreshResults.isEmpty ? loginResult : refreshResults.removeFirst()
                 return (result, refreshDelay)
             }
-            if delay > 0 { try await Task.sleep(nanoseconds: delay) }
+            if delay > 0 {
+                if refreshIgnoresCancellation {
+                    await Task.detached { try? await Task.sleep(nanoseconds: delay) }.value
+                } else {
+                    try await Task.sleep(nanoseconds: delay)
+                }
+            }
             return try result.get()
         }
 
@@ -271,5 +280,48 @@ final class MobileSessionKeeperTests: XCTestCase {
         XCTAssertEqual(try store.load()?.accessToken, "access-nowy")
         let after = await keeper.currentUser
         XCTAssertEqual(after?.id, "user-1")
+    }
+
+    // MARK: Wyścigi odnowienia z logowaniem i wylogowaniem
+
+    /// Odpowiedź odnowienia, która wróciła po wylogowaniu, nie może wskrzesić
+    /// sesji na urządzeniu (aktor jest reentrant — `await` wpuszcza `signOut`).
+    func testLateRefreshAfterSignOutDoesNotRestoreSession() async throws {
+        let client = FakeClient()
+        client.refreshDelay = 50_000_000
+        client.refreshIgnoresCancellation = true
+        client.refreshResults = [.success(FakeClient.session(accessToken: "access-2", refreshToken: "refresh-2"))]
+        let store = InMemoryMobileSessionStore(session: FakeClient.session(expiresIn: 10))
+        let keeper = makeKeeper(client: client, store: store)
+
+        async let refreshed = keeper.refresh()
+        try await Task.sleep(nanoseconds: 10_000_000)
+        await keeper.signOut()
+        _ = try? await refreshed
+
+        XCTAssertNil(try store.load(), "Wylogowane urządzenie nie może odzyskać tokenów")
+        let signedIn = await keeper.hasStoredSession
+        XCTAssertFalse(signedIn)
+    }
+
+    /// Spóźnione odnowienie starej sesji nie nadpisuje świeżego logowania.
+    func testLateRefreshDoesNotOverwriteNewSignIn() async throws {
+        let client = FakeClient()
+        client.refreshDelay = 50_000_000
+        client.refreshIgnoresCancellation = true
+        client.refreshResults = [.success(FakeClient.session(accessToken: "stara-2", refreshToken: "stara-r2"))]
+        client.loginResult = .success(FakeClient.session(accessToken: "nowa-1", refreshToken: "nowa-r1"))
+        let store = InMemoryMobileSessionStore(session: FakeClient.session(expiresIn: 10))
+        let keeper = makeKeeper(client: client, store: store)
+
+        async let refreshed = keeper.refresh()
+        try await Task.sleep(nanoseconds: 10_000_000)
+        try await keeper.signIn(email: "a@b.pl", password: "haslo", totp: "")
+        let late = try await refreshed
+
+        XCTAssertEqual(late.accessToken, "nowa-1", "Wołający dostaje bieżącą sesję, nie spóźnioną")
+        XCTAssertEqual(try store.load()?.refreshToken, "nowa-r1")
+        let token = try await keeper.accessToken()
+        XCTAssertEqual(token, "nowa-1")
     }
 }

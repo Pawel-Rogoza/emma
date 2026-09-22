@@ -62,6 +62,9 @@ public final class AppDependencies: ObservableObject {
     /// Wymuszone odnowienie po 401 z zasobu danych. Zwraca nowy token albo `nil`;
     /// `nil` po nieudanym odnowieniu oznacza koniec sesji (401), a nie brak sieci.
     private let sessionTokenRefresher: (@MainActor @Sendable () async -> String?)?
+    /// Token dla rozmowy głosowej: te same źródła co dla danych, pytane przy
+    /// każdym użyciu — rozmowa trwa dłużej niż token dostępu.
+    private let voiceTokens: VoiceAccessTokenSource
 
     /// Token, którym warstwy zależne od API podpisują żądania. To wartość
     /// z ostatniego logowania/odnowienia — odświeżaniem zajmuje się `AuthStore`.
@@ -166,6 +169,7 @@ public final class AppDependencies: ObservableObject {
         } else {
             apiTokenRefresher = nil
         }
+        self.voiceTokens = VoiceAccessTokenSource(current: apiTokenProvider, refresh: apiTokenRefresher)
 
         if let repository {
             self.repository = repository
@@ -268,6 +272,7 @@ public final class AppDependencies: ObservableObject {
             configuration: self.configuration,
             fixtureName: fixtureName,
             accessToken: accessToken,
+            tokens: voiceTokens,
             // Ten sam identyfikator instalacji co w logowaniu (FIX A).
             installationID: InstallationIdentity.current(),
             mockScenarioName: voiceScenarioName,

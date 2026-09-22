@@ -165,6 +165,45 @@ final class BackendRepositoryTests: XCTestCase {
         XCTAssertEqual(entry.createdAt, LocalDate(year: 2026, month: 9, day: 12))
     }
 
+    /// 22:30Z to już 0:30 następnego dnia w Warszawie (CEST). Obcięcie znacznika
+    /// do daty UTC przesuwało wieczorne notatki o dzień wstecz.
+    func testLateEveningUTCInstantMapsToWarsawDay() throws {
+        XCTAssertEqual(
+            try BackendRepository.mapLocalDate(fromISO: "2026-09-13T22:30:00.000Z"),
+            LocalDate(year: 2026, month: 9, day: 14)
+        )
+        XCTAssertEqual(
+            try BackendRepository.mapLocalDate(fromISO: "2026-09-13T21:59:59Z"),
+            LocalDate(year: 2026, month: 9, day: 13)
+        )
+        // Sama data jest już dniem lokalnym — bez przeliczania strefy.
+        XCTAssertEqual(
+            try BackendRepository.mapLocalDate(fromISO: "2026-09-13"),
+            LocalDate(year: 2026, month: 9, day: 13)
+        )
+    }
+
+    /// Kursor to przesunięcie: nowy lead między stronami przesuwa listę i ten sam
+    /// kontakt wraca na drugiej stronie. Ekrany budują słowniki po `id`, więc
+    /// duplikat nie może wyjść z repozytorium.
+    func testClientRepeatedAcrossPagesIsReturnedOnce() async throws {
+        let item = #"""
+        {"id":"client-12","display_name":"Olena Kowalenko","initials":"OK","language":"pl",
+         "topic":"Sprawa spadkowa","stage":"client","source":"whatsapp","created_at":"2026-08-01",
+         "briefing":null,"incoming_message":null,"incoming_translation":null,"incoming_time":null,
+         "needs_reply":false,"version":5}
+        """#
+        StubURLProtocol.respond(sequence: [
+            (json: Data(#"{"items":[\#(item)],"next_cursor":"30","has_more":true}"#.utf8), status: 200),
+            (json: Data(#"{"items":[\#(item)],"next_cursor":null,"has_more":false}"#.utf8), status: 200),
+        ])
+
+        let clients = try await makeRepository().clients(matching: "", stage: nil)
+
+        XCTAssertEqual(StubURLProtocol.requestCount, 2)
+        XCTAssertEqual(clients.map(\.id.rawValue), ["client-12"])
+    }
+
     // MARK: Brak trasy w backendzie
 
     // MARK: Nowe zgłoszenie (POST /clients)

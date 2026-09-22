@@ -55,7 +55,9 @@ public final class GeminiLiveTransport: VoiceTransport {
 
     private let tokenProvider: BackendConversationTokenProvider
     private let toolExecutor: any VoiceToolExecuting
-    private let accessToken: String?
+    /// Token użytkownika pobierany przy każdym wydaniu poświadczenia — rozmowa
+    /// (z wznowieniami po `goAway`) żyje dłużej niż token dostępu.
+    private let tokens: VoiceAccessTokenSource
     private let installationID: String
     private let audioSession: AudioSessionController?
     private let model: String
@@ -84,7 +86,7 @@ public final class GeminiLiveTransport: VoiceTransport {
     init(
         tokenProvider: BackendConversationTokenProvider,
         toolExecutor: any VoiceToolExecuting,
-        accessToken: String?,
+        tokens: VoiceAccessTokenSource,
         installationID: String,
         model: String,
         audioSession: AudioSessionController? = nil,
@@ -93,12 +95,35 @@ public final class GeminiLiveTransport: VoiceTransport {
     ) {
         self.tokenProvider = tokenProvider
         self.toolExecutor = toolExecutor
-        self.accessToken = accessToken
+        self.tokens = tokens
         self.installationID = installationID
         self.model = model
         self.audioSession = audioSession
         self.endpoint = endpoint
         self.urlSession = urlSession
+    }
+
+    /// Stały token — testy i podglądy.
+    convenience init(
+        tokenProvider: BackendConversationTokenProvider,
+        toolExecutor: any VoiceToolExecuting,
+        accessToken: String?,
+        installationID: String,
+        model: String,
+        audioSession: AudioSessionController? = nil,
+        endpoint: URL = GeminiLiveTransport.defaultEndpoint,
+        urlSession: URLSession = .shared
+    ) {
+        self.init(
+            tokenProvider: tokenProvider,
+            toolExecutor: toolExecutor,
+            tokens: .fixed(accessToken),
+            installationID: installationID,
+            model: model,
+            audioSession: audioSession,
+            endpoint: endpoint,
+            urlSession: urlSession
+        )
     }
 
     // MARK: Połączenie
@@ -128,13 +153,7 @@ public final class GeminiLiveTransport: VoiceTransport {
         if !session.conversationToken.isEmpty {
             token = session.conversationToken
         } else {
-            let issued = try await tokenProvider.fetchToken(
-                sessionID: session.sessionID,
-                contextVersion: session.context.version,
-                installationID: installationID,
-                accessToken: accessToken
-            )
-            token = issued.token
+            token = try await issueConversationToken(for: session)
         }
 
         // `connecting` przed otwarciem gniazda: pętla odbioru startuje w środku
@@ -246,19 +265,38 @@ public final class GeminiLiveTransport: VoiceTransport {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let issued = try await self.tokenProvider.fetchToken(
-                    sessionID: session.sessionID,
-                    contextVersion: session.context.version,
-                    installationID: self.installationID,
-                    accessToken: self.accessToken
-                )
-                try await self.openSocket(token: issued.token, resumeHandle: self.tracker.resumptionHandle)
+                let token = try await self.issueConversationToken(for: session)
+                try await self.openSocket(token: token, resumeHandle: self.tracker.resumptionHandle)
                 // Nowe gniazdo = nowy limit prób. Sesja Live API żyje do dwóch
                 // godzin, więc jedno zerwanie na całą rozmowę to za mało.
                 self.reconnectsLeft = 1
             } catch {
                 self.emit(.fatalError(.providerUnavailable))
             }
+        }
+    }
+
+    /// Nowe poświadczenie Live API z backendu. Po 401 raz odnawiamy token
+    /// użytkownika i ponawiamy — wznowienie po `goAway` w drugiej połowie
+    /// godziny nie może kończyć rozmowy tylko dlatego, że wygasł token dostępu.
+    private func issueConversationToken(for session: VoiceSessionConfiguration) async throws -> String {
+        do {
+            return try await tokenProvider.fetchToken(
+                sessionID: session.sessionID,
+                contextVersion: session.context.version,
+                installationID: installationID,
+                accessToken: await tokens.current()
+            ).token
+        } catch ConversationTokenError.unauthorized {
+            guard let refresh = tokens.refresh, let refreshed = await refresh(), !refreshed.isEmpty else {
+                throw ConversationTokenError.unauthorized
+            }
+            return try await tokenProvider.fetchToken(
+                sessionID: session.sessionID,
+                contextVersion: session.context.version,
+                installationID: installationID,
+                accessToken: refreshed
+            ).token
         }
     }
 

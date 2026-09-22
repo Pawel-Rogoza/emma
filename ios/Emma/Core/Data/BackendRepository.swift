@@ -86,7 +86,12 @@ public struct BackendRepository: EmmaRepository, Sendable {
             cursor = page.hasMore ? page.nextCursor : nil
             pages += 1
         } while cursor != nil && pages < Self.maxClientPages
-        return try collected.map(Self.mapClient)
+        // Kursor jest przesunięciem: gdy między stronami dojdzie nowy lead, ten
+        // sam kontakt wraca na kolejnej stronie. Duplikat identyfikatora
+        // wywracał ekrany budujące słowniki po `id`, więc zostawiamy pierwszy.
+        var seen = Set<String>()
+        let unique = collected.filter { seen.insert($0.id).inserted }
+        return try unique.map(Self.mapClient)
     }
 
     public func client(id: ClientID) async throws -> Client? {
@@ -639,15 +644,32 @@ extension BackendRepository {
         )
     }
 
-    /// Backend wysyła pełny znacznik ISO (`2026-09-13T12:00:00.000Z`), a model
-    /// aplikacji trzyma sam dzień. Bierzemy pierwsze 10 znaków, bo godzina
-    /// i strefa nie mają reprezentacji w `LocalDate`.
+    /// Backend wysyła pełny znacznik ISO w UTC (`2026-09-13T12:00:00.000Z`),
+    /// a model aplikacji trzyma sam dzień **w strefie kancelarii**.
+    ///
+    /// Samo obcięcie do 10 znaków brało dzień UTC: notatka zapisana w Warszawie
+    /// 13 września o 0:30 (22:30Z dnia poprzedniego) pokazywała się jako 12
+    /// września. Pełny znacznik przeliczamy więc na `Europe/Warsaw`; sama data
+    /// (`YYYY-MM-DD`) jest już dniem lokalnym i nie wymaga przeliczenia.
     static func mapLocalDate(fromISO raw: String) throws -> LocalDate {
-        let day = String(raw.prefix(10))
-        guard let value = LocalDate(iso: day) else {
+        if raw.count > 10, let instant = MobileAuthClient.parseISO8601(raw) {
+            return localDate(of: instant)
+        }
+        guard let value = LocalDate(iso: String(raw.prefix(10))) else {
             throw BackendRepositoryError.decoding("nieznana data ISO: \(raw)")
         }
         return value
+    }
+
+    private static func localDate(of instant: Date) -> LocalDate {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: EmmaTime.referenceTimeZone) ?? .gmt
+        let components = calendar.dateComponents([.year, .month, .day], from: instant)
+        return LocalDate(
+            year: components.year ?? 1970,
+            month: components.month ?? 1,
+            day: components.day ?? 1
+        )
     }
 
     static func mapTime(_ raw: String?) throws -> TimeOfDay? {

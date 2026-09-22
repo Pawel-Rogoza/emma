@@ -78,6 +78,30 @@ final class VoiceToolAndAudioTests: XCTestCase {
         }
     }
 
+    /// Rozmowa trwa dłużej niż token dostępu (30 min). Pierwsze 401 to wygasły
+    /// token, nie koniec sesji: jedno odnowienie i jedno ponowienie narzędzia.
+    func testExpiredTokenIsRefreshedOnceAndToolRetried() async throws {
+        StubURLProtocol.respond(sequence: [
+            (json: Data(#"{"code":"unauthorized"}"#.utf8), status: 401),
+            (json: Data(#"{"tool":"search_clients","result":{"ok":true}}"#.utf8), status: 200),
+        ])
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let executor = BackendVoiceToolExecutor(
+            baseURL: baseURL,
+            tokens: VoiceAccessTokenSource(current: { "token-wygasly" }, refresh: { "token-odnowiony" }),
+            session: URLSession(configuration: configuration)
+        )
+
+        let result = try await executor.execute(toolName: "search_clients", argumentsJSON: "{}")
+
+        XCTAssertTrue(result.contains("\"ok\":true"))
+        XCTAssertEqual(
+            StubURLProtocol.allRequests.map { $0.value(forHTTPHeaderField: "Authorization") },
+            ["Bearer token-wygasly", "Bearer token-odnowiony"]
+        )
+    }
+
     func testUnknownToolNameIsRejectedBeforeAnyRequest() async throws {
         StubURLProtocol.respond(json: Data("{}".utf8), status: 200)
         do {

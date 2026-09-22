@@ -43,3 +43,32 @@ public enum VoiceToolExecutionError: Error, Equatable, Sendable {
         }
     }
 }
+
+// MARK: - Token użytkownika dla warstwy głosu
+
+/// Skąd transport głosu i wykonawca narzędzi biorą token dostępu użytkownika.
+///
+/// Wcześniej oba typy dostawały **migawkę** tokenu z chwili startu rozmowy.
+/// Token dostępu żyje 30 minut, a rozmowa Live API do dwóch godzin (z `goAway`
+/// co ~10 minut), więc po pół godzinie wznowienie gniazda i każde wywołanie
+/// narzędzia kończyły się 401. Źródło pyta sesję przy każdym użyciu, a po 401
+/// może raz wymusić odnowienie — ta sama reguła co w `BackendAPIClient`.
+public struct VoiceAccessTokenSource: Sendable {
+    /// Ważny (w razie potrzeby odnowiony z wyprzedzeniem) token albo `nil`.
+    public let current: @Sendable () async -> String?
+    /// Wymuszone odnowienie po 401. `nil` = brak odnowienia (testy, podglądy).
+    public let refresh: (@Sendable () async -> String?)?
+
+    public init(
+        current: @escaping @Sendable () async -> String?,
+        refresh: (@Sendable () async -> String?)? = nil
+    ) {
+        self.current = current
+        self.refresh = refresh
+    }
+
+    /// Stały token bez odnawiania — podglądy, testy i ścieżki bez sesji.
+    public static func fixed(_ token: String?) -> VoiceAccessTokenSource {
+        VoiceAccessTokenSource(current: { token })
+    }
+}

@@ -153,6 +153,10 @@ public final class VoiceSessionCoordinator {
             await updateContext(context)
             return
         }
+        // Start już trwa (zgoda na mikrofon albo zakładanie sesji na backendzie).
+        // Bez tej bramki szybkie podwójne dotknięcie zakładało dwie sesje, a
+        // transport pierwszej zostawał osierocony — z otwartym mikrofonem.
+        guard state.connection != .requestingPermission else { return }
         sessionConfiguration = nil
         voiceWritesRevoked = false
         state = VoiceUIState(
@@ -201,10 +205,32 @@ public final class VoiceSessionCoordinator {
         } catch {
             let message = (error as? DomainError)?.safeMessage
                 ?? FatalErrorKind.providerUnavailable.safeMessage
+            // Nieudany start sprzątamy do końca: transport mógł już przejąć
+            // sesję audio i otworzyć gniazdo, a backend ma założoną sesję.
+            // Wcześniej zostawały one aktywne aż do wygaśnięcia dzierżawy.
+            let failedTransport = transport
+            let failedSessionID = sessionConfiguration?.sessionID
+            transport = nil
+            sessionConfiguration = nil
+            startedAt = nil
+            lastActivityAt = nil
+            limitsTask?.cancel()
+            limitsTask = nil
             state.connection = .failed
             state.turn = .waiting
             state.mode = .idle
+            state.sessionID = nil
             state.lastError = message
+            if let failedTransport {
+                await failedTransport.disconnect(reason: .providerError)
+            }
+            if let failedSessionID {
+                await Self.endRemoteSession(
+                    sessionID: failedSessionID,
+                    repository: sessionRepository,
+                    timeout: 3
+                )
+            }
         }
     }
 
@@ -360,10 +386,16 @@ public final class VoiceSessionCoordinator {
         guard let transport, let sessionID = state.sessionID else { return }
         let expected = state.contextVersion ?? context.version
         do {
-            _ = try await sessionRepository.updateContext(
+            // Wersja potwierdzona przez backend musi trafić do stanu: bez tego
+            // każda kolejna zmiana kontekstu wysyłała tę samą wersję (a więc ten
+            // sam klucz idempotencji) i kończyła się konfliktem albo powtórką.
+            let confirmed = try await sessionRepository.updateContext(
                 UpdateVoiceContext(sessionID: sessionID, context: context, expectedContextVersion: expected)
             )
-            try await transport.updateContext(context)
+            if state.sessionID == sessionID {
+                state.contextVersion = confirmed.version
+            }
+            try await transport.updateContext(confirmed)
         } catch {
             state.lastError = (error as? DomainError)?.safeMessage
                 ?? DomainError.transportFailure("kontekst").safeMessage
@@ -957,21 +989,12 @@ public final class VoiceSessionCoordinator {
         playbackTask?.cancel()
         playbackTask = nil
 
-        if let sessionID = state.sessionID {
-            // Backend wygasza sesję także według lease/heartbeat; końcowy request
-            // telefonu nie jest jedynym mechanizmem. Czekamy na `DELETE` **ze
-            // stałym limitem**: bez sieci `URLSession` trzymałby „Zakończ" przez
-            // pełny timeout, a przejście w tło i tak zawiesiłoby proces przed
-            // wysłaniem żądania. Lokalne rozłączenie nie może zależeć od sieci.
-            await Self.endRemoteSession(
-                sessionID: sessionID,
-                repository: sessionRepository,
-                timeout: 3
-            )
-        }
-        if let transport {
-            await transport.disconnect(reason: reason)
-        }
+        // Zasoby sesji odpinamy synchronicznie, **przed** pierwszym `await`.
+        // Koordynator żyje na głównym aktorze, ale `await` wpuszcza inne
+        // wywołania: nowa rozmowa rozpoczęta w trakcie zamykania nie może
+        // zostać rozłączona przez spóźnione sprzątanie poprzedniej.
+        let endingSessionID = state.sessionID
+        let endingTransport = transport
         self.transport = nil
         self.sessionConfiguration = nil
         self.dictationService = nil
@@ -1008,6 +1031,26 @@ public final class VoiceSessionCoordinator {
             finalState.lastError = reason.displayName
         }
         state = finalState
+
+        // Najpierw lokalne rozłączenie (mikrofon, gniazdo), dopiero potem
+        // backend. Wcześniej kolejność była odwrotna i po „Zakończ” mikrofon
+        // wysyłał dźwięk do dostawcy jeszcze przez czas `DELETE` (do 3 s bez
+        // sieci) — wbrew zasadzie, że lokalny koniec nie zależy od sieci.
+        if let endingTransport {
+            await endingTransport.disconnect(reason: reason)
+        }
+        if let endingSessionID {
+            // Backend wygasza sesję także według lease/heartbeat; końcowy request
+            // telefonu nie jest jedynym mechanizmem. Czekamy na `DELETE` **ze
+            // stałym limitem**: bez sieci `URLSession` trzymałby „Zakończ" przez
+            // pełny timeout, a przejście w tło i tak zawiesiłoby proces przed
+            // wysłaniem żądania.
+            await Self.endRemoteSession(
+                sessionID: endingSessionID,
+                repository: sessionRepository,
+                timeout: 3
+            )
+        }
     }
 
     /// Samo opuszczenie widoku Emmy **nie** kończy sesji (§5.6).
