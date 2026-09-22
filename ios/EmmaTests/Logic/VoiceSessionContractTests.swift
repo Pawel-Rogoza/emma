@@ -102,7 +102,12 @@ final class VoiceSessionContractTests: XCTestCase {
             """
         }
 
-        XCTAssertThrowsError(try await makeRepository().create(request()))
+        do {
+            _ = try await makeRepository().create(request())
+            XCTFail("Expected unsupported voice provider to be rejected")
+        } catch {
+            // Async operations cannot be evaluated by XCTAssertThrowsError's autoclosure.
+        }
     }
 
     func testExpiryParsesBothISO8601Variants() {

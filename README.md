@@ -59,3 +59,5 @@ Aktualny audyt, poprawki rozmowy, konfiguracja Google Search oraz projekt RAG
 ze źródłami, wersjonowaniem i cytowaniami:
 [Gemini Live + RAG](docs/architecture/GEMINI_LIVE_AND_RAG_2026-09-22.md).
 Dokument rozdziela zmiany w kodzie od funkcji wymagających dalszego wdrożenia.
+
+Plan wykonawczy dla kolejnego modelu AI: [handoff](docs/architecture/AI_IMPLEMENTATION_HANDOFF.md).
