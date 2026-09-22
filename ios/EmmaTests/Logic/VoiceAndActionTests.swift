@@ -560,7 +560,6 @@ final class VoiceStateReducerTests: XCTestCase {
 @MainActor
 /// Zgoda na mikrofon, która czeka na ręczne zwolnienie — pozwala zatrzymać
 /// start rozmowy dokładnie w oknie „pytam o zgodę”.
-@MainActor
 private final class GatedMicrophonePermission: MicrophonePermissionProviding {
     private(set) var askCount = 0
     private var continuation: CheckedContinuation<Bool, Never>?
@@ -578,7 +577,6 @@ private final class GatedMicrophonePermission: MicrophonePermissionProviding {
 
 /// Transport, którego połączenie się nie udaje. Liczy rozłączenia, żeby test
 /// widział, czy koordynator posprzątał po nieudanym starcie.
-@MainActor
 private final class FailingConnectTransport: VoiceTransport {
     let capabilities = VoiceCapabilities.providerUnverified
     private(set) var disconnectCount = 0
