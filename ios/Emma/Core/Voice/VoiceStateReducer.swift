@@ -328,8 +328,11 @@ public struct VoiceStateReducer: Sendable {
             state.turn = .thinking
 
         case .agentTextDelta(let delta):
-            state.agentText += delta
-            state.agentTurnID = Self.turnKey(event)
+            // Pierwszy fragment nowej tury zaczyna tekst od nowa. Wcześniej
+            // tekst rósł przez całą rozmowę („…pomóc?Oczywiście…”).
+            let key = Self.turnKey(event)
+            state.agentText = key == state.agentTurnID ? state.agentText + delta : delta
+            state.agentTurnID = key
             state.turn = .speaking
 
         case .agentTextFinal(let text):

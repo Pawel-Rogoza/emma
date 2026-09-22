@@ -92,6 +92,11 @@ public final class GeminiLiveTransport: VoiceTransport {
     /// ~3 s mowy przy fragmentach 20–100 ms; starsze fragmenty odrzucamy.
     private static let pendingAudioLimit = 60
     private var isClosing = false
+    /// Identyfikatory bieżących tur. Live API ich nie nadaje, a bez nich każdy
+    /// fragment transkrypcji wyglądał jak osobna tura (duplikaty w historii).
+    /// Zmieniają się po `turnComplete` / `interrupted`.
+    private var agentTurnID = UUID().uuidString
+    private var userTurnID = UUID().uuidString
     /// Jedna próba wznowienia na zerwanie. Więcej byłoby udawaniem, że sieć
     /// wróciła, a użytkownik nie widzi różnicy między „wracam” i „próbuję w kółko”.
     private var reconnectsLeft = 1
@@ -271,6 +276,13 @@ public final class GeminiLiveTransport: VoiceTransport {
             cancelToolCalls(outcome.cancelledToolCallIDs)
             if let call = outcome.toolCall { executeToolCall(call) }
             for payload in outcome.payloads { emit(payload) }
+            switch event {
+            case .turnComplete, .interrupted:
+                agentTurnID = UUID().uuidString
+                userTurnID = UUID().uuidString
+            default:
+                break
+            }
             // `goAway` to zapowiedź zamknięcia (limit ~10 minut). Nie czekamy, aż
             // gniazdo padnie: otwieramy nowe połączenie z uchwytem tej samej sesji,
             // więc rozmowa trwa bez przerwy w słuchaniu użytkownika.
@@ -532,10 +544,20 @@ public final class GeminiLiveTransport: VoiceTransport {
 
     private func emit(_ payload: VoiceEventPayload) {
         guard let configuration else { return }
+        let turnID: String?
+        switch payload {
+        case .agentTextDelta, .agentTextFinal, .playbackStarted, .playbackStopped:
+            turnID = agentTurnID
+        case .userTranscriptPartial, .userTranscriptFinal:
+            turnID = userTurnID
+        default:
+            turnID = nil
+        }
         let event = VoiceEvent(
             eventID: UUID().uuidString,
             sessionID: configuration.sessionID,
             connectionGeneration: ConnectionGeneration(UInt64(generation)),
+            turnID: turnID,
             receivedAt: Date(),
             source: .providerTransport,
             payload: payload

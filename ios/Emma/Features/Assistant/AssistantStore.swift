@@ -90,6 +90,8 @@ final class AssistantStore: ObservableObject {
     /// a karta propozycji powstaje raz na identyfikator propozycji.
     private var consumedUserTurnID: String?
     private var consumedAgentTurnID: String?
+    /// Karta w historii, do której trafia bieżąca (strumieniowana) tura Emmy.
+    private var agentHistoryMessageID: String?
     private var localAnswerTurnID: String?
     private var localProposalTurnID: String?
     private var adoptedProposalID: ActionID?
@@ -908,6 +910,7 @@ final class AssistantStore: ObservableObject {
         pendingClarification = nil
         consumedUserTurnID = nil
         consumedAgentTurnID = nil
+        agentHistoryMessageID = nil
         localAnswerTurnID = nil
         localProposalTurnID = nil
         adoptedProposalID = nil
@@ -1257,14 +1260,30 @@ final class AssistantStore: ObservableObject {
             let transcript = state.committedUserTranscript
             Task { await self.handleCommand(transcript, origin: .voice, turnID: turnID) }
         }
-        guard let agentTurnID = state.agentTurnID,
-              agentTurnID != consumedAgentTurnID,
-              !state.agentText.isEmpty else { return }
+        guard let agentTurnID = state.agentTurnID, !state.agentText.isEmpty else { return }
+        // Ta sama tura Emmy przychodzi fragmentami (transkrypcja strumieniowa).
+        // Aktualizujemy jej jedną kartę, zamiast dopisywać nową przy każdym
+        // fragmencie — to był powód wielokrotnie powielonych odpowiedzi.
+        if agentTurnID == consumedAgentTurnID {
+            if let messageID = agentHistoryMessageID {
+                updateAssistantTurn(messageID, text: state.agentText)
+            }
+            return
+        }
         consumedAgentTurnID = agentTurnID
+        agentHistoryMessageID = nil
         // Jeden właściciel tury (F15): gdy lokalny dialog już odpowiedział na tę
         // wypowiedź, tekst dostawcy nie dubluje odpowiedzi w historii.
         guard localAnswerTurnID != consumedUserTurnID else { return }
-        appendAssistantTurn(state.agentText, isSummary: false)
+        agentHistoryMessageID = appendAssistantTurn(state.agentText, isSummary: false)
+    }
+
+    private func updateAssistantTurn(_ id: String, text: String) {
+        guard let index = turns.lastIndex(where: { $0.id == id }),
+              case .message(var message) = turns[index],
+              message.text != text else { return }
+        message.text = text
+        turns[index] = .message(message)
     }
 
     /// Propozycja dostawcy trafia do historii jako karta (F04). Jedna propozycja
