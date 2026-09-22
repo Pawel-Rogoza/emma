@@ -421,6 +421,20 @@ final class VoiceStateReducerTests: XCTestCase {
         XCTAssertEqual(state.turn, .waiting)
     }
 
+    /// Fragmenty jednej tury się sklejają, a nowa tura zaczyna tekst od nowa.
+    /// Wcześniej tekst rósł przez całą rozmowę („…pomóc?Oczywiście…”).
+    func testAgentDeltasAccumulateWithinTurnAndResetOnNewTurn() {
+        var state = connectedState()
+        reducer.apply(event(.agentTextDelta("Cześć! "), eventID: "a1", turnID: "t1"), to: &state)
+        reducer.apply(event(.agentTextDelta("W czym pomóc?"), eventID: "a2", turnID: "t1"), to: &state)
+        XCTAssertEqual(state.agentText, "Cześć! W czym pomóc?")
+        XCTAssertEqual(state.agentTurnID, "t1")
+
+        reducer.apply(event(.agentTextDelta("Oczywiście."), eventID: "a3", turnID: "t2"), to: &state)
+        XCTAssertEqual(state.agentText, "Oczywiście.")
+        XCTAssertEqual(state.agentTurnID, "t2")
+    }
+
     func testMutedMicrophoneIsNotDisconnection() {
         var state = connectedState()
         reducer.apply(event(.microphoneChanged(.muted)), to: &state)
