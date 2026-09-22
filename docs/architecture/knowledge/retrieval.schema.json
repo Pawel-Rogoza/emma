@@ -1,0 +1,267 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Emma public legal retrieval contract (draft)",
+  "description": "Validate tool arguments against #/$defs/request and the result inside the existing {tool,result} envelope against #/$defs/result. Not a deployed endpoint.",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "jurisdiction": {
+          "type": "string",
+          "enum": [
+            "PL",
+            "EU"
+          ]
+        },
+        "asOf": {
+          "type": "string",
+          "format": "date"
+        },
+        "kinds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "legislation",
+              "judgment",
+              "official_guidance"
+            ]
+          }
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        }
+      },
+      "required": [
+        "query",
+        "jurisdiction",
+        "asOf",
+        "kinds"
+      ]
+    },
+    "citation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "passageId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "revisionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "sourceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "locator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "textSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "fetchedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "publishedOn": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "validFrom": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "validTo": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "temporalStatus": {
+          "type": "string",
+          "enum": [
+            "verified",
+            "unknown",
+            "not_applicable"
+          ]
+        }
+      },
+      "required": [
+        "passageId",
+        "revisionId",
+        "sourceId",
+        "title",
+        "url",
+        "locator",
+        "textSha256",
+        "fetchedAt",
+        "publishedOn",
+        "validFrom",
+        "validTo",
+        "temporalStatus"
+      ]
+    },
+    "passage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "citation": {
+          "$ref": "#/$defs/citation"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 12000
+        }
+      },
+      "required": [
+        "citation",
+        "text"
+      ]
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "no_results",
+            "needs_clarification",
+            "unavailable"
+          ]
+        },
+        "asOf": {
+          "type": "string",
+          "format": "date"
+        },
+        "corpusVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retrievalProfile": {
+          "type": "string",
+          "minLength": 1
+        },
+        "passages": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/passage"
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "stale_source",
+              "unknown_legal_status",
+              "conflicting_sources",
+              "incomplete_corpus"
+            ]
+          }
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "requestId",
+        "status",
+        "asOf",
+        "corpusVersion",
+        "retrievalProfile",
+        "passages",
+        "warnings",
+        "message",
+        "durationMs"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "ok"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "passages": {
+                "minItems": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "passages": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "needs_clarification",
+                  "unavailable"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "message": {
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

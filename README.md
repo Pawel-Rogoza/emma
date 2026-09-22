@@ -52,3 +52,10 @@ Opublikowany prototyp: https://emma-kancelaria-ios.pawrogozas.chatgpt.site
 Kopia `reference/prototype/index.html` służy również jako lokalna referencja. W zwykłym środowisku deweloperskim można udostępnić ten folder prostym serwerem statycznym; w środowisku zarządzanym należy korzystać z jego zatwierdzonej ścieżki podglądu. Fonty CSS odwołują się do Google Fonts, więc do wiernego wyświetlenia referencji wymagane jest ich załadowanie. Docelowa aplikacja SwiftUI ma używać fontów lokalnych z licencjami.
 
 Dane w prototypie są fikcyjne; AI i WhatsApp są symulowane. Nie przenoś timerów i fałszywych statusów do trybu live.
+
+## Gemini Live i architektura wiedzy (2026-09-22)
+
+Aktualny audyt, poprawki rozmowy, konfiguracja Google Search oraz projekt RAG
+ze źródłami, wersjonowaniem i cytowaniami:
+[Gemini Live + RAG](docs/architecture/GEMINI_LIVE_AND_RAG_2026-09-22.md).
+Dokument rozdziela zmiany w kodzie od funkcji wymagających dalszego wdrożenia.

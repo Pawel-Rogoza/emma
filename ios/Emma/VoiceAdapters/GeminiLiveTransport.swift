@@ -66,6 +66,7 @@ public final class GeminiLiveTransport: VoiceTransport {
     private var socket: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var audioSendTask: Task<Void, Never>?
+    private var toolTasks: [String: (token: UUID, name: String, task: Task<Void, Never>)] = [:]
     private var audioContinuation: AsyncStream<Data>.Continuation?
     private var tracker = GeminiLiveTurnTracker()
     private var continuation: AsyncStream<VoiceEvent>.Continuation?
@@ -205,6 +206,7 @@ public final class GeminiLiveTransport: VoiceTransport {
             // Przerwanie tury po stronie serwera: wycofujemy zbuforowane audio,
             // żeby Emma nie mówiła dalej przez wypowiedź użytkownika.
             if outcome.shouldStopPlayback { stopPlayback() }
+            cancelToolCalls(outcome.cancelledToolCallIDs)
             if let call = outcome.toolCall { executeToolCall(call) }
             for payload in outcome.payloads { emit(payload) }
             // `goAway` to zapowiedź zamknięcia (limit ~10 minut). Nie czekamy, aż
@@ -236,6 +238,7 @@ public final class GeminiLiveTransport: VoiceTransport {
             return
         }
         reconnectsLeft -= 1
+        cancelToolCalls(Array(toolTasks.keys))
         socket?.cancel(with: .normalClosure, reason: nil)
         socket = nil
         receiveTask?.cancel()
@@ -443,6 +446,8 @@ public final class GeminiLiveTransport: VoiceTransport {
 
     public func disconnect(reason: VoiceEndReason) async {
         isClosing = true
+        cancelToolCalls(Array(toolTasks.keys))
+        microphone.releasePlayback()
         receiveTask?.cancel()
         receiveTask = nil
         audioSendTask?.cancel()
@@ -478,13 +483,23 @@ public final class GeminiLiveTransport: VoiceTransport {
     /// Wywołanie narzędzia przez model. Wykonanie należy do backendu — klient
     /// nie ma ścieżki zapisu i nie interpretuje argumentów.
     private func executeToolCall(_ call: GeminiLiveToolCall) {
-        Task { [weak self] in
+        guard toolTasks[call.id] == nil, let callSocket = socket, !isClosing else { return }
+        let callGeneration = generation
+        let taskToken = UUID()
+        let task = Task { [weak self] in
             guard let self else { return }
+            defer {
+                if self.toolTasks[call.id]?.token == taskToken {
+                    self.toolTasks.removeValue(forKey: call.id)
+                }
+            }
             do {
                 let result = try await self.toolExecutor.execute(
                     toolName: call.name,
                     argumentsJSON: call.argumentsJSON
                 )
+                guard !Task.isCancelled, !self.isClosing,
+                      self.generation == callGeneration, self.socket === callSocket else { return }
                 try await self.send(.toolResponse(id: call.id, name: call.name, resultJSON: result))
                 self.emit(
                     .toolProgress(
@@ -492,12 +507,24 @@ public final class GeminiLiveTransport: VoiceTransport {
                     )
                 )
             } catch {
+                guard !Task.isCancelled, !self.isClosing,
+                      self.generation == callGeneration, self.socket === callSocket else { return }
                 let failure = (error as? VoiceToolExecutionError) ?? .failed("Nie udało się sprawdzić danych.")
                 // Błąd narzędzia odsyłamy modelowi jako wynik: wtedy Emma powie
                 // użytkownikowi, że nie ma danych, zamiast milczeć albo zgadywać.
                 let payload = Self.errorJSON(failure.safeMessage)
                 try? await self.send(.toolResponse(id: call.id, name: call.name, resultJSON: payload))
                 self.emit(.recoverableError(Self.recoverableKind(for: failure)))
+            }
+        }
+        toolTasks[call.id] = (taskToken, call.name, task)
+    }
+
+    private func cancelToolCalls(_ ids: [String]) {
+        for id in ids {
+            if let pending = toolTasks.removeValue(forKey: id) {
+                pending.task.cancel()
+                emit(.toolProgress(ToolProgress(label: "", toolName: pending.name, isFinished: true)))
             }
         }
     }
@@ -633,18 +660,17 @@ final class ConversionSource: @unchecked Sendable {
 final class MicrophoneGate: @unchecked Sendable {
     /// Ogon po ostatniej próbce: pogłos w pokoju dochodzi do mikrofonu jeszcze
     /// chwilę po tym, jak głośnik zamilkł.
-    static let playbackTail: TimeInterval = 0.25
+    static let playbackTail: TimeInterval = PlaybackSuppression.echoTail
 
     private let lock = NSLock()
     private var muted = false
-    private var playbackEndsAt: Date?
+    private var suppression = PlaybackSuppression()
 
     var isMuted: Bool {
         lock.lock()
         defer { lock.unlock() }
         if muted { return true }
-        guard let end = playbackEndsAt else { return false }
-        return Date() < end
+        return suppression.isSuppressed(at: ProcessInfo.processInfo.systemUptime)
     }
 
     /// Powód użytkownika (przycisk mikrofonu).
@@ -662,9 +688,7 @@ final class MicrophoneGate: @unchecked Sendable {
         guard seconds > 0 else { return }
         lock.lock()
         defer { lock.unlock() }
-        let now = Date()
-        let start = max(playbackEndsAt ?? now, now)
-        playbackEndsAt = start.addingTimeInterval(seconds + Self.playbackTail)
+        suppression.schedule(seconds: seconds, now: ProcessInfo.processInfo.systemUptime)
     }
 
     /// Przerwanie/`interrupt`: kolejka odtwarzania jest czyszczona, więc bramka
@@ -672,7 +696,7 @@ final class MicrophoneGate: @unchecked Sendable {
     /// wyliczonego ogona.
     func releasePlayback() {
         lock.lock()
-        playbackEndsAt = nil
+        suppression.release()
         lock.unlock()
     }
 }

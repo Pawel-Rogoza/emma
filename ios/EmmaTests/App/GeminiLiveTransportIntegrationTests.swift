@@ -76,6 +76,42 @@ final class GeminiLiveTransportIntegrationTests: XCTestCase {
         )
     }
 
+    func testCancelledToolCannotSendLateResult() async throws {
+        let base = try baseURL(env: "EMMA_FAKE_LIVE_BASE_URL")
+        try await reset(base)
+        let executor = SuspendedToolExecutor()
+        let box = EventBox()
+        let transport = GeminiLiveTransport(
+            tokenProvider: BackendConversationTokenProvider(baseURL: URL(string: "https://example.test")!),
+            toolExecutor: executor, accessToken: "test", installationID: "test",
+            model: "gemini-3.8-live", endpoint: try endpoint(from: base)
+        )
+        let stream = transport.events()
+        let collector = Task { @MainActor in
+            for await event in stream { box.append(event.payload) }
+        }
+        defer { collector.cancel() }
+        try await transport.connect(makeSession(token: "auth_tokens/atrapa"))
+        try await wait { box.contains(.connectionChanged(.connected)) }
+        try await transport.sendTextTurn(AssistantTextInput(
+            text: "Sprawdź dane", language: .pl, contextVersion: Version(1), inputID: "start"
+        ))
+        try await wait { await executor.hasStarted }
+        try await transport.sendTextTurn(AssistantTextInput(
+            text: "__cancel_pending_tool__", language: .pl, contextVersion: Version(1), inputID: "cancel"
+        ))
+        try await wait {
+            box.contains(.toolProgress(ToolProgress(label: "", toolName: "get_today_overview", isFinished: true)))
+        }
+        // Executor deliberately ignores cancellation and still returns a result.
+        await executor.release()
+        try await wait { await executor.didReturn }
+        try await Task.sleep(nanoseconds: 150_000_000)
+        let server = try await state(from: base)
+        XCTAssertTrue(server.toolResponses.isEmpty)
+        await transport.disconnect(reason: .userRequested)
+    }
+
     // MARK: Scenariusz podstawowy
 
     func testSessionHandshakeToolRoundTripAndAudioOverRealSocket() async throws {
@@ -352,4 +388,24 @@ final class EventBox {
     func append(_ payload: VoiceEventPayload) { payloads.append(payload) }
     func contains(_ payload: VoiceEventPayload) -> Bool { payloads.contains(payload) }
     var containsInterruption: Bool { payloads.contains(.interruption(.userBargeIn)) }
+}
+
+private actor SuspendedToolExecutor: VoiceToolExecuting {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private(set) var hasStarted = false
+    private(set) var didReturn = false
+
+    func execute(toolName: String, argumentsJSON: String) async throws -> String {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            hasStarted = true
+        }
+        didReturn = true
+        return #"{"result":{"tasks":99}}"#
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
 }

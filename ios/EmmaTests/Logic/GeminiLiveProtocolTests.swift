@@ -10,6 +10,24 @@ import XCTest
 
 final class GeminiLiveProtocolTests: XCTestCase {
 
+    func testInputTranscriptRetainsAllChunks() {
+        var tracker = GeminiLiveTurnTracker()
+        _ = tracker.consume(.inputTranscription("Sprawdź artykuł "))
+        let partial = tracker.consume(.inputTranscription("piętnasty."))
+        XCTAssertEqual(partial.payloads, [.userTranscriptPartial("Sprawdź artykuł piętnasty.")])
+        XCTAssertEqual(tracker.consume(.turnComplete).payloads,
+                       [.userTranscriptFinal("Sprawdź artykuł piętnasty.")])
+        XCTAssertEqual(tracker.consume(.inputTranscription("Następne pytanie")).payloads,
+                       [.userTranscriptPartial("Następne pytanie")])
+    }
+
+    func testToolCancellationPreservesCallIdentifiers() {
+        let events = GeminiLiveCodec.decode(Data(#"{"toolCallCancellation":{"ids":["call-1","call-2"]}}"#.utf8))
+        XCTAssertEqual(events, [.toolCallCancellation(["call-1", "call-2"])])
+        var tracker = GeminiLiveTurnTracker()
+        XCTAssertEqual(tracker.consume(events[0]).cancelledToolCallIDs, ["call-1", "call-2"])
+    }
+
     // MARK: Kodowanie
 
     func testSetupUsesModelsPrefixAndNothingElse() throws {

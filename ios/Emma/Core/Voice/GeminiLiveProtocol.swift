@@ -71,6 +71,7 @@ public enum GeminiLiveServerEvent: Equatable, Sendable {
     case turnComplete
     case interrupted
     case toolCall(GeminiLiveToolCall)
+    case toolCallCancellation([String])
     case resumptionHandle(String)
     case goAway(TimeInterval?)
     /// Zdarzenie, którego nie znamy. Zachowujemy jego nazwę, ale nie udajemy,
@@ -178,6 +179,10 @@ public enum GeminiLiveCodec {
                 events.append(contentsOf: serverContentEvents(value))
             case "toolCall":
                 events.append(contentsOf: toolCallEvents(value))
+            case "toolCallCancellation":
+                if let ids = (value as? [String: Any])?["ids"] as? [String] {
+                    events.append(.toolCallCancellation(ids))
+                }
             case "sessionResumptionUpdate":
                 if let update = value as? [String: Any],
                    let handle = update["newHandle"] as? String,

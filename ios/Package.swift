@@ -54,6 +54,7 @@ let package = Package(
                 "Core/Voice/VoiceServices.swift",
                 "Core/Voice/VoiceToolExecuting.swift",
                 "Core/Voice/GeminiLiveProtocol.swift",
+                "Core/Voice/PlaybackSuppression.swift",
                 "Core/Voice/GeminiLiveTurnTracker.swift",
                 "Core/Voice/BackendVoiceSessionRepository.swift",
                 "Core/Voice/VoiceStateReducer.swift",

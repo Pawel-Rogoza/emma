@@ -13,6 +13,7 @@ public struct GeminiLiveTurnOutcome: Sendable {
     public var audio: Data?
     /// Wywołanie narzędzia do wykonania po stronie backendu.
     public var toolCall: GeminiLiveToolCall?
+    public var cancelledToolCallIDs: [String] = []
     /// Uchwyt wznowienia — zapisujemy go, żeby po `goAway` wrócić do tej samej sesji.
     public var resumptionHandle: String?
     /// Serwer zapowiedział zamknięcie połączenia; transport ma się przygotować.
@@ -59,14 +60,17 @@ public struct GeminiLiveTurnTracker: Sendable {
             outcome.payloads.append(.agentTextDelta(text))
 
         case .inputTranscription(let text):
-            lastInputText = text
-            outcome.payloads.append(.userTranscriptPartial(text))
+            lastInputText = (lastInputText ?? "") + text
+            outcome.payloads.append(.userTranscriptPartial(lastInputText ?? ""))
 
         case .toolCall(let call):
             outcome.toolCall = call
             outcome.payloads.append(
                 .toolProgress(ToolProgress(label: "Sprawdzam dane w kancelarii", toolName: call.name))
             )
+
+        case .toolCallCancellation(let ids):
+            outcome.cancelledToolCallIDs = ids
 
         case .interrupted:
             // Przerwanie tury. Zgłaszamy je jako fakt tylko wtedy, gdy naprawdę
