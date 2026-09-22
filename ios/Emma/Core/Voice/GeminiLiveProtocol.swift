@@ -22,6 +22,9 @@ public enum GeminiLiveDefaults {
     /// Wyjście audio z Live API: PCM 16-bit, mono, 24 kHz.
     public static let outputSampleRate: Double = 24_000
     public static let audioMimeType = "audio/pcm;rate=16000"
+    /// Najmniejsza porcja mikrofonu wysyłana w pełnym dupleksie: 40 ms
+    /// (16 kHz × 2 bajty × 0,04 s). Kompromis między opóźnieniem a narzutem ramek.
+    public static let minimumChunkBytes = 1_280
 }
 
 // MARK: - Komunikaty wychodzące

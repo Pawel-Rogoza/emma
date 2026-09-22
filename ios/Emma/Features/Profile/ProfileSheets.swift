@@ -32,6 +32,11 @@ struct ProfileSheet: View {
                 }
             }
 
+            if !dependencies.configuration.usesMockServices {
+                VoiceDuplexToggle()
+                    .padding(.top, 20)
+            }
+
             AccountActionsSection()
                 .padding(.top, 20)
 
@@ -58,6 +63,32 @@ struct ProfileSheet: View {
             + "głosowa pochodzą z serwera kancelarii — klucz dostawcy nigdy nie trafia do "
             + "aplikacji. WhatsApp nie jest jeszcze podłączony, więc wysyłka wiadomości "
             + "pozostaje symulowana."
+    }
+}
+
+/// Przełącznik trybu rozmowy głosowej. Działa od następnej rozmowy — bieżąca
+/// ma już zbudowany tor audio.
+private struct VoiceDuplexToggle: View {
+
+    @AppStorage(VoiceDuplexMode.defaultsKey) private var rawMode = VoiceDuplexMode.halfDuplex.rawValue
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: Binding(
+                get: { rawMode == VoiceDuplexMode.fullDuplex.rawValue },
+                set: { rawMode = ($0 ? VoiceDuplexMode.fullDuplex : .halfDuplex).rawValue }
+            )) {
+                Text("Przerywanie Emmy głosem (eksperymentalne)")
+                    .font(EmmaTypography.ui(14))
+                    .foregroundStyle(EmmaTheme.ink)
+            }
+            .tint(EmmaTheme.accent)
+
+            Text("Włącza kasowanie echa: mikrofon zostaje otwarty, gdy Emma mówi, więc można jej przerwać w pół zdania, a odpowiedź przychodzi szybciej. Jeśli Emma słyszy samą siebie albo ucina Twoją mowę, wyłącz. Działa od następnej rozmowy.")
+                .font(EmmaTypography.caption())
+                .foregroundStyle(EmmaTheme.mutedSoft)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

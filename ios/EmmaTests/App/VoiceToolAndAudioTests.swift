@@ -149,6 +149,17 @@ final class VoiceToolAndAudioTests: XCTestCase {
         }
     }
 
+    /// Pełny dupleks dostaje fragmenty ~20 ms; do gniazda idą porcje ≥ 40 ms,
+    /// bez gubienia i bez przestawiania bajtów.
+    func testChunkAccumulatorEmitsWholeChunksInOrder() {
+        let accumulator = PCMChunkAccumulator(minimumBytes: 4)
+        XCTAssertNil(accumulator.append(Data([1, 2])))
+        XCTAssertEqual(accumulator.append(Data([3, 4, 5])), Data([1, 2, 3, 4, 5]))
+        XCTAssertNil(accumulator.append(Data([6])))
+        XCTAssertEqual(accumulator.append(Data([7, 8, 9])), Data([6, 7, 8, 9]))
+        XCTAssertEqual(GeminiLiveDefaults.minimumChunkBytes, 1_280, "40 ms przy 16 kHz, 16 bit")
+    }
+
     func testToolErrorPayloadIsValidJSON() {
         let payload = GeminiLiveTransport.errorJSON(#"Nie ma danych dla "Kowalska""#)
         let object = try? JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any]

@@ -81,6 +81,16 @@ public final class GeminiLiveTransport: VoiceTransport {
     private var player: AVAudioPlayerNode?
     private var playerFormat: AVAudioFormat?
     private let microphone = MicrophoneGate()
+    /// Tryb bieżącej rozmowy, ustalany przy `connect` (przełącznik w Profilu).
+    private var duplexMode: VoiceDuplexMode = .halfDuplex
+    private var sinkNode: AVAudioSinkNode?
+    /// Serwer przyjmuje audio dopiero po `setupComplete`. Mikrofon startuje
+    /// wcześniej (rozgrzany silnik = krótszy start), więc pierwsze fragmenty
+    /// czekają tu zamiast przepaść albo trafić do gniazda przed konfiguracją.
+    private var isSetupComplete = false
+    private var pendingAudio: [Data] = []
+    /// ~3 s mowy przy fragmentach 20–100 ms; starsze fragmenty odrzucamy.
+    private static let pendingAudioLimit = 60
     private var isClosing = false
     /// Jedna próba wznowienia na zerwanie. Więcej byłoby udawaniem, że sieć
     /// wróciła, a użytkownik nie widzi różnicy między „wracam” i „próbuję w kółko”.
@@ -140,6 +150,9 @@ public final class GeminiLiveTransport: VoiceTransport {
         reconnectsLeft = 1
         tracker = GeminiLiveTurnTracker()
         microphone.setMuted(false)
+        duplexMode = VoiceDuplexMode.current
+        isSetupComplete = false
+        pendingAudio.removeAll()
 
         // Sesję audio dla rozmowy ustawiamy tutaj. Bez `.playAndRecord` wejście
         // audio nie istnieje. Awarię meldujemy po otwarciu kanału zdarzeń.
@@ -151,6 +164,17 @@ public final class GeminiLiveTransport: VoiceTransport {
         // `events()`, ale podglądy i testy robią to w odwrotnej kolejności —
         // zamknięcie kanału w `connect` gubiłoby wtedy cały uścisk dłoni.
         _ = currentStream()
+
+        // Silnik audio startuje **równolegle** z wydaniem poświadczenia
+        // i otwarciem gniazda, a nie po nich: jego rozruch (50–150 ms) nie
+        // dokłada się do czasu „dotknąłem — mogę mówić”. Fragmenty sprzed
+        // `setupComplete` czekają w `pendingAudio`.
+        var audioStartFailed = false
+        do {
+            try startAudio()
+        } catch {
+            audioStartFailed = true
+        }
 
         // Poświadczenie pochodzi z backendu. Normalnie jest już w konfiguracji
         // sesji; poniższa gałąź domyka tylko brak (np. ponowne wejście do sesji).
@@ -169,9 +193,7 @@ public final class GeminiLiveTransport: VoiceTransport {
         if audioActivationFailed {
             emit(.fatalError(.audioSessionFailed))
         }
-        do {
-            try startAudio()
-        } catch {
+        if audioStartFailed {
             // Bez mikrofonu rozmowa nie ma wejścia; mówimy to wprost, zamiast
             // udawać sesję, w której użytkownik mówi do ciszy (F05).
             microphone.setMuted(true)
@@ -195,6 +217,8 @@ public final class GeminiLiveTransport: VoiceTransport {
         let task = urlSession.webSocketTask(with: url)
         task.resume()
         socket = task
+        // Nowe gniazdo = nowy `setup`; audio czeka, aż serwer go przyjmie.
+        isSetupComplete = false
         receiveTask?.cancel()
         receiveTask = Task { [weak self] in
             await self?.receiveLoop(task)
@@ -214,7 +238,12 @@ public final class GeminiLiveTransport: VoiceTransport {
                 case .string(let text): data = Data(text.utf8)
                 @unknown default: continue
                 }
-                handle(data)
+                // JSON z audio w base64 dekodujemy poza głównym wątkiem: ten sam
+                // wątek rysuje orb Emmy i interfejs, a opóźnione fragmenty to
+                // przerwy w odtwarzaniu.
+                let events = await Self.decodeOffMain(data)
+                guard task === socket else { return }
+                handle(events)
             } catch {
                 guard task === socket else { return }
                 handleSocketFailure()
@@ -223,8 +252,17 @@ public final class GeminiLiveTransport: VoiceTransport {
         }
     }
 
-    private func handle(_ data: Data) {
-        for event in GeminiLiveCodec.decode(data) {
+    nonisolated private static func decodeOffMain(_ data: Data) async -> [GeminiLiveServerEvent] {
+        await Task.detached(priority: .userInitiated) { GeminiLiveCodec.decode(data) }.value
+    }
+
+    private func handle(_ events: [GeminiLiveServerEvent]) {
+        for event in events {
+            if case .setupComplete = event {
+                // Bufor sprzed konfiguracji opróżnia pętla wysyłki — jedna
+                // kolejka, więc kolejność nagrania zostaje zachowana.
+                isSetupComplete = true
+            }
             let outcome = tracker.consume(event)
             if let audio = outcome.audio { enqueuePlayback(audio) }
             // Przerwanie tury po stronie serwera: wycofujemy zbuforowane audio,
@@ -310,13 +348,30 @@ public final class GeminiLiveTransport: VoiceTransport {
     private func startAudio() throws {
         let engine = AVAudioEngine()
 
-        // Kasowania echa **nie** włączamy: `setVoiceProcessingEnabled(true)`
-        // przepuszcza dźwięk przez tor telefoniczny (VoiceProcessingIO) i na
-        // urządzeniu skończyło się to wycięciem mowy użytkownika oraz
-        // „robotycznym” głosem modelu (zgłoszenie 2026-09-15). Zamiast tego
-        // pętlę zamyka półdupleks w `MicrophoneGate` — mikrofon jest zamknięty,
-        // gdy Emma mówi. Kosztuje to przerywanie w połowie jej zdania; wracamy
-        // do tematu tylko z pomiarem z urządzenia, nie zgadywaniem.
+        // Pełny dupleks: kasowanie echa (VoiceProcessingIO). Włączamy je
+        // **przed** odczytem formatów — VP zmienia format wejścia, a konwerter
+        // zbudowany na starym formacie psuł sygnał (to najpewniej była przyczyna
+        // „ucinania mowy” w zgłoszeniu 2026-09-15). Wyciszanie innego audio
+        // ustawiamy na minimum, żeby głos Emmy nie był ściszany przez system.
+        if duplexMode == .fullDuplex {
+            do {
+                try engine.inputNode.setVoiceProcessingEnabled(true)
+                engine.inputNode.voiceProcessingOtherAudioDuckingConfiguration =
+                    AVAudioVoiceProcessingOtherAudioDuckingConfiguration(
+                        enableAdvancedDucking: false,
+                        duckingLevel: .min
+                    )
+            } catch {
+                // Bez AEC pełny dupleks oznaczałby, że Emma przerywa sama siebie.
+                duplexMode = .halfDuplex
+            }
+        }
+
+        // Domyślnie (półdupleks) kasowania echa nie ma: pierwsza próba AEC
+        // (zgłoszenie 2026-09-15) ucinała mowę użytkownika i dawała „robotyczny”
+        // głos, więc pętlę zamyka `MicrophoneGate` — mikrofon jest zamknięty,
+        // gdy Emma mówi. Pełny dupleks powyżej to poprawiona próba AEC za
+        // przełącznikiem w Profilu; domyślną ścieżką zostanie po pomiarze.
         let player = AVAudioPlayerNode()
         engine.attach(player)
 
@@ -360,13 +415,30 @@ public final class GeminiLiveTransport: VoiceTransport {
         // Konwerter i format są klasami bez `Sendable`, więc chwytamy je przez
         // `nonisolated(unsafe)` — dokładnie tak, jak w tamtym miejscu.
         let gate = microphone
-        let tapBlock = GeminiLiveTransport.makeInputTapBlock(
-            converter: converter,
-            targetFormat: targetFormat,
-            gate: gate,
-            continuation: audioContinuation
-        )
-        input.installTap(onBus: 0, bufferSize: 1600, format: inputFormat, block: tapBlock)
+        if duplexMode == .fullDuplex {
+            // Węzeł-odbiornik dostaje bufory w rytmie wejścia sprzętowego
+            // (~20 ms przy `preferredIOBufferDuration`), a nie co ≥100 ms jak tap.
+            // To bezpośrednio skraca opóźnienie „mówię → serwer słyszy”.
+            let sink = AVAudioSinkNode(receiverBlock: GeminiLiveTransport.makeSinkBlock(
+                inputFormat: inputFormat,
+                converter: converter,
+                targetFormat: targetFormat,
+                gate: gate,
+                accumulator: PCMChunkAccumulator(minimumBytes: GeminiLiveDefaults.minimumChunkBytes),
+                continuation: audioContinuation
+            ))
+            engine.attach(sink)
+            engine.connect(input, to: sink, format: inputFormat)
+            sinkNode = sink
+        } else {
+            let tapBlock = GeminiLiveTransport.makeInputTapBlock(
+                converter: converter,
+                targetFormat: targetFormat,
+                gate: gate,
+                continuation: audioContinuation
+            )
+            input.installTap(onBus: 0, bufferSize: 1600, format: inputFormat, block: tapBlock)
+        }
 
         engine.prepare()
         try engine.start()
@@ -379,6 +451,17 @@ public final class GeminiLiveTransport: VoiceTransport {
         audioSendTask = Task { [weak self] in
             for await chunk in audioStream {
                 guard let self, !Task.isCancelled else { return }
+                guard self.isSetupComplete, self.socket != nil else {
+                    self.bufferAudio(chunk)
+                    continue
+                }
+                if !self.pendingAudio.isEmpty {
+                    let queued = self.pendingAudio
+                    self.pendingAudio.removeAll()
+                    for earlier in queued {
+                        try? await self.send(.audio(earlier))
+                    }
+                }
                 try? await self.send(.audio(chunk))
             }
         }
@@ -396,9 +479,13 @@ public final class GeminiLiveTransport: VoiceTransport {
         // (`setVoiceProcessingEnabled`) przepuszcza dźwięk przez tor telefoniczny
         // i na tym urządzeniu wycinało mowę użytkownika oraz degradowało głos
         // modelu (zgłoszenie 2026-09-15: „nie notuje mojego dźwięku”, „robotycznie”).
-        microphone.schedulePlayback(
-            seconds: Double(data.count / MemoryLayout<Int16>.size) / GeminiLiveDefaults.outputSampleRate
-        )
+        // W pełnym dupleksie echo usuwa VoiceProcessingIO, więc mikrofon zostaje
+        // otwarty i użytkownik może wejść Emmie w słowo (barge-in).
+        if duplexMode == .halfDuplex {
+            microphone.schedulePlayback(
+                seconds: Double(data.count / MemoryLayout<Int16>.size) / GeminiLiveDefaults.outputSampleRate
+            )
+        }
         player.scheduleBuffer(buffer, completionHandler: nil)
         if !player.isPlaying { player.play() }
     }
@@ -418,6 +505,13 @@ public final class GeminiLiveTransport: VoiceTransport {
         // `stop()` zwalnia kolejkę; `play()` przywraca węzeł do pracy, żeby
         // kolejne fragmenty nie trafiały do zatrzymanego odtwarzacza.
         player.play()
+    }
+
+    private func bufferAudio(_ chunk: Data) {
+        pendingAudio.append(chunk)
+        if pendingAudio.count > Self.pendingAudioLimit {
+            pendingAudio.removeFirst(pendingAudio.count - Self.pendingAudioLimit)
+        }
     }
 
     // MARK: Strumień zdarzeń
@@ -499,9 +593,17 @@ public final class GeminiLiveTransport: VoiceTransport {
         audioContinuation = nil
 
         if let engine {
-            engine.inputNode.removeTap(onBus: 0)
+            if let sinkNode {
+                engine.disconnectNodeInput(sinkNode)
+                engine.detach(sinkNode)
+            } else {
+                engine.inputNode.removeTap(onBus: 0)
+            }
             engine.stop()
         }
+        sinkNode = nil
+        pendingAudio.removeAll()
+        isSetupComplete = false
         engine = nil
         player = nil
         playerFormat = nil
@@ -636,6 +738,31 @@ public final class GeminiLiveTransport: VoiceTransport {
         }
     }
 
+    /// Blok węzła-odbiornika mikrofonu (pełny dupleks). Te same zasady co przy
+    /// tapie: brak izolacji `@MainActor`, bo AVFAudio woła go z wątku audio.
+    nonisolated static func makeSinkBlock(
+        inputFormat: AVAudioFormat,
+        converter: AVAudioConverter,
+        targetFormat: AVAudioFormat,
+        gate: MicrophoneGate,
+        accumulator: PCMChunkAccumulator,
+        continuation: AsyncStream<Data>.Continuation
+    ) -> AVAudioSinkNodeReceiverBlock {
+        return { @Sendable _, frameCount, audioBufferList in
+            guard frameCount > 0, !gate.isMuted,
+                  let buffer = AVAudioPCMBuffer(
+                      pcmFormat: inputFormat,
+                      bufferListNoCopy: audioBufferList,
+                      deallocator: nil
+                  ),
+                  let pcm = convertToPCM16(buffer, converter: converter, targetFormat: targetFormat),
+                  let chunk = accumulator.append(pcm)
+            else { return noErr }
+            continuation.yield(chunk)
+            return noErr
+        }
+    }
+
     /// Int16 PCM mono 24 kHz → bufor Float32 dla węzła odtwarzania.
     nonisolated static func floatBuffer(from data: Data, format: AVAudioFormat) -> AVAudioPCMBuffer? {
         let bytesPerFrame = MemoryLayout<Int16>.size
@@ -679,6 +806,30 @@ public final class GeminiLiveTransport: VoiceTransport {
         }
         guard status != .error, output.frameLength > 0, let samples = output.int16ChannelData else { return nil }
         return Data(bytes: samples[0], count: Int(output.frameLength) * MemoryLayout<Int16>.size)
+    }
+}
+
+/// Skleja krótkie fragmenty z węzła-odbiornika w porcje ~40 ms. Fragment 10–20 ms
+/// to 50–100 ramek JSON na sekundę — sam narzut base64 i WebSocketu zjadałby
+/// zysk z krótszego bufora.
+final class PCMChunkAccumulator: @unchecked Sendable {
+    private let lock = NSLock()
+    private let minimumBytes: Int
+    private var pending = Data()
+
+    init(minimumBytes: Int) {
+        self.minimumBytes = minimumBytes
+    }
+
+    /// Zwraca porcję gotową do wysłania albo `nil`, gdy trzeba jeszcze zebrać.
+    func append(_ data: Data) -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        pending.append(data)
+        guard pending.count >= minimumBytes else { return nil }
+        let chunk = pending
+        pending = Data()
+        return chunk
     }
 }
 

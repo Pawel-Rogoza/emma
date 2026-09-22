@@ -69,6 +69,12 @@ public final class AudioSessionController {
             case .idle:
                 break
             }
+            if mode == .conversation {
+                // Krótki bufor wejścia/wyjścia: węzeł-odbiornik mikrofonu (pełny
+                // dupleks) dostaje wtedy porcje ~20 ms zamiast domyślnych ~23–46 ms.
+                // To prośba, nie gwarancja — system może ją zaokrąglić.
+                try? session.setPreferredIOBufferDuration(0.02)
+            }
             try session.setActive(true, options: [])
             self.mode = mode
             registerObserversIfNeeded()
@@ -140,6 +146,32 @@ public final class AudioSessionController {
         let center = NotificationCenter.default
         if let interruptionObserver { center.removeObserver(interruptionObserver) }
         if let routeObserver { center.removeObserver(routeObserver) }
+    }
+}
+
+// MARK: - Tryb rozmowy: półdupleks albo pełny dupleks
+
+/// Jak rozmowa radzi sobie z echem głośnika.
+///
+/// - `halfDuplex` (domyślny, sprawdzony na urządzeniu): gdy Emma mówi, mikrofon
+///   jest zamknięty. Stabilne, ale nie da się wejść jej w słowo.
+/// - `fullDuplex` (eksperymentalny): kasowanie echa systemu (VoiceProcessingIO)
+///   i mikrofon otwarty cały czas — przerwanie głosem działa jak w rozmowie
+///   telefonicznej, a mikrofon ma mniejsze opóźnienie. Wymaga pomiaru na
+///   iPhonie, dlatego jest przełącznikiem w Profilu, a nie domyślną ścieżką.
+public enum VoiceDuplexMode: String, CaseIterable, Sendable {
+    case halfDuplex
+    case fullDuplex
+
+    public static let defaultsKey = "emma.voice-duplex-mode"
+
+    public static var current: VoiceDuplexMode {
+        get {
+            UserDefaults.standard.string(forKey: defaultsKey).flatMap(VoiceDuplexMode.init(rawValue:)) ?? .halfDuplex
+        }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: defaultsKey)
+        }
     }
 }
 
