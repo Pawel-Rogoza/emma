@@ -102,6 +102,31 @@ final class VoiceToolAndAudioTests: XCTestCase {
         )
     }
 
+    /// Backend wysyła `expires_at` z milisekundami. Strategia `.iso8601` ich nie
+    /// przyjmuje, a błąd dekodowania kończył wznowienie rozmowy po `goAway`.
+    func testConversationTokenAcceptsMillisecondExpiry() async throws {
+        StubURLProtocol.respond(
+            json: Data(#"{"token":"auth_tokens/atrapa","expires_at":"2099-01-01T10:00:00.844Z","context_version":1}"#.utf8),
+            status: 200
+        )
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        let provider = BackendConversationTokenProvider(
+            baseURL: baseURL,
+            session: URLSession(configuration: configuration)
+        )
+
+        let issued = try await provider.fetchToken(
+            sessionID: VoiceSessionID("sesja-1"),
+            contextVersion: Version(1),
+            installationID: "instalacja-1",
+            accessToken: "token-uzytkownika"
+        )
+
+        XCTAssertEqual(issued.token, "auth_tokens/atrapa")
+        XCTAssertNotNil(issued.expiresAt)
+    }
+
     func testUnknownToolNameIsRejectedBeforeAnyRequest() async throws {
         StubURLProtocol.respond(json: Data("{}".utf8), status: 200)
         do {
