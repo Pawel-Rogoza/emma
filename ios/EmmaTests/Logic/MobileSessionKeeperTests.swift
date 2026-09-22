@@ -284,6 +284,13 @@ final class MobileSessionKeeperTests: XCTestCase {
 
     // MARK: Wyścigi odnowienia z logowaniem i wylogowaniem
 
+    private func waitUntilRefreshStarted(_ client: FakeClient) async throws {
+        for _ in 0..<500 where client.refreshCalls.isEmpty {
+            try await Task.sleep(nanoseconds: 2_000_000)
+        }
+        XCTAssertFalse(client.refreshCalls.isEmpty, "Odnowienie nie wystartowało")
+    }
+
     /// Odpowiedź odnowienia, która wróciła po wylogowaniu, nie może wskrzesić
     /// sesji na urządzeniu (aktor jest reentrant — `await` wpuszcza `signOut`).
     func testLateRefreshAfterSignOutDoesNotRestoreSession() async throws {
@@ -295,7 +302,9 @@ final class MobileSessionKeeperTests: XCTestCase {
         let keeper = makeKeeper(client: client, store: store)
 
         async let refreshed = keeper.refresh()
-        try await Task.sleep(nanoseconds: 10_000_000)
+        // Czekamy, aż odnowienie naprawdę trwa — sam `sleep` na wolnym runnerze
+        // CI nie gwarantował kolejności i test sprawdzał inny scenariusz.
+        try await waitUntilRefreshStarted(client)
         await keeper.signOut()
         _ = try? await refreshed
 
@@ -315,7 +324,9 @@ final class MobileSessionKeeperTests: XCTestCase {
         let keeper = makeKeeper(client: client, store: store)
 
         async let refreshed = keeper.refresh()
-        try await Task.sleep(nanoseconds: 10_000_000)
+        // Czekamy, aż odnowienie naprawdę trwa — sam `sleep` na wolnym runnerze
+        // CI nie gwarantował kolejności i test sprawdzał inny scenariusz.
+        try await waitUntilRefreshStarted(client)
         try await keeper.signIn(email: "a@b.pl", password: "haslo", totp: "")
         let late = try await refreshed
 
