@@ -80,6 +80,12 @@ public enum ScreenLoad {
     /// dostaje `isRetryable: true` świadomie: nieznany błąd jest zwykle przejściowy,
     /// a ukrycie przycisku odebrałoby jedyną drogę wyjścia z niego.
     public static func failure(for error: Error, fallback: String) -> LoadFailure {
+        // Błędy backendu mają własny, bezpieczny komunikat („Sesja wygasła”,
+        // treść walidacji z serwera, brak trasy). Wcześniej wszystkie kończyły
+        // jako ogólny tekst ekranu i użytkownik nie wiedział, co poszło nie tak.
+        if let backendError = error as? BackendRepositoryError {
+            return LoadFailure(message: backendError.safeMessage, isRetryable: backendError.isRetryable)
+        }
         guard let domainError = error as? DomainError else {
             return LoadFailure(message: fallback, isRetryable: true)
         }

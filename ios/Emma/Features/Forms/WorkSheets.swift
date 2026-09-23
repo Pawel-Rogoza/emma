@@ -255,7 +255,7 @@ struct TaskFormSheet: View {
     @State private var loaded = false
 
     var body: some View {
-        SheetScaffold(title: original == nil ? "Nowe zadanie" : "Edytuj zadanie", onClose: { dependencies.dismissSheet() }) {
+        SheetScaffold(title: taskID == nil ? "Nowe zadanie" : "Edytuj zadanie", onClose: { dependencies.dismissSheet() }) {
             LabeledField("Co trzeba zrobić?") {
                 TextField("Nazwa zadania", text: $title)
                     .emmaFieldStyle()
@@ -318,7 +318,7 @@ struct TaskFormSheet: View {
 
             if let error { InlineError(error) }
 
-            PrimaryButton(original == nil ? "Dodaj zadanie" : "Zapisz zadanie", systemImage: "checkmark") {
+            PrimaryButton(taskID == nil ? "Dodaj zadanie" : "Zapisz zadanie", systemImage: "checkmark") {
                 Task { await save() }
             }
         }
@@ -331,16 +331,31 @@ struct TaskFormSheet: View {
         clients = (try? await dependencies.repository.clients(matching: "", stage: nil)) ?? []
         selectedClient = clientID
         dueDate = dependencies.today
-        if let taskID, let existing = try? await dependencies.repository.task(id: taskID) {
+        guard let taskID else { return }
+        // Edycja bez wczytanego oryginału nie może udawać nowego zadania:
+        // wcześniej błąd odczytu dawał pusty formularz, a „Zapisz” zakładało duplikat.
+        do {
+            guard let existing = try await dependencies.repository.task(id: taskID) else {
+                error = "Nie znaleziono tego zadania. Mogło zostać usunięte."
+                return
+            }
             original = existing
             title = existing.title
             selectedClient = existing.clientID
-            dueDate = existing.dueDate
+            // Zadanie bez terminu dostaje w formularzu dzień bieżący — widoczny,
+            // więc zapisany termin jest tym, co użytkownik ma przed oczami.
+            dueDate = existing.dueDate ?? dependencies.today
             priority = existing.priority
+        } catch {
+            self.error = ScreenLoad.message(for: error, fallback: "Nie udało się wczytać zadania.")
         }
     }
 
     private func save() async {
+        guard taskID == nil || original != nil else {
+            error = "Nie udało się wczytać zadania — zamknij formularz i spróbuj ponownie."
+            return
+        }
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             error = "Uzupełnij nazwę i prawidłową datę."
@@ -409,7 +424,7 @@ struct EventFormSheet: View {
     @State private var loaded = false
 
     var body: some View {
-        SheetScaffold(title: original == nil ? "Nowy termin" : "Edytuj termin", onClose: { dependencies.dismissSheet() }) {
+        SheetScaffold(title: eventID == nil ? "Nowy termin" : "Edytuj termin", onClose: { dependencies.dismissSheet() }) {
             LabeledField("Klient") {
                 Menu {
                     ForEach(clients) { client in
@@ -475,7 +490,7 @@ struct EventFormSheet: View {
 
             if let error { InlineError(error) }
 
-            PrimaryButton(original == nil ? "Dodaj termin" : "Zapisz termin", systemImage: "checkmark") {
+            PrimaryButton(eventID == nil ? "Dodaj termin" : "Zapisz termin", systemImage: "checkmark") {
                 Task { await save() }
             }
         }
@@ -497,7 +512,13 @@ struct EventFormSheet: View {
             if let day = seed.day { self.day = day }
             if let time = seed.time { self.time = time }
         }
-        if let eventID, let existing = try? await dependencies.repository.event(id: eventID) {
+        guard let eventID else { return }
+        // Jak w zadaniu: nieudany odczyt nie może zamienić edycji w nowy termin.
+        do {
+            guard let existing = try await dependencies.repository.event(id: eventID) else {
+                error = "Nie znaleziono tego terminu. Mógł zostać usunięty."
+                return
+            }
             original = existing
             selectedClient = existing.clientID
             title = existing.title
@@ -507,10 +528,16 @@ struct EventFormSheet: View {
             duration = existing.durationMinutes
             status = existing.status
             place = existing.place
+        } catch {
+            self.error = ScreenLoad.message(for: error, fallback: "Nie udało się wczytać terminu.")
         }
     }
 
     private func save() async {
+        guard eventID == nil || original != nil else {
+            error = "Nie udało się wczytać terminu — zamknij formularz i spróbuj ponownie."
+            return
+        }
         guard let client = selectedClient else {
             error = "Uzupełnij klienta, nazwę, miejsce i prawidłowy termin."
             return
@@ -597,7 +624,7 @@ struct TaskDetailSheet: View {
             .padding(.bottom, 14)
 
         InfoList([
-            .init("Termin", dependencies.dateText.dayLabel(task.dueDate)),
+            .init("Termin", task.dueDate.map(dependencies.dateText.dayLabel) ?? TaskItem.noDueDateText),
             .init("Status", task.isDone ? "Wykonane" : "Do zrobienia")
         ])
         .padding(.bottom, 16)

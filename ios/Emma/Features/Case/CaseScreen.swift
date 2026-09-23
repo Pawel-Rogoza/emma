@@ -52,12 +52,22 @@ final class CaseStore: ObservableObject {
                 return
             }
             let today = dependencies.today
-            let tasks = try await dependencies.repository.tasks(filter: TaskFilter(scope: .all, caseID: caseID))
-            let events = try await dependencies.repository.events(
-                in: DateIntervalFilter(from: today.adding(days: -365), through: today.adding(days: 365))
+            let repository = dependencies.repository
+            // Zapytania są niezależne, więc idą równolegle (wcześniej po kolei).
+            // Terminy tylko tego klienta i od niedawna: backend oddaje najwyżej
+            // 200 pozycji od najstarszej, więc szerokie okno dla wszystkich
+            // klientów gubiło nadchodzące terminy sprawy.
+            async let tasksTask = repository.tasks(filter: TaskFilter(scope: .all, caseID: caseID))
+            async let eventsTask = repository.events(
+                in: DateIntervalFilter(from: today.adding(days: -30), through: today.adding(days: 365 * 2)),
+                clientID: legalCase.clientID
             )
-            let notes = try await dependencies.repository.notes(clientID: legalCase.clientID, caseID: caseID)
-            let activity = try await dependencies.repository.activity(caseID: caseID)
+            async let notesTask = repository.notes(clientID: legalCase.clientID, caseID: caseID)
+            async let activityTask = repository.activity(caseID: caseID)
+            let tasks = try await tasksTask
+            let events = try await eventsTask
+            let notes = try await notesTask
+            let activity = try await activityTask
 
             phase = .loaded(
                 Model(
@@ -117,11 +127,15 @@ struct CaseScreen: View {
             title: "Prowadzona sprawa",
             onBack: { dependencies.back() }
         ) {
-            IconButton(
-                systemName: "ellipsis",
-                accessibilityLabel: "Zmień status i opiekuna sprawy"
-            ) {
-                dependencies.present(.caseSettings(model.legalCase.id))
+            // Zmiana sprawy (`PATCH /cases`) istnieje tylko w Demo — w backendzie
+            // zapis zawsze kończył się błędem, więc przycisku tam nie pokazujemy.
+            if dependencies.configuration.usesMockServices {
+                IconButton(
+                    systemName: "ellipsis",
+                    accessibilityLabel: "Zmień status i opiekuna sprawy"
+                ) {
+                    dependencies.present(.caseSettings(model.legalCase.id))
+                }
             }
         }
 

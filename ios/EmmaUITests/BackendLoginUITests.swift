@@ -136,15 +136,12 @@ final class BackendLoginUITests: XCTestCase {
         XCTAssertTrue(clientsTab.waitForExistence(timeout: 30), "Brak zakładki „Klienci” po zalogowaniu")
         clientsTab.tap()
 
-        // Ekran otwiera się na „Do obsługi”, a ten test szuka konkretnej osoby
-        // z bazy — dlatego filtr wybieramy jawnie, zamiast liczyć na domyślny.
-        // Domyślny filtr ma osobny test: `testRealNewLeadsAreDefaultView`.
-        let allChip = application.buttons.matching(
-            NSPredicate(format: "label BEGINSWITH %@", "Wszystkie")
-        ).firstMatch
-        if allChip.waitForExistence(timeout: 20) {
-            allChip.tap()
-        }
+        // Ekran otwiera się na „Do obsługi”, a osoba z bazy może być już
+        // klientem kancelarii — wyszukiwanie obejmuje wszystkich (audyt 23.09).
+        let search = application.textFields["Szukaj osoby lub tematu"]
+        XCTAssertTrue(search.waitForExistence(timeout: 20), "Brak pola wyszukiwania")
+        search.tap()
+        search.typeText(expectedClient + "\n")
 
         // Wiersz listy to przycisk z etykietą „nazwa, temat, status, język…”,
         // więc dopasowujemy po początku etykiety.
@@ -268,6 +265,81 @@ final class BackendLoginUITests: XCTestCase {
         )
         wait(for: [gone], timeout: 20)
         attachScreenshot("M3-02-usuniecie-przez-aplikacje")
+    }
+
+    /// Audyt 23.09.2026: na backendzie szczegół zadania i terminu kończył się
+    /// błędem („backend nie udostępnia”), „Edytuj” zakładało duplikat, zadania
+    /// bez terminu nie istniały w aplikacji, a przyszłe terminy ginęły za
+    /// limitem 200 pozycji. Test czyta dane przygotowane w bazie (runbook):
+    /// `EMMA_UI_EXPECT_TASK`, `EMMA_UI_EXPECT_UNDATED_TASK`, `EMMA_UI_EXPECT_EVENT`,
+    /// `EMMA_UI_EXPECT_FUTURE_EVENT`. Nic nie zapisuje.
+    func testRealTaskAndEventDetailsOpenAndEditLoadsRecord() throws {
+        let environment = ProcessInfo.processInfo.environment
+        try XCTSkipIf(backendURL == nil, "Brak EMMA_UI_BACKEND_URL — test integracyjny pominięty")
+        let taskTitle = try XCTUnwrap(environment["EMMA_UI_EXPECT_TASK"], "Brak EMMA_UI_EXPECT_TASK")
+        let undatedTask = try XCTUnwrap(environment["EMMA_UI_EXPECT_UNDATED_TASK"], "Brak EMMA_UI_EXPECT_UNDATED_TASK")
+        let eventTitle = try XCTUnwrap(environment["EMMA_UI_EXPECT_EVENT"], "Brak EMMA_UI_EXPECT_EVENT")
+        let futureEvent = try XCTUnwrap(environment["EMMA_UI_EXPECT_FUTURE_EVENT"], "Brak EMMA_UI_EXPECT_FUTURE_EVENT")
+
+        try launchAgainstBackend()
+        typeCredentials(totp: TOTP.code(secret: totpSecret))
+        dismissPasswordSavePromptIfPresent()
+        XCTAssertTrue(application.buttons["tab.today"].waitForExistence(timeout: 30), "Brak powłoki po zalogowaniu")
+
+        // Szczegół zadania z ekranu „Dzisiaj”.
+        let task = application.staticTexts[taskTitle].firstMatch
+        XCTAssertTrue(task.waitForExistence(timeout: 25), "„Dzisiaj” nie pokazuje zadania \(taskTitle)")
+        task.tap()
+        // „Edytuj” jest tylko we wczytanym szczególe (etykieta „Oznacz jako
+        // wykonane” istnieje też na liście, więc nie nadaje się na dowód).
+        XCTAssertTrue(
+            application.buttons["Edytuj"].waitForExistence(timeout: 20),
+            "Szczegół zadania się nie wczytał"
+        )
+        attachScreenshot("AUDYT-01-szczegol-zadania")
+
+        // „Edytuj” ma wczytać istniejące zadanie, a nie pusty formularz.
+        application.buttons["Edytuj"].tap()
+        XCTAssertTrue(application.staticTexts["Edytuj zadanie"].waitForExistence(timeout: 15), "Brak formularza edycji")
+        let titleField = application.textFields["Co trzeba zrobić?"]
+        XCTAssertTrue(titleField.waitForExistence(timeout: 10))
+        let loaded = expectation(for: NSPredicate(format: "value == %@", taskTitle), evaluatedWith: titleField)
+        wait(for: [loaded], timeout: 15)
+        attachScreenshot("AUDYT-02-edycja-zadania")
+        application.buttons["Zamknij"].firstMatch.tap()
+
+        // Zadanie bez terminu jest na liście zadań (wcześniej znikało).
+        let allTasks = application.buttons["Wszystkie zadania"]
+        XCTAssertTrue(allTasks.waitForExistence(timeout: 10))
+        allTasks.tap()
+        let allScope = application.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Wszystkie")).firstMatch
+        if allScope.waitForExistence(timeout: 5) { allScope.tap() }
+        XCTAssertTrue(
+            application.staticTexts[undatedTask].waitForExistence(timeout: 20),
+            "Zadanie bez terminu nie pojawiło się na liście"
+        )
+        attachScreenshot("AUDYT-03-zadanie-bez-terminu")
+        application.buttons["Wróć"].firstMatch.tap()
+
+        // Szczegół najbliższego terminu.
+        let details = application.buttons["Szczegóły"]
+        XCTAssertTrue(details.waitForExistence(timeout: 15), "Brak najbliższego terminu \(eventTitle)")
+        details.tap()
+        XCTAssertTrue(
+            application.buttons["Potwierdź termin"].waitForExistence(timeout: 20),
+            "Szczegół terminu się nie wczytał"
+        )
+        attachScreenshot("AUDYT-04-szczegol-terminu")
+        application.buttons["Zamknij"].firstMatch.tap()
+
+        // Karta klienta pokazuje przyszły termin mimo setek starszych w bazie.
+        let clientLink = application.buttons.matching(NSPredicate(format: "label CONTAINS %@", expectedClient)).firstMatch
+        XCTAssertTrue(clientLink.waitForExistence(timeout: 10))
+        clientLink.tap()
+        let future = application.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", futureEvent)).firstMatch
+        for _ in 0..<6 where !future.exists { application.swipeUp() }
+        XCTAssertTrue(future.waitForExistence(timeout: 10), "Karta klienta zgubiła przyszły termin \(futureEvent)")
+        attachScreenshot("AUDYT-05-przyszly-termin-w-karcie")
     }
 
     func testWrongPasswordShowsServerMessageAndStaysOnLogin() throws {

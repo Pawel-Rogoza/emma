@@ -55,7 +55,7 @@ final class TodayStore: ObservableObject {
             let model = Model(
                     today: today,
                     events: events.sorted { $0.time < $1.time },
-                    tasks: tasks.sorted { $0.dueDate < $1.dueDate },
+                    tasks: tasks.sorted(by: TaskItem.isOrderedByDueDate),
                     clientNames: Dictionary(
                         clients.map { ($0.id, $0.displayName) },
                         uniquingKeysWith: { first, _ in first }
@@ -229,8 +229,10 @@ struct TodayScreen: View {
         } label: {
             EmmaOrb(
                 size: .card,
-                isActive: dependencies.voice.state.isPlaybackActive,
-                state: dependencies.voice.state.turn
+                // `voiceState` jest publikowany — stan koordynatora czytany
+                // wprost nie odświeżał portretu, gdy Emma zaczynała mówić.
+                isActive: dependencies.voiceState.isPlaybackActive,
+                state: dependencies.voiceState.turn
             )
             .overlay(alignment: .bottomTrailing) {
                 Image(systemName: "mic.fill")

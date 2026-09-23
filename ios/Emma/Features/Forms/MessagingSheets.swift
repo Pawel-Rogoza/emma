@@ -78,7 +78,11 @@ struct NewConversationSheet: View {
             dependencies.openThread(thread.id)
         } else {
             dependencies.openPerson(client.id)
-            dependencies.showToast("Ten kontakt nie ma jeszcze wątku rozmowy w danych przykładowych.")
+            dependencies.showToast(
+                dependencies.configuration.usesMockServices
+                    ? "Ten kontakt nie ma jeszcze wątku rozmowy w danych przykładowych."
+                    : "Rozmowy pojawią się po podłączeniu WhatsApp kancelarii."
+            )
         }
     }
 }

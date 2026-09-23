@@ -99,13 +99,19 @@ final class BackendRepositoryTests: XCTestCase {
         XCTAssertNil(task.caseID)
     }
 
-    func testTaskWithoutDueDateIsSkipped() async throws {
+    func testTaskWithoutDueDateIsKeptWithoutInventedDate() async throws {
         StubURLProtocol.respond(json: Data(Self.tasksWithMissingDueDateJSON.utf8), status: 200)
         let tasks = try await makeRepository().tasks(filter: TaskFilter(scope: .all))
 
-        // Zadanie bez terminu (`task-1`) znika z wyniku zamiast dostać datę
-        // zastępczą, która w interfejsie wyglądałaby jak „po terminie”.
-        XCTAssertEqual(tasks.map(\.id.rawValue), ["task-2"])
+        // Zadanie bez terminu (`task-1`) zostaje na liście — bez daty zastępczej,
+        // która w interfejsie wyglądałaby jak „po terminie”.
+        XCTAssertEqual(tasks.map(\.id.rawValue), ["task-1", "task-2"])
+        XCTAssertNil(tasks[0].dueDate)
+        XCTAssertEqual(tasks[1].dueDate, LocalDate(year: 2026, month: 9, day: 15))
+
+        let groups = TaskGrouping.groups(tasks, today: LocalDate(year: 2026, month: 9, day: 20))
+        XCTAssertEqual(groups.map(\.bucket), [.overdue, .undated])
+        XCTAssertEqual(TaskGrouping.summary(tasks, today: LocalDate(year: 2026, month: 9, day: 20)).overdue, 1)
     }
 
     // MARK: Terminy
@@ -428,12 +434,62 @@ final class BackendRepositoryTests: XCTestCase {
         }
     }
 
-    func testSingleTaskAndEventReadThrowNotAvailableInBackend() async {        let repository = makeRepository()
-        // Lista spraw ma już trasę (`GET /cases`), ale odczyt pojedynczego
-        // zadania i terminu nie ma jej w kontrakcie — dlatego tylko te dwa
-        // zgłaszają brak, zamiast zwracać pustkę.
-        await assertNotAvailable { _ = try await repository.task(id: TaskID("task-3")) }
-        await assertNotAvailable { _ = try await repository.event(id: EventID("event-1")) }
+    /// Kontrakt nie ma `GET /tasks/{id}` ani `GET /events/{id}`, a szczegół
+    /// zadania i terminu (oraz ich edycja) musi działać — rekord znajdujemy na
+    /// liście. Wcześniej oba odczyty rzucały „niedostępne” i na TestFlight
+    /// „Edytuj” zakładało duplikat zamiast zmienić istniejący rekord.
+    func testSingleTaskAndEventAreFoundOnTheirLists() async throws {
+        StubURLProtocol.respond { request, _ in
+            let path = request.url?.path ?? ""
+            if path.hasSuffix("/tasks") { return (200, Data(Self.tasksJSON.utf8)) }
+            if path.hasSuffix("/events") { return (200, Data(Self.eventsJSON.utf8)) }
+            return (404, Data())
+        }
+        let repository = makeRepository()
+
+        let task = try await repository.task(id: TaskID("task-3"))
+        XCTAssertEqual(task?.title, "Przygotować odpowiedź")
+        let event = try await repository.event(id: EventID("event-2"))
+        XCTAssertEqual(event?.place, "Sąd Rejonowy, sala 214")
+
+        // Brak na żadnej liście to poprawne „nie ma”, a nie awaria.
+        let missingTask = try await repository.task(id: TaskID("task-404"))
+        XCTAssertNil(missingTask)
+        let missingEvent = try await repository.event(id: EventID("event-404"))
+        XCTAssertNil(missingEvent)
+    }
+
+    /// `PATCH /events` nie zmienia nazwy ani miejsca. Zmiana tych pól musi
+    /// skończyć się jasnym komunikatem, a nie cichym „zapisano” bez zmiany.
+    func testEventTitleChangeIsRefusedInsteadOfSilentlyDropped() async throws {
+        StubURLProtocol.respond { request, _ in
+            let path = request.url?.path ?? ""
+            if request.httpMethod == "GET", path.hasSuffix("/events") { return (200, Data(Self.eventsJSON.utf8)) }
+            return (500, Data())
+        }
+        let repository = makeRepository()
+        guard var event = try await repository.event(id: EventID("event-2")) else {
+            return XCTFail("Brak terminu w fiksturze")
+        }
+        event.place = "Online"
+        do {
+            _ = try await repository.updateEvent(event, expectedVersion: event.version)
+            XCTFail("Oczekiwano odmowy zmiany miejsca")
+        } catch BackendRepositoryError.notAvailableInBackend(let operation) {
+            XCTAssertTrue(operation.contains("miejsca"), operation)
+        }
+    }
+
+    func testBackendErrorMessageReachesTheScreen() {
+        let failure = ScreenLoad.failure(
+            for: BackendRepositoryError.server(status: 422, message: "Tytuł jest za krótki."),
+            fallback: "Nie udało się wykonać operacji."
+        )
+        XCTAssertEqual(failure.message, "Tytuł jest za krótki.")
+        XCTAssertEqual(
+            ScreenLoad.message(for: BackendRepositoryError.unauthorized, fallback: "x"),
+            "Sesja wygasła. Zaloguj się ponownie."
+        )
     }
 
     func testVoiceAndAssistantActionsThrowNotAvailableInBackend() async {

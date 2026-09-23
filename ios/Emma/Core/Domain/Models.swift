@@ -277,7 +277,8 @@ extension TaskItem {
     ///
     /// Ta sama reguła decyduje o treści i o wyróżnieniu, więc nie mogą się rozjechać.
     public func rowDateText(_ formatter: DateTextFormatter) -> String {
-        showsUrgentBadge ? TaskPriority.urgent.rawValue : formatter.dayLabel(dueDate)
+        if showsUrgentBadge { return TaskPriority.urgent.rawValue }
+        return dueDate.map(formatter.dayLabel) ?? TaskItem.noDueDateText
     }
 
     /// Opis wiersza zadania: sama nazwa klienta albo „Kancelaria”.
@@ -292,17 +293,31 @@ public struct TaskItem: Identifiable, Hashable, Codable, Sendable {
     public var title: String
     public var clientID: ClientID?
     public var caseID: CaseID?
-    public var dueDate: LocalDate
+    /// Termin zadania. Panel kancelarii dopuszcza zadania bez terminu — to
+    /// nadal zadania, więc `nil` znaczy „bez terminu”, a nie „brak danych”.
+    public var dueDate: LocalDate?
     public var isDone: Bool
     public var priority: TaskPriority
     public var version: Version
+
+    public static let noDueDateText = "Bez terminu"
+
+    /// Porządek listy: po terminie, zadania bez terminu na końcu, remis po id.
+    public static func isOrderedByDueDate(_ lhs: TaskItem, _ rhs: TaskItem) -> Bool {
+        switch (lhs.dueDate, rhs.dueDate) {
+        case let (left?, right?) where left != right: return left < right
+        case (.some, .none): return true
+        case (.none, .some): return false
+        default: return lhs.id.rawValue < rhs.id.rawValue
+        }
+    }
 
     public init(
         id: TaskID,
         title: String,
         clientID: ClientID?,
         caseID: CaseID?,
-        dueDate: LocalDate,
+        dueDate: LocalDate?,
         isDone: Bool,
         priority: TaskPriority,
         version: Version = .initial

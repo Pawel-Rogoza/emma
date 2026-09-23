@@ -46,7 +46,7 @@ final class TasksStore: ObservableObject {
             let clients = try await dependencies.repository.clients(matching: "", stage: nil)
             phase = .loaded(
                 Model(
-                    tasks: tasks.sorted { $0.dueDate < $1.dueDate },
+                    tasks: tasks.sorted(by: TaskItem.isOrderedByDueDate),
                     clientNames: Dictionary(clients.map { ($0.id, $0.displayName) }, uniquingKeysWith: { first, _ in first })
                 )
             )

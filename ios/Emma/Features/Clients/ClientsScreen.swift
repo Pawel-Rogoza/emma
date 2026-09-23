@@ -235,17 +235,20 @@ struct ClientsScreen: View {
             }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button(role: .destructive) {
-                pendingDelete = client
-            } label: {
-                Label("Usuń", systemImage: "trash")
+            // Kartoteki nie usuwa się ani nie „konwertuje” ponownie.
+            if client.stage != .client {
+                Button(role: .destructive) {
+                    pendingDelete = client
+                } label: {
+                    Label("Usuń", systemImage: "trash")
+                }
+                Button {
+                    pendingConversion = client
+                } label: {
+                    Label("Klient", systemImage: "person.crop.circle.badge.checkmark")
+                }
+                .tint(EmmaTheme.primaryButton)
             }
-            Button {
-                pendingConversion = client
-            } label: {
-                Label("Klient", systemImage: "person.crop.circle.badge.checkmark")
-            }
-            .tint(EmmaTheme.primaryButton)
         }
     }
 
@@ -260,7 +263,7 @@ struct ClientsScreen: View {
         } else {
             EmptyState(
                 systemImage: "person.crop.circle.badge.plus",
-                title: "Brak zgłoszeń w tym widoku",
+                title: normalizedQuery.isEmpty ? "Brak zgłoszeń w tym widoku" : "Nikogo nie znaleziono",
                 message: "Wybierz inny filtr lub dodaj nowy kontakt."
             )
         }
@@ -305,7 +308,12 @@ struct ClientsScreen: View {
         let inbox = LeadWorkflow.inbox(matching, now: dependencies.now)
 
         var sections: [LeadSection] = []
-        switch leadFilter {
+        // Wyszukiwanie ma znaleźć każdego — także obsłużone zgłoszenia i klientów
+        // kancelarii. Wcześniej szukało tylko w wybranym filtrze, a kartoteka
+        // (etap `client`) bez sprawy nie była osiągalna z aplikacji w ogóle.
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let filter: LeadListFilter = trimmedQuery.isEmpty ? leadFilter : .all
+        switch filter {
         case .needsAction:
             sections.append(LeadSection(id: "waiting", title: "Czekają na kontakt", status: .waiting, clients: inbox.waiting))
             sections.append(LeadSection(id: "fresh", title: "Nowe · ostatnie 24 h", status: .fresh, clients: inbox.fresh))
@@ -319,6 +327,12 @@ struct ClientsScreen: View {
             sections.append(LeadSection(id: "waiting", title: "Czekają na kontakt", status: .waiting, clients: inbox.waiting))
             sections.append(LeadSection(id: "fresh", title: "Nowe", status: .fresh, clients: inbox.fresh))
             sections.append(LeadSection(id: "contact", title: "W kontakcie", status: .inContact, clients: inbox.inContact))
+        }
+        if !trimmedQuery.isEmpty {
+            let firmClients = model.clients
+                .filter { $0.stage == .client && SearchText.matches(query, in: [$0.displayName, $0.topic]) }
+                .sorted { $0.displayName.localizedCompare($1.displayName) == .orderedAscending }
+            sections.append(LeadSection(id: "clients", title: "Klienci kancelarii", status: .client, clients: firmClients))
         }
         return sections.filter { !$0.clients.isEmpty }
     }

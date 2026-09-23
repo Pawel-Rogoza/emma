@@ -99,11 +99,12 @@ final class ClientsStore: ObservableObject {
 
 // MARK: - Okno terminów listy
 
-/// Repozytorium udostępnia terminy wyłącznie zakresem dat (`events(in:)`),
-/// dlatego lista pobiera szerokie okno prezentacji wokół dnia referencyjnego
-/// zamiast zgadywać pojedyncze dni. Kolumna godzin z referencji nie występuje.
+/// Repozytorium udostępnia terminy wyłącznie zakresem dat (`events(in:)`).
+/// Lista potrzebuje **najbliższych** terminów, więc okno zaczyna się tuż przed
+/// dziś: backend oddaje najwyżej 200 pozycji od najstarszej, a okno ±3 lata
+/// wypełniało limit starymi terminami i przyszłe spotkania znikały z kart.
 enum ClientsEventWindow {
     static func presentation(today: LocalDate) -> DateIntervalFilter {
-        DateIntervalFilter(from: today.adding(days: -365 * 3), through: today.adding(days: 365 * 3))
+        DateIntervalFilter(from: today.adding(days: -30), through: today.adding(days: 365 * 2))
     }
 }

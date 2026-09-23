@@ -291,10 +291,20 @@ public struct BackendRepository: EmmaRepository, Sendable {
 
     // MARK: TaskRepository
 
+    /// Kontrakt nie ma trasy pojedynczego zadania (`GET /tasks/{id}`), więc
+    /// szukamy go na liście: najpierw wśród otwartych (stamtąd otwiera się
+    /// prawie każdy szczegół), potem wśród wszystkich.
+    ///
+    /// Wcześniej ta metoda rzucała „niedostępne”: na TestFlight szczegół zadania
+    /// kończył się błędem, a „Edytuj” otwierało pusty formularz, którego zapis
+    /// zakładał **nowe** zadanie zamiast zmienić istniejące.
     public func task(id: TaskID) async throws -> TaskItem? {
-        // Kontrakt nie ma trasy pojedynczego zadania. Szczegół jest w karcie
-        // klienta lub sprawy, ale to inny zasób niż zapytanie po identyfikatorze.
-        throw notAvailable("odczyt zadania po identyfikatorze")
+        for scope in [TaskFilter.Scope.open, .all] {
+            if let match = try await tasks(filter: TaskFilter(scope: scope)).first(where: { $0.id == id }) {
+                return match
+            }
+        }
+        return nil
     }
 
     public func tasks(filter: TaskFilter) async throws -> [TaskItem] {
@@ -317,12 +327,17 @@ public struct BackendRepository: EmmaRepository, Sendable {
     }
 
     public func updateTask(_ task: TaskItem, expectedVersion: Version) async throws -> TaskItem {
-        try await patchTask(
+        // `PATCH /tasks` nie przenosi zadania do innego klienta — bez tej
+        // kontroli zmiana klienta w formularzu przepadała po cichu.
+        if let current = try await self.task(id: task.id), current.clientID != task.clientID {
+            throw notAvailable("przeniesienie zadania do innego klienta — zmień to w panelu kancelarii")
+        }
+        return try await patchTask(
             id: task.id,
             body: BackendTaskUpdateBody(
                 expectedVersion: expectedVersion.value,
                 title: task.title,
-                dueDate: task.dueDate.isoString,
+                dueDate: task.dueDate?.isoString,
                 priority: Self.priorityToken(task.priority),
                 isDone: task.isDone
             ),
@@ -365,8 +380,40 @@ public struct BackendRepository: EmmaRepository, Sendable {
         return try rows.compactMap(Self.mapEvent)
     }
 
+    /// Terminy klienta filtrowane przez serwer (`client_id`). `GET /events`
+    /// oddaje najwyżej 200 pozycji od najstarszej, więc filtr w aplikacji na
+    /// liście wszystkich terminów gubił przyszłe spotkania w karcie klienta.
+    public func events(in range: DateIntervalFilter, clientID: ClientID) async throws -> [ScheduledEvent] {
+        let rows = try await api.events(in: range, clientID: clientID)
+        return try rows.compactMap(Self.mapEvent).filter { $0.clientID == clientID }
+    }
+
+    /// Kontrakt nie ma trasy pojedynczego terminu, a `GET /events` wymaga
+    /// zakresu dat i oddaje najwyżej 200 pozycji od najstarszej. Szukamy więc
+    /// w oknach: najpierw wokół dziś (stamtąd otwiera się prawie każdy
+    /// szczegół), potem dalsza przeszłość i dalsza przyszłość.
+    ///
+    /// Wcześniej ta metoda rzucała „niedostępne”: na TestFlight „Szczegóły”
+    /// terminu kończyły się błędem, a „Edytuj termin” zapisywało **nowy** termin.
     public func event(id: EventID) async throws -> ScheduledEvent? {
-        throw notAvailable("odczyt terminu po identyfikatorze")
+        let today = Self.todayInFirmTimeZone()
+        let windows = [
+            DateIntervalFilter(from: today.adding(days: -14), through: today.adding(days: 120)),
+            DateIntervalFilter(from: today.adding(days: -400), through: today.adding(days: -15)),
+            DateIntervalFilter(from: today.adding(days: 121), through: today.adding(days: 1_100))
+        ]
+        for window in windows {
+            if let match = try await events(in: window).first(where: { $0.id == id }) {
+                return match
+            }
+        }
+        return nil
+    }
+
+    /// Dzień bieżący w strefie kancelarii. Repozytorium backendu działa tylko
+    /// poza Demo, więc zegar systemowy jest tu właściwym źródłem „dziś”.
+    static func todayInFirmTimeZone(now: Date = Date()) -> LocalDate {
+        localDate(of: now)
     }
 
     public func createEvent(_ draft: NewEventDraft) async throws -> ScheduledEvent {
@@ -389,6 +436,12 @@ public struct BackendRepository: EmmaRepository, Sendable {
     /// Trasa `PATCH /events` zmienia stan, dzień, godzinę i długość. Tytułu
     /// i miejsca nie zmienia — gdy tylko to się różni, mówimy to wprost.
     public func updateEvent(_ event: ScheduledEvent, expectedVersion: Version) async throws -> ScheduledEvent {
+        // Bez tej kontroli zmiana nazwy albo miejsca w formularzu „znikała”:
+        // backend zapisywał resztę, a użytkownik widział „zapisano”.
+        if let current = try await self.event(id: event.id),
+           current.title != event.title || current.place != event.place || current.kind != event.kind {
+            throw notAvailable("zmiana nazwy, rodzaju i miejsca terminu — zmień je w panelu kancelarii")
+        }
         let body = BackendEventUpdateBody(
             expectedVersion: expectedVersion.value,
             status: Self.eventStatusToken(event.status),
@@ -787,15 +840,18 @@ extension BackendRepository {
     }
 
     static func mapTask(_ dto: BackendTaskDTO) throws -> TaskItem? {
-        let rawDue = dto.dueDate?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let rawDue, !rawDue.isEmpty else {
-            // Kontrakt nie wysyła zadań bez terminu. Gdyby jednak przyszło puste
-            // `due_date`, pomijamy wiersz: data zastępcza pokazałaby w interfejsie
-            // „po terminie”, czyli nieprawdę.
-            return nil
-        }
-        guard let dueDate = LocalDate(iso: rawDue) else {
-            throw BackendRepositoryError.decoding("nieznana data zadania: \(rawDue)")
+        // Panel kancelarii dopuszcza zadania bez terminu (na produkcji 3 z 10).
+        // Wcześniej takie zadanie znikało z aplikacji; teraz trafia do grupy
+        // „Bez terminu” — bez daty zastępczej, która udawałaby „po terminie”.
+        let rawDue = dto.dueDate?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let dueDate: LocalDate?
+        if rawDue.isEmpty {
+            dueDate = nil
+        } else {
+            guard let parsed = LocalDate(iso: rawDue) else {
+                throw BackendRepositoryError.decoding("nieznana data zadania: \(rawDue)")
+            }
+            dueDate = parsed
         }
         return TaskItem(
             id: TaskID(dto.id),

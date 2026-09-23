@@ -283,12 +283,15 @@ public struct BackendAPIClient: Sendable {
         return response.items
     }
 
-    /// `GET /api/mobile/v1/events?from=&through=`.
-    func events(in range: DateIntervalFilter) async throws -> [BackendEventDTO] {
-        let items = [
+    /// `GET /api/mobile/v1/events?from=&through=[&client_id=]`.
+    func events(in range: DateIntervalFilter, clientID: ClientID? = nil) async throws -> [BackendEventDTO] {
+        var items = [
             URLQueryItem(name: "from", value: range.from.isoString),
             URLQueryItem(name: "through", value: range.through.isoString)
         ]
+        if let clientID {
+            items.append(URLQueryItem(name: "client_id", value: clientID.rawValue))
+        }
         let response: BackendItems<BackendEventDTO> = try await get(Endpoint.events.rawValue, query: items)
         return response.items
     }

@@ -34,7 +34,7 @@ final class ClientCardStore: ObservableObject {
 
             let window = ClientCardEventWindow.presentation(today: dependencies.today)
             async let legalCaseTask = repository.caseForClient(clientID)
-            async let eventsTask = repository.events(in: window)
+            async let eventsTask = repository.events(in: window, clientID: clientID)
             async let notesTask = repository.notes(clientID: clientID, caseID: nil)
             async let threadsTask = repository.threads()
 
@@ -48,7 +48,6 @@ final class ClientCardStore: ObservableObject {
                     client: client,
                     legalCase: legalCase,
                     events: events
-                        .filter { $0.clientID == clientID }
                         .sorted { lhs, rhs in
                             if lhs.day != rhs.day { return lhs.day < rhs.day }
                             if lhs.time != rhs.time { return lhs.time < rhs.time }

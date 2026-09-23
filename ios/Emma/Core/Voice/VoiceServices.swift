@@ -105,12 +105,22 @@ public protocol TaskRepository: Sendable {
 
 public protocol AgendaRepository: Sendable {
     func events(in range: DateIntervalFilter) async throws -> [ScheduledEvent]
+    /// Terminy jednego klienta. Backend filtruje je po stronie serwera — lista
+    /// wszystkich terminów ma limit, więc filtrowanie w aplikacji gubiło terminy.
+    func events(in range: DateIntervalFilter, clientID: ClientID) async throws -> [ScheduledEvent]
     func event(id: EventID) async throws -> ScheduledEvent?
     func createEvent(_ draft: NewEventDraft) async throws -> ScheduledEvent
     func updateEvent(_ event: ScheduledEvent, expectedVersion: Version) async throws -> ScheduledEvent
     /// Usuwa termin. `expectedVersion` chroni przed usunięciem terminu, który
     /// w międzyczasie ktoś zmienił — tak samo jak przy edycji.
     func deleteEvent(id: EventID, expectedVersion: Version) async throws
+}
+
+public extension AgendaRepository {
+    /// Domyślnie: wszystkie terminy zakresu przefiltrowane w pamięci (Demo).
+    func events(in range: DateIntervalFilter, clientID: ClientID) async throws -> [ScheduledEvent] {
+        try await events(in: range).filter { $0.clientID == clientID }
+    }
 }
 
 public protocol NoteRepository: Sendable {

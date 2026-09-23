@@ -901,6 +901,16 @@ final class AssistantStore: ObservableObject {
         await startConversation()
     }
 
+    /// Wylogowanie albo zmiana konta: historia rozmowy i dane klientów nie mogą
+    /// przetrwać do następnej sesji. Magazyn jest współdzielony przez cały
+    /// proces, więc bez tego nowy użytkownik widział poprzednią rozmowę.
+    func clearForSignOut() {
+        resetPresentation()
+        clients = []
+        linkedCases = [:]
+        caseNumbers = [:]
+    }
+
     /// Czyszczenie stanu prezentacji przed nową rozmową. Numeracja identyfikatorów
     /// zostaje — ma rosnąć w obrębie procesu, a nie zaczynać się od nowa.
     private func resetPresentation() {

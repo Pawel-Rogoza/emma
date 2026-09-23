@@ -66,9 +66,20 @@ final class Stage6LayoutUITests: XCTestCase {
         let field = namedField.exists ? namedField : application.textFields.firstMatch
         guard field.waitForExistence(timeout: 15) else { return "brak pola szukania klientów" }
         field.tap()
-        field.typeText("Олександра")
+        // „\n” zamyka klawiaturę: przy AccessibilityXXXL nagłówek i filtry zajmują
+        // cały ekran nad klawiaturą, a leniwa lista tworzy wiersz dopiero po przewinięciu.
+        field.typeText("Олександра\n")
 
-        let row = application.staticTexts[longName]
+        // Karta leada jest jednym elementem dostępności (nazwisko w etykiecie
+        // przycisku), więc szukamy karty, a nie osobnego napisu z nazwiskiem.
+        let row = application.buttons
+            .matching(identifier: "lead-card")
+            .matching(NSPredicate(format: "label CONTAINS %@", longName))
+            .firstMatch
+        for _ in 0..<5 where !(row.exists && withinWindow(row, named: "wiersz listy")) {
+            drag(up: true)
+            Thread.sleep(forTimeInterval: 0.3)
+        }
         guard row.waitForExistence(timeout: 15) else {
             return "lista klientów nie pokazuje długiego nazwiska po wyszukaniu"
         }
@@ -135,12 +146,14 @@ final class Stage6LayoutUITests: XCTestCase {
 
     /// Przewija kartę **w stronę** elementu, aż będzie osiągalny. Kierunek wynika
     /// z ramki, więc nie przeskakujemy elementu (karta przy XXXL jest długa).
-    private func scrollIntoView(_ element: XCUIElement, attempts: Int = 8) -> Bool {
+    private func scrollIntoView(_ element: XCUIElement, attempts: Int = 24) -> Bool {
         let window = application.windows.firstMatch.frame
         for _ in 0..<attempts {
             if element.isHittable { return true }
             let frame = element.frame
-            if frame.isEmpty || frame.maxY > window.maxY {
+            // Dolny pasek zakładek zasłania ostatnie ~120 pt okna: element pod
+            // nim jest „w oknie”, ale nieosiągalny — trzeba przewinąć dalej.
+            if frame.isEmpty || frame.maxY > window.maxY - 120 {
                 drag(up: true)
             } else if frame.minY < window.minY {
                 drag(up: false)

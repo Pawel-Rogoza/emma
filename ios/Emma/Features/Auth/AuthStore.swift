@@ -34,7 +34,13 @@ final class AuthStore: ObservableObject {
         case unlocked
     }
 
-    @Published private(set) var state: State
+    @Published private(set) var state: State {
+        didSet { if state == .unlocked { hasUnlockedSession = true } }
+    }
+    /// Czy w tym uruchomieniu aplikacja była już odblokowana. Powłoka powstaje
+    /// dopiero po pierwszym odblokowaniu, a potem **żyje pod blokadą** — powrót
+    /// z innej aplikacji nie gubi wpisywanej notatki ani otwartego formularza.
+    @Published private(set) var hasUnlockedSession = false
     @Published private(set) var isAuthenticating = false
     @Published private(set) var notice: String?
 
@@ -109,6 +115,8 @@ final class AuthStore: ObservableObject {
                 usesRemoteAuth: self.session != nil
             )
         }
+
+        hasUnlockedSession = state == .unlocked
 
         // Odtworzona sesja nie ma jeszcze tokenu w pamięci: pobieramy go z kluczyka
         // (i odnawiamy, gdy jest blisko wygaśnięcia). Bez tego po restarcie aplikacji
@@ -261,6 +269,7 @@ final class AuthStore: ObservableObject {
         remoteUser = nil
         notice = "Sesja wygasła. Zaloguj się ponownie."
         state = .signedOut
+        hasUnlockedSession = false
         onUserChanged?(nil)
         let notify = onSessionEnded
         Task { await notify?(.loggedOut) }
@@ -274,6 +283,7 @@ final class AuthStore: ObservableObject {
         accessToken = nil
         remoteUser = nil
         state = .signedOut
+        hasUnlockedSession = false
         onUserChanged?(nil)
         let session = self.session
         let notify = onSessionEnded
@@ -295,6 +305,7 @@ final class AuthStore: ObservableObject {
         accessToken = nil
         remoteUser = nil
         state = .signedOut
+        hasUnlockedSession = false
         onUserChanged?(nil)
         await onSessionEnded?(.loggedOut)
     }
@@ -309,6 +320,7 @@ final class AuthStore: ObservableObject {
         accessToken = nil
         remoteUser = nil
         state = .signedOut
+        hasUnlockedSession = false
         onUserChanged?(nil)
     }
 

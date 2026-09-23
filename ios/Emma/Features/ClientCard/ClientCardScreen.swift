@@ -353,10 +353,18 @@ struct ClientCardScreen: View {
         if let legalCase = model.legalCase {
             linkedCaseButton(legalCase)
                 .padding(.vertical, 18)
-        } else {
+        } else if dependencies.configuration.usesMockServices {
             PrimaryButton("Rozpocznij prowadzenie sprawy", systemImage: "folder") {
                 dependencies.present(.startCase(model.client.id))
             }
+        } else {
+            // Backend nie ma jeszcze `POST /cases`: przycisk prowadził do
+            // formularza, którego zapis zawsze kończył się błędem.
+            Label("Sprawę zakładasz w panelu kancelarii — pojawi się tutaj po odświeżeniu.", systemImage: "folder")
+                .font(EmmaTypography.caption())
+                .foregroundStyle(EmmaTheme.mutedSoft)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.vertical, 12)
         }
     }
 

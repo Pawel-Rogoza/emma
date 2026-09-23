@@ -45,6 +45,7 @@ struct EmmaApp: App {
         // o tym pamiętać.
         authStore.onSessionEnded = { [weak dependencies] reason in
             guard let dependencies else { return }
+            AssistantStoreRegistry.shared.clearForSignOut()
             switch reason {
             case .loggedOut:
                 await dependencies.voice.handleUserLoggedOut()
@@ -67,11 +68,22 @@ struct EmmaApp: App {
                 switch auth.state {
                 case .signedOut:
                     LoginScreen()
-                case .locked:
-                    LockScreen()
-                case .unlocked:
-                    RootShell()
-                        .environmentObject(dependencies)
+                case .locked, .unlocked:
+                    // Blokada zasłania powłokę, a nie ją niszczy: wcześniej każde
+                    // wyjście do innej aplikacji kasowało otwarty formularz
+                    // (np. pisaną notatkę) i pozycję list. Przed pierwszym
+                    // odblokowaniem powłoki jeszcze nie ma — nic się nie wczytuje.
+                    ZStack {
+                        if auth.hasUnlockedSession {
+                            RootShell()
+                                .environmentObject(dependencies)
+                                .accessibilityHidden(auth.state == .locked)
+                                .allowsHitTesting(auth.state == .unlocked)
+                        }
+                        if auth.state == .locked {
+                            LockScreen()
+                        }
+                    }
                 }
             }
             .environmentObject(auth)
@@ -89,12 +101,21 @@ struct EmmaApp: App {
             // z aplikacji i tak przechodzi przez `.background`.
             switch phase {
             case .background:
+                // Klawiatura nie może zostać nad ekranem blokady.
+                UIApplication.shared.sendAction(
+                    #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
+                )
                 auth.lock()
                 Task { await dependencies.voice.handleApplicationBackgrounded() }
             case .active:
                 // Powrót na pierwszy plan: pytamy backend o faktyczny stan sesji,
                 // żeby przejęcie przez inne urządzenie nie uszło uwadze (§5.6).
                 Task { await dependencies.voice.handleApplicationForegrounded() }
+                // Powłoka przeżywa blokadę, więc ekrany nie wczytują się same od
+                // nowa — prosimy je o odświeżenie (np. nowy lead ze strony).
+                if auth.hasUnlockedSession {
+                    dependencies.dataChanged()
+                }
             default:
                 break
             }

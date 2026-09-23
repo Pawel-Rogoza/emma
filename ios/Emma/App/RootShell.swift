@@ -8,6 +8,7 @@ import SwiftUI
 
 public struct RootShell: View {
     @EnvironmentObject private var dependencies: AppDependencies
+    @EnvironmentObject private var auth: AuthStore
 
     public init() {}
 
@@ -46,6 +47,14 @@ public struct RootShell: View {
         .sheet(item: $dependencies.sheet) { sheet in
             SheetHost(sheet: sheet)
                 .environmentObject(dependencies)
+                // Arkusz leży nad powłoką, więc zasłania też ekran blokady —
+                // zasłaniamy go własną kopią blokady (stan i Face ID są wspólne).
+                .overlay {
+                    if auth.state == .locked {
+                        LockScreen()
+                    }
+                }
+                .environmentObject(auth)
         }
         .onChange(of: dependencies.tab) { _, _ in
             // Wejście na zakładkę nie kończy rozmowy z Emmą: sesja głosowa ma
@@ -255,4 +264,5 @@ public struct SheetScaffold<Content: View>: View {
 #Preview("Powłoka z pięcioma zakładkami") {
     RootShell()
         .environmentObject(AppDependencies.demo())
+        .environmentObject(AuthStore(authenticator: PreviewBiometricAuthenticator(), defaults: UserDefaults(suiteName: "preview.shell")!))
 }

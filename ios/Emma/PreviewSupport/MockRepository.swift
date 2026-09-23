@@ -264,13 +264,16 @@ public actor MockRepository:
                 case .done: if !task.isDone { return false }
                 case .all: break
                 }
-                if let due = filter.dueOnOrBefore, task.dueDate > due { return false }
+                if let due = filter.dueOnOrBefore {
+                    // Jak backend: filtr terminu pomija zadania bez terminu.
+                    guard let taskDue = task.dueDate, taskDue <= due else { return false }
+                }
                 if let clientID = filter.clientID, task.clientID != clientID { return false }
                 if let caseID = filter.caseID, task.caseID != caseID { return false }
                 return true
             }
             .sorted { lhs, rhs in
-                if lhs.dueDate != rhs.dueDate { return lhs.dueDate < rhs.dueDate }
+                if lhs.dueDate != rhs.dueDate { return TaskItem.isOrderedByDueDate(lhs, rhs) }
                 if lhs.priority != rhs.priority { return lhs.priority == .urgent }
                 return lhs.id.rawValue < rhs.id.rawValue
             }

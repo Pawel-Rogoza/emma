@@ -16,8 +16,8 @@ import XCTest
 // Uruchomienie (atrapa na hoście, test w symulatorze):
 //   node scripts/fake-live-api.mjs --port 8791
 //   xcodebuild test … \
-//     SIMCTL_CHILD_EMMA_FAKE_LIVE_BASE_URL=http://127.0.0.1:8791 \
-//     SIMCTL_CHILD_EMMA_FAKE_LIVE_BASE_URL_GOAWAY=http://127.0.0.1:8792
+//     TEST_RUNNER_EMMA_FAKE_LIVE_BASE_URL=http://127.0.0.1:8791 \
+//     TEST_RUNNER_EMMA_FAKE_LIVE_BASE_URL_GOAWAY=http://127.0.0.1:8792
 // Bez tych zmiennych testy są pomijane — nigdy nie łączą się z prawdziwym API.
 
 @MainActor
