@@ -61,6 +61,10 @@ public final class GeminiLiveTransport: VoiceTransport {
     /// Wykonawca narzędzi `app_*` (nawigacja, propozycje). Rozwiązywany przy
     /// każdym wywołaniu, bo ekran Emmy podpina się dopiero po starcie rozmowy.
     private let appTools: @MainActor () -> (any VoiceAppToolHandling)?
+    /// Zgłoszenie zużycia tokenów po rozmowie (pomiar kosztu). `nil` w testach.
+    private let usageReporter: BackendVoiceUsageReporter?
+    /// Suma `usageMetadata` z bieżącej rozmowy.
+    private(set) var usageTotals = GeminiLiveUsage()
     private let installationID: String
     private let audioSession: AudioSessionController?
     private let model: String
@@ -106,6 +110,7 @@ public final class GeminiLiveTransport: VoiceTransport {
         toolExecutor: any VoiceToolExecuting,
         tokens: VoiceAccessTokenSource,
         appTools: @escaping @MainActor () -> (any VoiceAppToolHandling)? = { nil },
+        usageReporter: BackendVoiceUsageReporter? = nil,
         installationID: String,
         model: String,
         audioSession: AudioSessionController? = nil,
@@ -116,6 +121,7 @@ public final class GeminiLiveTransport: VoiceTransport {
         self.toolExecutor = toolExecutor
         self.tokens = tokens
         self.appTools = appTools
+        self.usageReporter = usageReporter
         self.installationID = installationID
         self.model = model
         self.audioSession = audioSession
@@ -156,6 +162,7 @@ public final class GeminiLiveTransport: VoiceTransport {
         tracker = GeminiLiveTurnTracker()
         microphone.setMuted(false)
         duplexMode = VoiceDuplexMode.current
+        usageTotals = GeminiLiveUsage()
         isSetupComplete = false
         pendingAudio.removeAll()
 
@@ -269,6 +276,7 @@ public final class GeminiLiveTransport: VoiceTransport {
                 isSetupComplete = true
             }
             let outcome = tracker.consume(event)
+            if let usage = outcome.usage { usageTotals = usageTotals + usage }
             if let audio = outcome.audio { enqueuePlayback(audio) }
             // Przerwanie tury po stronie serwera: wycofujemy zbuforowane audio,
             // żeby Emma nie mówiła dalej przez wypowiedź użytkownika.
@@ -604,6 +612,12 @@ public final class GeminiLiveTransport: VoiceTransport {
     }
 
     public func disconnect(reason: VoiceEndReason) async {
+        // Pomiar kosztu: raz na rozmowę, w tle — zamknięcie nie czeka na sieć.
+        if let usageReporter, let sessionID = configuration?.sessionID, !usageTotals.isEmpty {
+            let usage = usageTotals
+            usageTotals = GeminiLiveUsage()
+            Task { await usageReporter.report(sessionID: sessionID, usage: usage) }
+        }
         isClosing = true
         cancelToolCalls(Array(toolTasks.keys))
         microphone.releasePlayback()

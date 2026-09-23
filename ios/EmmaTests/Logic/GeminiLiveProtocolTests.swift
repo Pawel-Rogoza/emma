@@ -10,6 +10,26 @@ import XCTest
 
 final class GeminiLiveProtocolTests: XCTestCase {
 
+    /// Koszt rozmowy liczymy z `usageMetadata`: audio i tekst mają różne stawki,
+    /// a tokeny „myślenia” są rozliczane jak wyjście.
+    func testUsageMetadataSplitsModalities() {
+        let frame = Data(#"""
+        {"usageMetadata":{"promptTokenCount":1200,"responseTokenCount":300,"thoughtsTokenCount":40,
+         "promptTokensDetails":[{"modality":"AUDIO","tokenCount":1000},{"modality":"TEXT","tokenCount":200}],
+         "responseTokensDetails":[{"modality":"AUDIO","tokenCount":300}]}}
+        """#.utf8)
+        XCTAssertEqual(GeminiLiveCodec.decode(frame), [.usage(GeminiLiveUsage(
+            inputAudioTokens: 1000,
+            inputTextTokens: 200,
+            outputAudioTokens: 300,
+            outputTextTokens: 40,
+            reports: 1
+        ))])
+        // Brak podziału na modalności: całość jako tekst, bez zgadywania audio.
+        let plain = Data(#"{"usageMetadata":{"promptTokenCount":50,"responseTokenCount":10}}"#.utf8)
+        XCTAssertEqual(GeminiLiveCodec.decode(plain), [.usage(GeminiLiveUsage(inputTextTokens: 50, outputTextTokens: 10, reports: 1))])
+    }
+
     func testInputTranscriptRetainsAllChunks() {
         var tracker = GeminiLiveTurnTracker()
         _ = tracker.consume(.inputTranscription("Sprawdź artykuł "))

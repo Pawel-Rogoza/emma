@@ -54,6 +54,7 @@ public enum VoiceServicesFactory {
                 toolExecutor: BackendVoiceToolExecutor(baseURL: baseURL, tokens: tokens),
                 tokens: tokens,
                 appTools: appTools,
+                usageReporter: BackendVoiceUsageReporter(baseURL: baseURL, tokens: tokens),
                 installationID: installationID,
                 model: configuration.voiceModel,
                 audioSession: audioSession

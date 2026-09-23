@@ -18,6 +18,8 @@ public struct GeminiLiveTurnOutcome: Sendable {
     public var resumptionHandle: String?
     /// Serwer zapowiedział zamknięcie połączenia; transport ma się przygotować.
     public var goAwayIn: TimeInterval?
+    /// Zużycie tokenów zgłoszone przez serwer (do sumowania w transporcie).
+    public var usage: GeminiLiveUsage?
     /// Połączenie padło bez `goAway` — trzeba wznowić sesję z uchwytem.
     public var shouldReconnect = false
     /// Zatrzymać **lokalne** odtwarzanie. Live API przerywa turę po swojej stronie,
@@ -115,6 +117,9 @@ public struct GeminiLiveTurnTracker: Sendable {
             outcome.goAwayIn = seconds
             outcome.payloads.append(.connectionChanged(.reconnecting))
             outcome.payloads.append(.recoverableError(.tokenExpiring))
+
+        case .usage(let usage):
+            outcome.usage = usage
 
         case .unknown:
             // Nieznanego komunikatu sterującego nie interpretujemy. Milczenie jest
