@@ -232,6 +232,9 @@ public final class AppDependencies: ObservableObject {
             sessionRepository: voiceRepository,
             actionRepository: self.repository,
             clock: resolvedClock,
+            // 2 minuty bez mowy kończą rozmowę: otwarty mikrofon wysyła ciszę,
+            // a Live API nalicza ją jak mowę. Wznowienie to jedno dotknięcie.
+            idleTimeout: 2 * 60,
             // Uzgodnienie z backendem: przejęcie sesji przez inne urządzenie kończy
             // u nas prawo zapisu głosem (plan §5.6, linia 342). Zapytanie jest tanie
             // i idzie tym samym repozytorium głosu, które otwiera sesję — nie tym

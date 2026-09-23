@@ -66,6 +66,42 @@ public struct GeminiLiveToolCall: Equatable, Sendable {
     }
 }
 
+/// Zużycie tokenów z `usageMetadata`. Live API nalicza każdą turę osobno (z całym
+/// kontekstem w oknie), więc suma raportów to zużycie rozmowy.
+public struct GeminiLiveUsage: Equatable, Sendable {
+    public var inputAudioTokens = 0
+    public var inputTextTokens = 0
+    public var outputAudioTokens = 0
+    public var outputTextTokens = 0
+    public var reports = 0
+
+    public init(
+        inputAudioTokens: Int = 0,
+        inputTextTokens: Int = 0,
+        outputAudioTokens: Int = 0,
+        outputTextTokens: Int = 0,
+        reports: Int = 0
+    ) {
+        self.inputAudioTokens = inputAudioTokens
+        self.inputTextTokens = inputTextTokens
+        self.outputAudioTokens = outputAudioTokens
+        self.outputTextTokens = outputTextTokens
+        self.reports = reports
+    }
+
+    public static func + (lhs: GeminiLiveUsage, rhs: GeminiLiveUsage) -> GeminiLiveUsage {
+        GeminiLiveUsage(
+            inputAudioTokens: lhs.inputAudioTokens + rhs.inputAudioTokens,
+            inputTextTokens: lhs.inputTextTokens + rhs.inputTextTokens,
+            outputAudioTokens: lhs.outputAudioTokens + rhs.outputAudioTokens,
+            outputTextTokens: lhs.outputTextTokens + rhs.outputTextTokens,
+            reports: lhs.reports + rhs.reports
+        )
+    }
+
+    public var isEmpty: Bool { reports == 0 }
+}
+
 public enum GeminiLiveServerEvent: Equatable, Sendable {
     case setupComplete
     case audio(Data)
@@ -77,6 +113,7 @@ public enum GeminiLiveServerEvent: Equatable, Sendable {
     case toolCallCancellation([String])
     case resumptionHandle(String)
     case goAway(TimeInterval?)
+    case usage(GeminiLiveUsage)
     /// Zdarzenie, którego nie znamy. Zachowujemy jego nazwę, ale nie udajemy,
     /// że je rozumiemy — nie wolno zgadywać znaczenia komunikatów sterujących.
     case unknown(kind: String)
@@ -195,6 +232,8 @@ public enum GeminiLiveCodec {
             case "goAway":
                 let seconds = (value as? [String: Any])?["timeLeft"] as? String
                 events.append(.goAway(Self.duration(from: seconds)))
+            case "usageMetadata":
+                if let usage = usage(from: value) { events.append(.usage(usage)) }
             default:
                 events.append(.unknown(kind: key))
             }
@@ -233,6 +272,35 @@ public enum GeminiLiveCodec {
             events.append(.turnComplete)
         }
         return events
+    }
+
+    /// `promptTokensDetails` / `responseTokensDetails` rozbijają tokeny na
+    /// modalności (AUDIO, TEXT…). Gdy podziału brak, całość liczymy jako tekst.
+    /// Tokeny „myślenia” (`thoughtsTokenCount`) są rozliczane jak wyjście tekstowe.
+    static func usage(from value: Any) -> GeminiLiveUsage? {
+        guard let object = value as? [String: Any] else { return nil }
+        func int(_ any: Any?) -> Int { (any as? NSNumber)?.intValue ?? Int((any as? String) ?? "") ?? 0 }
+        func split(_ details: Any?, total: Int) -> (audio: Int, text: Int) {
+            guard let rows = details as? [[String: Any]], !rows.isEmpty else { return (0, total) }
+            var audio = 0, other = 0
+            for row in rows {
+                let count = int(row["tokenCount"])
+                if (row["modality"] as? String)?.uppercased() == "AUDIO" { audio += count } else { other += count }
+            }
+            return (audio, other)
+        }
+        let input = split(object["promptTokensDetails"], total: int(object["promptTokenCount"]))
+        let output = split(object["responseTokensDetails"], total: int(object["responseTokenCount"]))
+        let thoughts = int(object["thoughtsTokenCount"])
+        let usage = GeminiLiveUsage(
+            inputAudioTokens: input.audio,
+            inputTextTokens: input.text,
+            outputAudioTokens: output.audio,
+            outputTextTokens: output.text + thoughts,
+            reports: 1
+        )
+        let total = usage.inputAudioTokens + usage.inputTextTokens + usage.outputAudioTokens + usage.outputTextTokens
+        return total > 0 ? usage : nil
     }
 
     private static func toolCallEvents(_ value: Any) -> [GeminiLiveServerEvent] {
