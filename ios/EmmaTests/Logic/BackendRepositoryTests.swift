@@ -434,16 +434,42 @@ final class BackendRepositoryTests: XCTestCase {
         }
     }
 
-    /// Kontrakt nie ma `GET /tasks/{id}` ani `GET /events/{id}`, a szczegół
-    /// zadania i terminu (oraz ich edycja) musi działać — rekord znajdujemy na
-    /// liście. Wcześniej oba odczyty rzucały „niedostępne” i na TestFlight
-    /// „Edytuj” zakładało duplikat zamiast zmienić istniejący rekord.
-    func testSingleTaskAndEventAreFoundOnTheirLists() async throws {
+    /// Szczegół i edycja zadania/terminu korzystają z `GET /tasks/{id}` i
+    /// `GET /events/{id}`. Do 0.2.0 oba odczyty rzucały „niedostępne” i na
+    /// TestFlight „Edytuj” zakładało duplikat zamiast zmienić rekord.
+    func testSingleTaskAndEventUseDedicatedRoutes() async throws {
+        let taskItem = #"{"id":"task-3","title":"Przygotować odpowiedź","client_id":"client-12","case_id":null,"due_date":null,"is_done":false,"priority":"urgent","version":2}"#
+        let eventItem = #"{"id":"event-2","client_id":"client-12","case_id":"case-041","title":"Rozprawa","day":"2026-09-15","time":"10:00","all_day":false,"duration_minutes":30,"kind":"consultation","status":"confirmed","place":"Sąd Rejonowy, sala 214","version":1}"#
+        StubURLProtocol.respond { request, _ in
+            switch request.url?.path ?? "" {
+            case let path where path.hasSuffix("/tasks/task-3"): return (200, Data(taskItem.utf8))
+            case let path where path.hasSuffix("/events/event-2"): return (200, Data(eventItem.utf8))
+            default: return (404, Data(#"{"code":"not_found","message":"Nie znaleziono."}"#.utf8))
+            }
+        }
+        let repository = makeRepository()
+
+        let task = try await repository.task(id: TaskID("task-3"))
+        XCTAssertEqual(task?.title, "Przygotować odpowiedź")
+        XCTAssertNil(task?.dueDate)
+        let event = try await repository.event(id: EventID("event-2"))
+        XCTAssertEqual(event?.place, "Sąd Rejonowy, sala 214")
+
+        // 404 z JSON to prawdziwy brak rekordu — bez szukania na listach.
+        let missingTask = try await repository.task(id: TaskID("task-404"))
+        XCTAssertNil(missingTask)
+        let missingEvent = try await repository.event(id: EventID("event-404"))
+        XCTAssertNil(missingEvent)
+    }
+
+    /// Starszy backend nie ma tras pojedynczego rekordu (404 ze stroną HTML).
+    /// Wtedy aplikacja szuka rekordu na listach, zamiast pokazywać błąd.
+    func testSingleTaskAndEventFallBackToListsOnOlderBackend() async throws {
         StubURLProtocol.respond { request, _ in
             let path = request.url?.path ?? ""
             if path.hasSuffix("/tasks") { return (200, Data(Self.tasksJSON.utf8)) }
             if path.hasSuffix("/events") { return (200, Data(Self.eventsJSON.utf8)) }
-            return (404, Data())
+            return (404, Data("<!DOCTYPE html><html>404</html>".utf8))
         }
         let repository = makeRepository()
 
@@ -451,33 +477,55 @@ final class BackendRepositoryTests: XCTestCase {
         XCTAssertEqual(task?.title, "Przygotować odpowiedź")
         let event = try await repository.event(id: EventID("event-2"))
         XCTAssertEqual(event?.place, "Sąd Rejonowy, sala 214")
-
-        // Brak na żadnej liście to poprawne „nie ma”, a nie awaria.
         let missingTask = try await repository.task(id: TaskID("task-404"))
         XCTAssertNil(missingTask)
-        let missingEvent = try await repository.event(id: EventID("event-404"))
-        XCTAssertNil(missingEvent)
     }
 
-    /// `PATCH /events` nie zmienia nazwy ani miejsca. Zmiana tych pól musi
-    /// skończyć się jasnym komunikatem, a nie cichym „zapisano” bez zmiany.
-    func testEventTitleChangeIsRefusedInsteadOfSilentlyDropped() async throws {
-        StubURLProtocol.respond { request, _ in
-            let path = request.url?.path ?? ""
-            if request.httpMethod == "GET", path.hasSuffix("/events") { return (200, Data(Self.eventsJSON.utf8)) }
-            return (500, Data())
+    /// Starszy backend pomijał nazwę i miejsce w `PATCH /events`. Rozjazd
+    /// w odpowiedzi kończy się jasnym komunikatem, a nie cichym „zapisano”.
+    func testEventChangeIgnoredByOlderBackendIsReported() async throws {
+        let unchanged = #"{"id":"event-2","client_id":"client-12","case_id":"case-041","title":"Rozprawa","day":"2026-09-15","time":"10:00","all_day":false,"duration_minutes":30,"kind":"consultation","status":"confirmed","place":"Sąd Rejonowy, sala 214","version":2}"#
+        StubURLProtocol.respond { request, body in
+            if request.httpMethod == "PATCH" {
+                // Nowe pola lecą w żądaniu — nowy backend je zapisze.
+                let json = (body.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
+                XCTAssertEqual(json["place"] as? String, "Online")
+                XCTAssertEqual(json["title"] as? String, "Rozprawa")
+                return (200, Data(unchanged.utf8))
+            }
+            return (404, Data())
         }
         let repository = makeRepository()
-        guard var event = try await repository.event(id: EventID("event-2")) else {
-            return XCTFail("Brak terminu w fiksturze")
-        }
+        var event = ScheduledEvent(
+            id: EventID("event-2"), clientID: ClientID("client-12"), caseID: CaseID("case-041"),
+            title: "Rozprawa", day: LocalDate(year: 2026, month: 9, day: 15), time: TimeOfDay(hhmm: "10:00")!,
+            durationMinutes: 30, kind: .consultation, status: .confirmed, place: "Sąd Rejonowy, sala 214",
+            isAllDay: false, version: Version(1)
+        )
         event.place = "Online"
         do {
             _ = try await repository.updateEvent(event, expectedVersion: event.version)
-            XCTFail("Oczekiwano odmowy zmiany miejsca")
+            XCTFail("Oczekiwano komunikatu o pominiętej zmianie miejsca")
         } catch BackendRepositoryError.notAvailableInBackend(let operation) {
             XCTAssertTrue(operation.contains("miejsca"), operation)
         }
+    }
+
+    func testCreateCaseSendsClientTitleAndSummary() async throws {
+        let caseJSON = #"{"id":"case-77","number":"KR/2026/077","title":"Sprawa rozwodowa","client_id":"client-12","status":"in_progress","summary":"","created_at":"2026-09-23","version":1}"#
+        StubURLProtocol.respond { request, body in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertTrue(request.url?.path.hasSuffix("/cases") ?? false)
+            let json = (body.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
+            XCTAssertEqual(json["client_id"] as? String, "lead-7")
+            XCTAssertEqual(json["summary"] as? String, "Pozew i alimenty")
+            return (201, Data(caseJSON.utf8))
+        }
+        let created = try await makeRepository().createCase(
+            NewCaseDraft(clientID: ClientID("lead-7"), title: "Sprawa rozwodowa", summary: "Pozew i alimenty", createdAt: LocalDate(year: 2026, month: 9, day: 23))
+        )
+        XCTAssertEqual(created.id, CaseID("case-77"))
+        XCTAssertEqual(created.status, .inProgress)
     }
 
     func testBackendErrorMessageReachesTheScreen() {

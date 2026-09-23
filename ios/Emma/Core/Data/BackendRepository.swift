@@ -281,30 +281,55 @@ public struct BackendRepository: EmmaRepository, Sendable {
         }
     }
 
+    /// `POST /cases`. Zakres sprawy backend zapisuje jako notatkę sprawy
+    /// (panel nie ma takiego pola); zgłoszenie jest przy tym konwertowane.
     public func createCase(_ draft: NewCaseDraft) async throws -> LegalCase {
-        throw notAvailable("rozpoczęcie sprawy (POST /cases)")
+        let dto = try await api.createCase(
+            BackendCaseCreateBody(clientID: draft.clientID.rawValue, title: draft.title, summary: draft.summary),
+            idempotencyKey: Self.newIdempotencyKey()
+        )
+        return try Self.mapLegalCase(dto)
     }
 
+    /// `PATCH /cases/{id}` — nazwa i status. Zakresu backend nie prowadzi,
+    /// więc go nie wysyłamy (formularz poza Demo go nie pokazuje).
     public func updateCase(_ legalCase: LegalCase, expectedVersion: Version) async throws -> LegalCase {
-        throw notAvailable("zmiana sprawy (PATCH /cases/{case_id})")
+        do {
+            let dto = try await api.updateCase(
+                id: legalCase.id.rawValue,
+                body: BackendCaseUpdateBody(
+                    expectedVersion: expectedVersion.value,
+                    title: legalCase.title,
+                    status: BackendAPIClient.caseStatusToken(legalCase.status)
+                ),
+                idempotencyKey: Self.newIdempotencyKey()
+            )
+            return try Self.mapLegalCase(dto)
+        } catch let error as BackendRepositoryError {
+            throw Self.writeError(error, expectedVersion: expectedVersion)
+        }
     }
 
     // MARK: TaskRepository
 
-    /// Kontrakt nie ma trasy pojedynczego zadania (`GET /tasks/{id}`), więc
-    /// szukamy go na liście: najpierw wśród otwartych (stamtąd otwiera się
-    /// prawie każdy szczegół), potem wśród wszystkich.
+    /// `GET /tasks/{id}`. Starszy backend tej trasy nie ma (404 bez JSON) —
+    /// wtedy szukamy zadania na liście: najpierw otwartych, potem wszystkich.
     ///
-    /// Wcześniej ta metoda rzucała „niedostępne”: na TestFlight szczegół zadania
-    /// kończył się błędem, a „Edytuj” otwierało pusty formularz, którego zapis
-    /// zakładał **nowe** zadanie zamiast zmienić istniejące.
+    /// Do 0.2.0 ta metoda rzucała „niedostępne”: na TestFlight szczegół zadania
+    /// kończył się błędem, a „Edytuj” zakładało duplikat zamiast zmienić zadanie.
     public func task(id: TaskID) async throws -> TaskItem? {
-        for scope in [TaskFilter.Scope.open, .all] {
-            if let match = try await tasks(filter: TaskFilter(scope: scope)).first(where: { $0.id == id }) {
-                return match
+        do {
+            return try Self.mapTask(try await api.task(id: id))
+        } catch BackendRepositoryError.notFound {
+            return nil
+        } catch BackendRepositoryError.notAvailableInBackend {
+            for scope in [TaskFilter.Scope.open, .all] {
+                if let match = try await tasks(filter: TaskFilter(scope: scope)).first(where: { $0.id == id }) {
+                    return match
+                }
             }
+            return nil
         }
-        return nil
     }
 
     public func tasks(filter: TaskFilter) async throws -> [TaskItem] {
@@ -327,22 +352,24 @@ public struct BackendRepository: EmmaRepository, Sendable {
     }
 
     public func updateTask(_ task: TaskItem, expectedVersion: Version) async throws -> TaskItem {
-        // `PATCH /tasks` nie przenosi zadania do innego klienta — bez tej
-        // kontroli zmiana klienta w formularzu przepadała po cichu.
-        if let current = try await self.task(id: task.id), current.clientID != task.clientID {
-            throw notAvailable("przeniesienie zadania do innego klienta — zmień to w panelu kancelarii")
-        }
-        return try await patchTask(
+        let saved = try await patchTask(
             id: task.id,
             body: BackendTaskUpdateBody(
                 expectedVersion: expectedVersion.value,
                 title: task.title,
                 dueDate: task.dueDate?.isoString,
                 priority: Self.priorityToken(task.priority),
-                isDone: task.isDone
+                isDone: task.isDone,
+                clientID: .some(task.clientID?.rawValue)
             ),
             expectedVersion: expectedVersion
         )
+        // Starszy backend nie przyjmuje `client_id` i po cichu go pomija —
+        // wtedy mówimy wprost, zamiast pokazać „zapisano” bez tej zmiany.
+        if saved.clientID != task.clientID {
+            throw notAvailable("przeniesienie zadania do innego klienta — pozostałe zmiany zapisano; klienta zmień w panelu")
+        }
+        return saved
     }
 
     public func setDone(taskID: TaskID, isDone: Bool, expectedVersion: Version) async throws -> TaskItem {
@@ -388,26 +415,28 @@ public struct BackendRepository: EmmaRepository, Sendable {
         return try rows.compactMap(Self.mapEvent).filter { $0.clientID == clientID }
     }
 
-    /// Kontrakt nie ma trasy pojedynczego terminu, a `GET /events` wymaga
-    /// zakresu dat i oddaje najwyżej 200 pozycji od najstarszej. Szukamy więc
-    /// w oknach: najpierw wokół dziś (stamtąd otwiera się prawie każdy
-    /// szczegół), potem dalsza przeszłość i dalsza przyszłość.
-    ///
-    /// Wcześniej ta metoda rzucała „niedostępne”: na TestFlight „Szczegóły”
-    /// terminu kończyły się błędem, a „Edytuj termin” zapisywało **nowy** termin.
+    /// `GET /events/{id}`. Starszy backend tej trasy nie ma — wtedy szukamy
+    /// terminu w oknach dat (lista oddaje najwyżej 200 pozycji od najstarszej):
+    /// najpierw wokół dziś, potem dalsza przeszłość i dalsza przyszłość.
     public func event(id: EventID) async throws -> ScheduledEvent? {
-        let today = Self.todayInFirmTimeZone()
-        let windows = [
-            DateIntervalFilter(from: today.adding(days: -14), through: today.adding(days: 120)),
-            DateIntervalFilter(from: today.adding(days: -400), through: today.adding(days: -15)),
-            DateIntervalFilter(from: today.adding(days: 121), through: today.adding(days: 1_100))
-        ]
-        for window in windows {
-            if let match = try await events(in: window).first(where: { $0.id == id }) {
-                return match
+        do {
+            return try Self.mapEvent(try await api.event(id: id))
+        } catch BackendRepositoryError.notFound {
+            return nil
+        } catch BackendRepositoryError.notAvailableInBackend {
+            let today = Self.todayInFirmTimeZone()
+            let windows = [
+                DateIntervalFilter(from: today.adding(days: -14), through: today.adding(days: 120)),
+                DateIntervalFilter(from: today.adding(days: -400), through: today.adding(days: -15)),
+                DateIntervalFilter(from: today.adding(days: 121), through: today.adding(days: 1_100))
+            ]
+            for window in windows {
+                if let match = try await events(in: window).first(where: { $0.id == id }) {
+                    return match
+                }
             }
+            return nil
         }
-        return nil
     }
 
     /// Dzień bieżący w strefie kancelarii. Repozytorium backendu działa tylko
@@ -436,25 +465,29 @@ public struct BackendRepository: EmmaRepository, Sendable {
     /// Trasa `PATCH /events` zmienia stan, dzień, godzinę i długość. Tytułu
     /// i miejsca nie zmienia — gdy tylko to się różni, mówimy to wprost.
     public func updateEvent(_ event: ScheduledEvent, expectedVersion: Version) async throws -> ScheduledEvent {
-        // Bez tej kontroli zmiana nazwy albo miejsca w formularzu „znikała”:
-        // backend zapisywał resztę, a użytkownik widział „zapisano”.
-        if let current = try await self.event(id: event.id),
-           current.title != event.title || current.place != event.place || current.kind != event.kind {
-            throw notAvailable("zmiana nazwy, rodzaju i miejsca terminu — zmień je w panelu kancelarii")
-        }
         let body = BackendEventUpdateBody(
             expectedVersion: expectedVersion.value,
             status: Self.eventStatusToken(event.status),
             durationMinutes: event.durationMinutes,
             day: event.day.isoString,
-            time: event.isAllDay ? nil : event.time.hhmm
+            time: event.isAllDay ? nil : event.time.hhmm,
+            title: event.title,
+            place: event.place,
+            kind: Self.eventKindToken(event.kind)
         )
+        let saved: ScheduledEvent
         do {
             let dto = try await api.updateEvent(id: event.id.rawValue, body: body, idempotencyKey: Self.newIdempotencyKey())
-            return try Self.requireEvent(dto)
+            saved = try Self.requireEvent(dto)
         } catch let error as BackendRepositoryError {
             throw Self.writeError(error, expectedVersion: expectedVersion)
         }
+        // Starszy backend przyjmował tylko stan, dzień, godzinę i długość, a resztę
+        // pomijał po cichu. Rozjazd w odpowiedzi to sygnał, że zmiana nie weszła.
+        if saved.title != event.title || saved.place != event.place || saved.kind != event.kind {
+            throw notAvailable("zmiana nazwy, rodzaju i miejsca terminu — termin zapisano bez nich; zmień je w panelu")
+        }
+        return saved
     }
 
     public func deleteEvent(id: EventID, expectedVersion: Version) async throws {

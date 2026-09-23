@@ -58,16 +58,26 @@ struct CaseSettingsSheet: View {
                 .disabled(isSaving)
             }
 
-            LabeledField(
-                "Zakres sprawy",
-                help: "Status sprawy nie usuwa zaplanowanych terminów ani zadań."
-            ) {
-                TextEditor(text: $summary)
-                    .scrollContentBackground(.hidden)
-                    .emmaFieldStyle()
-                    .font(EmmaTypography.body(for: summary, size: 16))
-                    .frame(minHeight: 110)
-                    .accessibilityLabel("Zakres sprawy")
+            // Panel kancelarii nie prowadzi pola „zakres sprawy” (ustalenia są
+            // w notatkach), więc poza Demo formularz o nie nie pyta.
+            if tracksSummary {
+                LabeledField(
+                    "Zakres sprawy",
+                    help: "Status sprawy nie usuwa zaplanowanych terminów ani zadań."
+                ) {
+                    TextEditor(text: $summary)
+                        .scrollContentBackground(.hidden)
+                        .emmaFieldStyle()
+                        .font(EmmaTypography.body(for: summary, size: 16))
+                        .frame(minHeight: 110)
+                        .accessibilityLabel("Zakres sprawy")
+                }
+            } else {
+                Text("Status sprawy nie usuwa zaplanowanych terminów ani zadań. Ustalenia dopisuj jako notatki sprawy.")
+                    .font(EmmaTypography.caption())
+                    .foregroundStyle(EmmaTheme.mutedSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, 14)
             }
 
             if let errorMessage {
@@ -79,6 +89,9 @@ struct CaseSettingsSheet: View {
             }
         }
     }
+
+    /// Zakres sprawy istnieje tylko w danych demo.
+    private var tracksSummary: Bool { dependencies.configuration.usesMockServices }
 
     // MARK: Wczytanie i zapis
 
@@ -105,8 +118,8 @@ struct CaseSettingsSheet: View {
         guard !isSaving else { return }
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedTitle.isEmpty, !trimmedSummary.isEmpty else {
-            errorMessage = "Nazwa i zakres nie mogą być puste."
+        guard !trimmedTitle.isEmpty, !tracksSummary || !trimmedSummary.isEmpty else {
+            errorMessage = tracksSummary ? "Nazwa i zakres nie mogą być puste." : "Nazwa sprawy nie może być pusta."
             return
         }
         errorMessage = nil

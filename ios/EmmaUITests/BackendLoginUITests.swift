@@ -342,6 +342,70 @@ final class BackendLoginUITests: XCTestCase {
         attachScreenshot("AUDYT-05-przyszly-termin-w-karcie")
     }
 
+    /// Zapisy, które do 0.2.0 zawsze kończyły się błędem albo ginęły po cichu:
+    /// zmiana miejsca terminu i rozpoczęcie sprawy z karty zgłoszenia. Wymaga
+    /// backendu z trasami z audytu 23.09.2026 i zgody na zapis.
+    /// `EMMA_UI_EXPECT_CASE_LEAD` — zgłoszenie bez sprawy w bazie.
+    func testRealEventPlaceEditAndCaseStartSave() throws {
+        let environment = ProcessInfo.processInfo.environment
+        try XCTSkipIf(backendURL == nil, "Brak EMMA_UI_BACKEND_URL — test integracyjny pominięty")
+        try XCTSkipUnless(environment["EMMA_UI_ALLOW_WRITES"] == "1", "Zapis do backendu tylko za zgodą EMMA_UI_ALLOW_WRITES=1")
+        let caseLead = try XCTUnwrap(environment["EMMA_UI_EXPECT_CASE_LEAD"], "Brak EMMA_UI_EXPECT_CASE_LEAD")
+
+        try launchAgainstBackend()
+        typeCredentials(totp: TOTP.code(secret: totpSecret))
+        dismissPasswordSavePromptIfPresent()
+        XCTAssertTrue(application.buttons["tab.today"].waitForExistence(timeout: 30), "Brak powłoki po zalogowaniu")
+
+        // Miejsce terminu: edycja → zapis → szczegół pokazuje nowe miejsce.
+        let details = application.buttons["Szczegóły"]
+        XCTAssertTrue(details.waitForExistence(timeout: 20), "Brak najbliższego terminu")
+        details.tap()
+        let edit = application.buttons["Edytuj termin"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 20), "Szczegół terminu się nie wczytał")
+        edit.tap()
+        let place = application.textFields["Miejsce"]
+        XCTAssertTrue(place.waitForExistence(timeout: 15), "Brak pola miejsca")
+        let loaded = expectation(for: NSPredicate(format: "value != %@ AND value != ''", "Online albo adres"), evaluatedWith: place)
+        wait(for: [loaded], timeout: 15)
+        place.tap()
+        let current = (place.value as? String) ?? ""
+        place.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 2))
+        place.typeText("Sala E2E")
+        application.staticTexts["Edytuj termin"].tap()
+        let save = application.buttons["Zapisz termin"]
+        for _ in 0..<4 where !save.isHittable { application.swipeUp() }
+        save.tap()
+        XCTAssertTrue(
+            application.staticTexts["Sala E2E"].waitForExistence(timeout: 20),
+            "Nowe miejsce terminu nie wróciło z backendu"
+        )
+        // Zapis zamyka arkusz; nowe miejsce widać na karcie najbliższego terminu.
+        attachScreenshot("AUDYT-06-miejsce-terminu-zapisane")
+
+        // Sprawa z karty zgłoszenia.
+        application.buttons["tab.clients"].tap()
+        let search = application.textFields["Szukaj osoby lub tematu"]
+        XCTAssertTrue(search.waitForExistence(timeout: 20))
+        search.tap()
+        search.typeText(caseLead + "\n")
+        let lead = application.buttons.matching(NSPredicate(format: "label CONTAINS %@", caseLead)).firstMatch
+        XCTAssertTrue(lead.waitForExistence(timeout: 20), "Brak zgłoszenia \(caseLead)")
+        lead.tap()
+        let start = application.buttons["Rozpocznij prowadzenie sprawy"]
+        for _ in 0..<4 where !(start.exists && start.isHittable) { application.swipeUp() }
+        XCTAssertTrue(start.waitForExistence(timeout: 15), "Brak przycisku rozpoczęcia sprawy")
+        start.tap()
+        let create = application.buttons["Utwórz sprawę"]
+        XCTAssertTrue(create.waitForExistence(timeout: 20), "Formularz sprawy się nie otworzył")
+        create.tap()
+        XCTAssertTrue(
+            application.staticTexts["Prowadzona sprawa"].waitForExistence(timeout: 20),
+            "Po zapisie nie otworzyła się sprawa z backendu"
+        )
+        attachScreenshot("AUDYT-07-sprawa-z-leada")
+    }
+
     func testWrongPasswordShowsServerMessageAndStaysOnLogin() throws {
         try XCTSkipIf(backendURL == nil, "Brak EMMA_UI_BACKEND_URL — test integracyjny pominięty")
         try launchAgainstBackend()

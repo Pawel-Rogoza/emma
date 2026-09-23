@@ -127,15 +127,11 @@ struct CaseScreen: View {
             title: "Prowadzona sprawa",
             onBack: { dependencies.back() }
         ) {
-            // Zmiana sprawy (`PATCH /cases`) istnieje tylko w Demo — w backendzie
-            // zapis zawsze kończył się błędem, więc przycisku tam nie pokazujemy.
-            if dependencies.configuration.usesMockServices {
-                IconButton(
-                    systemName: "ellipsis",
-                    accessibilityLabel: "Zmień status i opiekuna sprawy"
-                ) {
-                    dependencies.present(.caseSettings(model.legalCase.id))
-                }
+            IconButton(
+                systemName: "ellipsis",
+                accessibilityLabel: "Zmień status i opiekuna sprawy"
+            ) {
+                dependencies.present(.caseSettings(model.legalCase.id))
             }
         }
 

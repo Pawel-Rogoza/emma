@@ -243,6 +243,26 @@ public struct BackendAPIClient: Sendable {
         try await get("\(Endpoint.cases.rawValue)/\(id.rawValue)", query: [])
     }
 
+    /// `GET /api/mobile/v1/tasks/{task_id}`.
+    func task(id: TaskID) async throws -> BackendTaskDTO {
+        try await get("\(Endpoint.tasks.rawValue)/\(id.rawValue)", query: [])
+    }
+
+    /// `GET /api/mobile/v1/events/{event_id}`.
+    func event(id: EventID) async throws -> BackendEventDTO {
+        try await get("\(Endpoint.events.rawValue)/\(id.rawValue)", query: [])
+    }
+
+    /// `POST /api/mobile/v1/cases` — 201 nowa sprawa albo 200 istniejąca.
+    func createCase(_ body: BackendCaseCreateBody, idempotencyKey: String) async throws -> BackendLegalCaseDTO {
+        try await send("POST", path: Endpoint.cases.rawValue, body: body, idempotencyKey: idempotencyKey)
+    }
+
+    /// `PATCH /api/mobile/v1/cases/{case_id}` — nazwa i status.
+    func updateCase(id: String, body: BackendCaseUpdateBody, idempotencyKey: String) async throws -> BackendLegalCaseDTO {
+        try await send("PATCH", path: "\(Endpoint.cases.rawValue)/\(id)", body: body, idempotencyKey: idempotencyKey)
+    }
+
     /// `GET /api/mobile/v1/cases?status=&client_id=&limit=` — lista spraw.
     func cases(status: CaseStatus?, clientID: ClientID? = nil) async throws -> [BackendLegalCaseDTO] {
         var items: [URLQueryItem] = []
@@ -316,8 +336,8 @@ public struct BackendAPIClient: Sendable {
         try await send("POST", path: Endpoint.events.rawValue, body: body, idempotencyKey: idempotencyKey)
     }
 
-    /// `PATCH /api/mobile/v1/events/{event_id}` — backend zmienia stan, dzień,
-    /// godzinę i długość; tytułu ani miejsca ta trasa nie przyjmuje.
+    /// `PATCH /api/mobile/v1/events/{event_id}` — stan, dzień, godzina, długość,
+    /// a od audytu 23.09.2026 także nazwa, miejsce i rodzaj.
     func updateEvent(id: String, body: BackendEventUpdateBody, idempotencyKey: String) async throws -> BackendEventDTO {
         try await send("PATCH", path: "\(Endpoint.events.rawValue)/\(id)", body: body, idempotencyKey: idempotencyKey)
     }
@@ -682,6 +702,13 @@ public struct BackendAPIClient: Sendable {
         case 403:
             return .forbidden(message)
         case 404:
+            // Brak rekordu backend zgłasza w JSON (`not_found`). 404 bez takiego
+            // ciała (strona HTML) znaczy, że serwer nie ma jeszcze tej trasy —
+            // to inna sytuacja niż „nie ma rekordu” i aplikacja może wtedy
+            // skorzystać z dawnej drogi (np. szukania rekordu na liście).
+            if message == nil, let first = data.first(where: { !($0 == 32 || $0 == 10 || $0 == 13 || $0 == 9) }), first == UInt8(ascii: "<") {
+                return .notAvailableInBackend("ta funkcja na serwerze kancelarii (zaktualizuj backend)")
+            }
             return .notFound
         case 409:
             // Konflikt wersji: kontrakt dokłada `current_version`, żeby aplikacja
@@ -932,12 +959,27 @@ struct BackendTaskUpdateBody: Encodable {
     var dueDate: String?
     var priority: String?
     var isDone: Bool?
+    /// Zmiana klienta: `nil` — bez zmiany, `.some(nil)` — odpięcie (`null`).
+    var clientID: String?? = nil
 
     enum CodingKeys: String, CodingKey {
         case title, priority
         case expectedVersion = "expected_version"
         case dueDate = "due_date"
         case isDone = "is_done"
+        case clientID = "client_id"
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(expectedVersion, forKey: .expectedVersion)
+        try container.encodeIfPresent(title, forKey: .title)
+        try container.encodeIfPresent(dueDate, forKey: .dueDate)
+        try container.encodeIfPresent(priority, forKey: .priority)
+        try container.encodeIfPresent(isDone, forKey: .isDone)
+        if let clientID {
+            try container.encode(clientID, forKey: .clientID)
+        }
     }
 }
 
@@ -965,11 +1007,36 @@ struct BackendEventUpdateBody: Encodable {
     var durationMinutes: Int?
     var day: String?
     var time: String?
+    var title: String?
+    var place: String?
+    var kind: String?
 
     enum CodingKeys: String, CodingKey {
-        case status, day, time
+        case status, day, time, title, place, kind
         case expectedVersion = "expected_version"
         case durationMinutes = "duration_minutes"
+    }
+}
+
+struct BackendCaseCreateBody: Encodable {
+    let clientID: String
+    let title: String
+    let summary: String
+
+    enum CodingKeys: String, CodingKey {
+        case title, summary
+        case clientID = "client_id"
+    }
+}
+
+struct BackendCaseUpdateBody: Encodable {
+    let expectedVersion: Int
+    let title: String?
+    let status: String?
+
+    enum CodingKeys: String, CodingKey {
+        case title, status
+        case expectedVersion = "expected_version"
     }
 }
 

@@ -301,6 +301,35 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/CaseDetail" }
         "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Zapis]
+      summary: Zmiana nazwy i statusu sprawy
+      description: |
+        Status zapisuje się tylko przy prawdziwej zmianie (sprawa „wygrana” nie
+        staje się zwykłą „zamkniętą”). Panel nie prowadzi pola „zakres sprawy”
+        — niepusty `summary` to 422 (ustalenia są w notatkach sprawy).
+      parameters:
+        - $ref: "#/components/parameters/CaseID"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version]
+              properties:
+                expected_version: { $ref: "#/components/schemas/Version" }
+                title: { type: string, minLength: 3 }
+                status: { type: string, enum: [in_progress, awaiting_client, closed] }
+      responses:
+        "200":
+          description: Sprawa po zmianie
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LegalCase" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
 
   /tasks:
     get:
@@ -364,6 +393,16 @@ paths:
           in: query
           required: true
           schema: { $ref: "#/components/schemas/LocalDate" }
+        - name: client_id
+          in: query
+          schema: { type: string }
+        - name: case_id
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          description: Domyślnie 200, najwyżej 500 — od najstarszego terminu w zakresie.
+          schema: { type: integer, minimum: 1, maximum: 500, default: 200 }
       responses:
         "200":
           description: Terminy
@@ -579,6 +618,21 @@ paths:
               schema: { $ref: "#/components/schemas/LegalCase" }
 
   /tasks/{task_id}:
+    get:
+      tags: [Odczyt]
+      summary: Jedno zadanie (szczegół i edycja)
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Zadanie
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "404": { $ref: "#/components/responses/NotFound" }
     patch:
       tags: [Zapis]
       summary: Zmiana zadania (w tym odhaczenie)
@@ -601,6 +655,9 @@ paths:
                 is_done: { type: boolean }
                 priority: { type: string, enum: [normal, urgent] }
                 due_date: { $ref: "#/components/schemas/LocalDate" }
+                client_id:
+                  type: [string, "null"]
+                  description: Przeniesienie zadania do innego klienta; `null` odpina.
       responses:
         "200":
           description: Zadanie po zmianie
@@ -610,6 +667,21 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
 
   /events/{event_id}:
+    get:
+      tags: [Odczyt]
+      summary: Jeden termin (szczegół i edycja)
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Termin
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScheduledEvent" }
+        "404": { $ref: "#/components/responses/NotFound" }
     delete:
       tags: [Zapis]
       summary: Usunięcie terminu
@@ -658,6 +730,12 @@ paths:
                 time: { $ref: "#/components/schemas/TimeOfDay" }
                 duration_minutes: { type: integer }
                 status: { type: string, enum: [to_confirm, confirmed, finished] }
+                title: { type: string, minLength: 3 }
+                place: { type: string }
+                kind:
+                  type: string
+                  enum: [consultation, case_deadline]
+                  description: Zapisywany tylko przy prawdziwej zmianie — rozprawa nie staje się spotkaniem.
       responses:
         "200":
           description: Termin po zmianie
@@ -1155,11 +1233,15 @@ components:
 
     NewCase:
       type: object
-      required: [client_id, title, summary]
+      required: [client_id, title]
       properties:
-        client_id: { type: string }
+        client_id:
+          type: string
+          description: "`client-N` albo `lead-N` (zgłoszenie jest wtedy konwertowane w kartotekę)."
         title: { type: string, minLength: 3 }
-        summary: { type: string, minLength: 3 }
+        summary:
+          type: string
+          description: Zakres sprawy — backend zapisuje go jako notatkę sprawy.
 
     NewTask:
       type: object
