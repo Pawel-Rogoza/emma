@@ -109,6 +109,16 @@ public enum EmmaPlural {
     public static func unread(_ count: Int) -> String {
         label(count, "nieprzeczytana wiadomość", "nieprzeczytane wiadomości", "nieprzeczytanych wiadomości")
     }
+
+    /// „1 dzień”, „2 dni”, „5 dni” — wiek zgłoszenia.
+    public static func days(_ count: Int) -> String {
+        label(count, "dzień", "dni", "dni")
+    }
+
+    /// „1 zgłoszenie”, „3 zgłoszenia”, „5 zgłoszeń”.
+    public static func leads(_ count: Int) -> String {
+        label(count, "zgłoszenie", "zgłoszenia", "zgłoszeń")
+    }
 }
 
 /// Tekst daty w interfejsie. W demo „Dzisiaj”/„Jutro” liczone względem zegara,

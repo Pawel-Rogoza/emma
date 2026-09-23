@@ -106,6 +106,7 @@ struct CaseScreen: View {
         .scrollIndicators(.hidden)
         .navigationBarBackButtonHidden(true)
         .emmaPreservesSwipeBack()
+        .refreshable { await store.load(dependencies, caseID: caseID) }
         .task(id: dependencies.dataVersion) { await store.load(dependencies, caseID: caseID) }
     }
 

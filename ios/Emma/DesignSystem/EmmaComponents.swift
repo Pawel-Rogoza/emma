@@ -25,6 +25,7 @@ public struct SurfaceCard<Content: View>: View {
                 RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
                     .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
             }
+            .emmaCardShadow()
     }
 }
 
@@ -770,24 +771,73 @@ public struct InlineError: View {
     }
 }
 
-/// Krótkie potwierdzenie operacji (`#toast`).
+/// Krótkie potwierdzenie operacji (`#toast`), opcjonalnie z akcją („Cofnij”).
+///
+/// Akcja jest po to, żeby szybka czynność — obsłużenie leada, odhaczenie —
+/// nie wymagała potwierdzenia przed, tylko dawała się odwrócić po.
 public struct TraceToast: View {
     private let message: String
+    private let actionTitle: String?
+    private let action: (() -> Void)?
 
-    public init(_ message: String) {
+    public init(_ message: String, actionTitle: String? = nil, action: (() -> Void)? = nil) {
         self.message = message
+        self.actionTitle = actionTitle
+        self.action = action
     }
 
     public var body: some View {
-        Text(message)
-            .font(EmmaTypography.caption())
+        HStack(spacing: 12) {
+            Text(message)
+                .font(EmmaTypography.caption(.medium))
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityAddTraits(.isStaticText)
+            if let actionTitle, let action {
+                Button(action: action) {
+                    Text(actionTitle)
+                        .font(EmmaTypography.caption(.semibold))
+                        .foregroundStyle(EmmaTheme.toastBackground)
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 32)
+                        .background(Color.white, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .frame(minHeight: EmmaSpacing.hitTarget)
+            }
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, actionTitle == nil ? 16 : 8)
+        .padding(.vertical, actionTitle == nil ? 13 : 2)
+        .background(EmmaTheme.toastBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .shadow(color: Color.black.opacity(0.18), radius: 12, y: 6)
+    }
+}
+
+/// Licznik na zakładce albo przy nagłówku sekcji (np. leady do obsługi).
+///
+/// `UnreadBadge` mówi VoiceOver „nieprzeczytane wiadomości”, więc dla innych
+/// liczników jest osobny element z własnym opisem.
+public struct CountBadge: View {
+    private let count: Int
+    private let accessibilityText: String
+
+    public init(count: Int, accessibilityText: String) {
+        self.count = count
+        self.accessibilityText = accessibilityText
+    }
+
+    public var body: some View {
+        Text("\(count)")
+            .font(EmmaTypography.ui(12, .semibold))
             .foregroundStyle(.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 13)
-            .background(EmmaTheme.toastBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-            .shadow(color: Color.black.opacity(0.18), radius: 12, y: 6)
-            .accessibilityAddTraits(.isStaticText)
+            .padding(.horizontal, 6)
+            .frame(minWidth: EmmaMetrics.tabBadgeMinWidth, minHeight: EmmaMetrics.tabBadgeHeight)
+            .background(EmmaTheme.unreadBadge, in: Capsule())
+            .accessibilityLabel(accessibilityText)
     }
 }
 

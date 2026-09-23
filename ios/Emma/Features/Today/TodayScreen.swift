@@ -6,14 +6,18 @@ import SwiftUI
 // większość górnej części ekranu, więc zadania nie mieściły się w pierwszym
 // widoku nawet na dużym telefonie. Kolejność jest teraz taka jak w §4 audytu:
 //
-//   1. nagłówek dnia z wejściem do profilu,
-//   2. **kompaktowa** karta Emmy (mały portret, „Porozmawiaj z Emmą”, „Napisz”),
+//   1. nagłówek dnia (powitanie według pory), portret Emmy i wejście do profilu,
+//   2. leady do obsługi — najpierw czekające, potem nowe, z odhaczeniem w wierszu,
 //   3. najbliższy termin z akcją „Przygotuj mnie” i linkami do klienta i sprawy,
 //   4. zadania z liczbą otwartych i zaległych oraz wejściem „Wszystkie zadania”,
 //   5. dopiero dalej pozostałe terminy dnia, a minione w zwijanej sekcji.
 //
-// Pełna scena Emmy z orblem `.stage` została w zakładce „Emma”, gdzie jest na nią
-// miejsce. Odstępstwo od referencji `home()` opisuje DESIGN_DEVIATIONS.md (D-15, D-24).
+// Review 23.09.2026: leady do obsługi trafiły na ekran główny. Żeby najbliższy
+// termin i wejście do zadań nadal mieściły się w pierwszym widoku (F08),
+// kompaktowa karta Emmy (~110 pt) zamieniła się w portret w nagłówku: dotknięcie
+// zaczyna rozmowę głosową, przytrzymanie daje „Napisz do Emmy”. Pełna scena Emmy
+// została w zakładce „Emma”. Odstępstwa od referencji `home()` opisuje
+// DESIGN_DEVIATIONS.md (D-15, D-24, D-31).
 
 @MainActor
 final class TodayStore: ObservableObject {
@@ -24,6 +28,8 @@ final class TodayStore: ObservableObject {
         var tasks: [TaskItem]
         var clientNames: [ClientID: String]
         var caseNumbers: [CaseID: String]
+        /// Wszystkie kontakty — z nich liczona jest kolejka leadów do obsługi.
+        var clients: [Client]
     }
 
     @Published private(set) var phase: LoadPhase<Model> = .idle
@@ -46,8 +52,7 @@ final class TodayStore: ObservableObject {
             let events = try await eventsTask
             let tasks = try await tasksTask
 
-            phase = .loaded(
-                Model(
+            let model = Model(
                     today: today,
                     events: events.sorted { $0.time < $1.time },
                     tasks: tasks.sorted { $0.dueDate < $1.dueDate },
@@ -60,9 +65,16 @@ final class TodayStore: ObservableObject {
                     caseNumbers: Dictionary(
                         cases.map { ($0.id, $0.number) },
                         uniquingKeysWith: { first, _ in first }
-                    )
+                    ),
+                    clients: clients
                 )
-            )
+            // Odświeżenie po zapisie (np. obsłużony lead) jest animowane.
+            if phase.hasLoaded {
+                withAnimation(.easeInOut(duration: 0.28)) { phase = .loaded(model) }
+            } else {
+                phase = .loaded(model)
+            }
+            dependencies.leadsNeedingAction = clients.filter { $0.stage == .new }.count
         } catch {
             phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać dnia."))
         }
@@ -73,8 +85,9 @@ struct TodayScreen: View {
 
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.emmaLayout) private var layout: EmmaLayoutMetrics
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @StateObject private var store = TodayStore()
+    /// Magazyn żyje w `AppDependencies` — powrót na zakładkę pokazuje od razu
+    /// ostatni stan dnia zamiast „Przygotowuję dzień…”.
+    @ObservedObject var store: TodayStore
     /// Termin czekający na potwierdzenie usunięcia. Usunięcie jest nieodwracalne
     /// (demo nie ma kosza), więc pytamy — ale dopiero po wybraniu z menu.
     @State private var eventPendingDeletion: ScheduledEvent?
@@ -101,6 +114,7 @@ struct TodayScreen: View {
         }
         .background(EmmaTheme.bg)
         .scrollIndicators(.hidden)
+        .refreshable { await store.load(dependencies) }
         .task(id: dependencies.dataVersion) { await store.load(dependencies) }
         .confirmationDialog(
             "Usunąć termin?",
@@ -133,14 +147,11 @@ struct TodayScreen: View {
     @ViewBuilder
     private func loaded(_ model: TodayStore.Model) -> some View {
         let agenda = DayAgenda.split(model.events, now: TimeOfDay.at(dependencies.clock.now()))
+        let inbox = LeadWorkflow.inbox(model.clients, now: dependencies.now)
 
-        ScreenHeader(
-            kicker: dependencies.dateText.headline(for: model.today),
-            title: "Dzień dobry",
-            onProfileTap: { dependencies.present(.profile) }
-        )
+        header(model)
 
-        emmaCompactCard()
+        leadsSection(inbox)
 
         SectionHeader("Najbliższy termin", compact: true)
         nextEventCard(agenda.next, model: model)
@@ -162,110 +173,132 @@ struct TodayScreen: View {
         }
     }
 
-    // MARK: Emma — kompaktowa karta
+    // MARK: Nagłówek dnia
 
-    /// Kompaktowa karta Emmy (etap 3 audytu): mały portret i dwa wejścia, wysokość
-    /// około 80–100 pt przy standardowym tekście. Nie ma sztywnej wysokości, więc
-    /// przy dużym Dynamic Type karta rośnie razem z tekstem.
+    /// Powitanie według pory dnia w strefie kancelarii.
+    private var greeting: String {
+        let hour = TimeOfDay.at(dependencies.clock.now()).hour
+        switch hour {
+        case 5..<18: return "Dzień dobry"
+        default: return "Dobry wieczór"
+        }
+    }
+
+    /// Nagłówek dnia: data, powitanie, portret Emmy i profil kancelarii.
     ///
-    /// Przy rozmiarach dostępności karta układa się **pionowo**, a tytuł zajmuje
-    /// całą szerokość karty. Trzy kolumny zostawiały tytułowi ~150 pt i „Porozmawiaj
-    /// z Emmą” łamało się w środku wyrazu („Porozm / awiaj z / Emmą” — zrzut
-    /// `24-duzy-tekst-dzisiaj.png`), a portret obok tytułu na 375 pt nadal urywał
-    /// wyraz („Porozmawi / aj z Emmą” — zrzut `30-duzy-tekst-mini-panel.png`).
+    /// Portret jest wejściem do rozmowy — ta sama czynność, co dawny przycisk
+    /// mikrofonu w karcie Emmy, ale bez zabierania wysokości pod leady i terminy.
+    private func header(_ model: TodayStore.Model) -> some View {
+        HStack(alignment: .center, spacing: 6) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(dependencies.dateText.headline(for: model.today))
+                    .font(EmmaTypography.kicker)
+                    .tracking(1.5)
+                    .foregroundStyle(EmmaTheme.mutedSoft)
+                Text(greeting)
+                    .font(EmmaTypography.welcome)
+                    .tracking(-0.9)
+                    .foregroundStyle(EmmaTheme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            emmaHeaderButton
+
+            Button {
+                dependencies.present(.profile)
+            } label: {
+                Image(systemName: "person.crop.circle")
+                    .font(.system(size: 22, weight: .regular))
+                    .foregroundStyle(EmmaTheme.mutedSoft)
+                    .frame(width: EmmaSpacing.hitTarget, height: EmmaSpacing.hitTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Profil kancelarii")
+        }
+        .padding(.bottom, 4)
+    }
+
+    /// Portret Emmy z plakietką mikrofonu: dotknięcie — rozmowa głosowa,
+    /// przytrzymanie — rozmowa albo pisanie do Emmy.
+    private var emmaHeaderButton: some View {
+        Button {
+            EmmaHaptics.tap()
+            dependencies.openEmma(clientID: nil, startVoice: true)
+        } label: {
+            EmmaOrb(
+                size: .card,
+                isActive: dependencies.voice.state.isPlaybackActive,
+                state: dependencies.voice.state.turn
+            )
+            .overlay(alignment: .bottomTrailing) {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(EmmaTheme.primaryButtonText)
+                    .frame(width: 18, height: 18)
+                    .background(EmmaTheme.primaryButton, in: Circle())
+                    .overlay { Circle().strokeBorder(EmmaTheme.bg, lineWidth: 2) }
+                    .offset(x: 3, y: 3)
+            }
+            .frame(width: 48, height: 48)
+            .contentShape(Circle())
+        }
+        .buttonStyle(EmmaCardButtonStyle())
+        .contextMenu {
+            Button {
+                dependencies.openEmma(clientID: nil, startVoice: true)
+            } label: {
+                Label("Porozmawiaj z Emmą", systemImage: "mic")
+            }
+            Button {
+                dependencies.openEmma(clientID: nil, startVoice: false)
+            } label: {
+                Label("Napisz do Emmy", systemImage: "keyboard")
+            }
+            Button {
+                dependencies.openEmma(clientID: nil, action: .brief, startVoice: false)
+            } label: {
+                Label("Podsumuj mój dzień", systemImage: "sparkles")
+            }
+        }
+        .accessibilityLabel("Porozmawiaj z Emmą")
+        .accessibilityHint("Zaczyna rozmowę głosową. Przytrzymaj, aby napisać do Emmy.")
+    }
+
+    // MARK: Leady do obsługi
+
+    /// Najwyżej trzy zgłoszenia: najpierw te, które czekają, potem nowe.
+    /// Reszta jest pod „Wszystkie” — ekran główny nie zamienia się w listę.
     @ViewBuilder
-    private func emmaCompactCard() -> some View {
-        SurfaceCard(padding: EdgeInsets(top: 13, leading: 15, bottom: 13, trailing: 13)) {
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 12) {
-                    emmaOrb
-                    emmaVoiceTitle
-                    emmaSubtitle
-                    HStack(spacing: 14) {
-                        emmaMicButton
-                        emmaWriteButton
-                    }
-                }
-            } else {
-                HStack(spacing: 12) {
-                    emmaOrb
-                    VStack(alignment: .leading, spacing: 4) {
-                        emmaVoiceTitle
-                        emmaSubtitle
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    VStack(spacing: 2) {
-                        emmaMicButton
-                        emmaWriteButton
+    private func leadsSection(_ inbox: LeadInbox) -> some View {
+        let queue = inbox.needsAction
+        if !queue.isEmpty {
+            SectionHeader(
+                "Leady do obsługi · \(queue.count)",
+                actionTitle: queue.count > Self.leadsPreviewLimit ? "Wszystkie" : "Lista",
+                compact: true
+            ) {
+                dependencies.openLeads(filter: .needsAction)
+            }
+            SurfaceCard(padding: EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0)) {
+                VStack(spacing: 0) {
+                    ForEach(Array(queue.prefix(Self.leadsPreviewLimit).enumerated()), id: \.element.id) { index, client in
+                        LeadInboxRow(
+                            client: client,
+                            onOpen: { dependencies.openPerson(client.id) },
+                            onMarkHandled: { await LeadActions.markHandled(client, dependencies: dependencies) }
+                        )
+                        if index < min(queue.count, Self.leadsPreviewLimit) - 1 {
+                            Divider().overlay(EmmaTheme.rowSeparator).padding(.leading, 64)
+                        }
                     }
                 }
             }
         }
-        .padding(.top, EmmaSpacing.sectionTop)
     }
 
-    private var emmaOrb: some View {
-        EmmaOrb(
-            size: .compact,
-            isActive: dependencies.voice.state.isPlaybackActive,
-            state: dependencies.voice.state.turn
-        )
-    }
-
-    private var emmaVoiceTitle: some View {
-        Button {
-            dependencies.openEmma(clientID: nil, startVoice: true)
-        } label: {
-            Text("Porozmawiaj z Emmą")
-                .font(EmmaTypography.personName)
-                .foregroundStyle(EmmaTheme.ink)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-                // Cała szerokość karty: przy dostępności portret nie zabiera już
-                // miejsca tytułowi, więc wyraz nie musi łamać się w środku.
-                .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Porozmawiaj z Emmą")
-    }
-
-    private var emmaSubtitle: some View {
-        Text("Zapytaj o dzień, terminy lub wiadomości.")
-            .font(EmmaTypography.caption())
-            .foregroundStyle(EmmaTheme.muted)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var emmaMicButton: some View {
-        Button {
-            dependencies.openEmma(clientID: nil, startVoice: true)
-        } label: {
-            Image(systemName: "mic.fill")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(EmmaTheme.primaryButtonText)
-                .frame(width: 44, height: 44)
-                .background(EmmaTheme.primaryButton, in: Circle())
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Rozpocznij rozmowę głosową z Emmą")
-    }
-
-    private var emmaWriteButton: some View {
-        Button {
-            dependencies.openEmma(clientID: nil, startVoice: false)
-        } label: {
-            Text("Napisz")
-                .font(EmmaTypography.caption(.medium))
-                .foregroundStyle(EmmaTheme.secondaryButtonText)
-                .frame(minHeight: 24)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Napisz wiadomość do Emmy")
-    }
+    private static let leadsPreviewLimit = 3
 
     // MARK: Najbliższy termin
 
@@ -427,6 +460,11 @@ struct TodayScreen: View {
     }
 
     private func toggle(_ task: TaskItem) async {
+        if task.isDone {
+            EmmaHaptics.tap()
+        } else {
+            EmmaHaptics.success()
+        }
         await dependencies.perform {
             _ = try await dependencies.repository.setDone(
                 taskID: task.id,
@@ -511,6 +549,7 @@ private struct TaskEntry: Identifiable {
 }
 
 #Preview("Dzisiaj") {
-    TodayScreen()
-        .environmentObject(AppDependencies.demo())
+    let dependencies = AppDependencies.demo()
+    return TodayScreen(store: dependencies.todayStore)
+        .environmentObject(dependencies)
 }

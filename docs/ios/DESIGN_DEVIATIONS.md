@@ -574,6 +574,74 @@ etapu 6) i skrócenie noty w stopce.
 
 ---
 
+### D-31 · „Dzisiaj”: leady do obsługi, portret Emmy w nagłówku — **review właściciela 23.09.2026**
+
+**Treść:** na ekranie głównym, zaraz pod nagłówkiem, jest sekcja „Leady do obsługi”
+(najwyżej trzy wiersze: najpierw czekające ≥ 24 h, potem nowe) z okrągłym
+przyciskiem „obsłużone” w każdym wierszu. Kompaktowa karta Emmy z D-24 zamieniła się
+w portret Emmy w nagłówku, obok profilu: dotknięcie zaczyna rozmowę głosową,
+przytrzymanie daje „Napisz do Emmy” i „Podsumuj mój dzień”. Powitanie zależy od pory
+(„Dzień dobry” / „Dobry wieczór”).
+
+**Powód:** właściciel chce widzieć oczekujące zgłoszenia na stronie głównej. Karta
+Emmy zajmowała ~110 pt; z sekcją leadów nad nią najbliższy termin i wejście do zadań
+spadałyby pod zgięcie ekranu, czego zabrania F08. Portret w nagłówku zachowuje
+jedno-dotknięciowe wejście w rozmowę i obecność Emmy, a oddaje wysokość treści.
+
+**Wpływ:** kolejność: nagłówek → leady → najbliższy termin → zadania → dalej dziś.
+Z rachunku wysokości (nie z pomiaru na urządzeniu): na iPhonie 16 przy dwóch leadach
+„Wszystkie zadania” mieści się w pierwszym widoku; przy trzech leży na granicy —
+do potwierdzenia testem `Stage3LayoutUITests` na symulatorze.
+
+**Cofnięcie:** przywrócenie `emmaCompactCard()` z historii Gita i usunięcie
+`leadsSection` z `TodayScreen.loaded`.
+
+---
+
+### D-32 · Leady jako kolejka pracy: 24 h „Nowy”, potem „Oczekuje” — **review właściciela 23.09.2026**
+
+**Treść:** etap `new` z backendu nie mówi, jak długo zgłoszenie czeka, więc na liście
+wszystko było „Nowe”. Reguła `LeadWorkflow` (rdzeń, testy w `LeadWorkflowTests`):
+„Nowy” przez 24 h od przyjęcia, potem „Oczekuje”; `in_contact` to „W kontakcie”
+(= obsłużone). Domyślny filtr listy to „Do obsługi” (czekające najpierw, najstarsze
+na górze; potem nowe), dalej „Nowe”, „Oczekujące”, „W kontakcie”, „Wszystkie”.
+Karta leada ma kolorowy pasek stanu z lewej, plakietkę z wiekiem („Nowy · 3 godz.
+temu”, „Oczekuje · 2 dni”), temat bez prefiksu „Termin: …” i osobną linię z terminem
+z rezerwacji. Obsłużenie: okrągły przycisk na karcie, przesunięcie w prawo albo menu;
+zawsze z „Cofnij” w komunikacie. W lewo: konwersja (z pytaniem) i usunięcie (z pytaniem).
+Plakietka z liczbą zgłoszeń do obsługi stoi na zakładce „Klienci”.
+
+**Powód:** leady to rezerwacje konsultacji; zgłoszenie, które czeka dobę, najczęściej
+jest stracone. Lista ma pokazywać, co jest do zrobienia i od kiedy, a odhaczenie ma być
+tak szybkie jak odhaczenie zadania.
+
+**Wpływ:** lista leadów stoi na `List` (systemowe przesunięcia z obsługą VoiceOver);
+karty zachowują własny wygląd (tło i separatory wiersza wyłączone). Dokładny wiek
+w godzinach wymaga pola `received_at` z backendu (rozszerzenie kontraktu, opcjonalne);
+bez niego wiek liczony jest z daty z przyjęciem południa i pokazywany w dniach.
+
+**Cofnięcie:** przywrócenie `ClientsScreen`/`LeadCard` z historii Gita; `LeadWorkflow`
+może zostać (nie zmienia danych).
+
+---
+
+### D-33 · Cień kart i reakcja na dotyk — **review właściciela 23.09.2026**
+
+**Treść:** karty (`SurfaceCard`, karta leada, sprawy, spotkania) mają miękki,
+dwuwarstwowy cień z atramentu `ink` o niskiej przezroczystości; karty-przyciski lekko
+się zapadają pod palcem (`EmmaCardButtonStyle`). Ważne czynności (odhaczenie zadania,
+obsłużenie leada, zmiana filtra, zakładki, tygodnia) dają krótką odpowiedź dotykową.
+Komunikat może mieć akcję („Cofnij”) i wtedy przyjmuje dotyk.
+
+**Powód:** „premium” w odbiorze właściciela: płaskie karty z samą ramką i brak
+reakcji na dotyk sprawiały wrażenie makiety. Żaden nowy kolor nie powstał — cień to
+istniejący token z przezroczystością.
+
+**Cofnięcie:** usunięcie `emmaCardShadow()` z `SurfaceCard` i kart oraz powrót do
+`.buttonStyle(.plain)`.
+
+---
+
 ## Czego ten rejestr nie zawiera
 
 Nie zawiera porównania zrzutów ekranu z referencją **piksel po pikselu**. Zrzuty są

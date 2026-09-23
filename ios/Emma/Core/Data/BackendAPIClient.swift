@@ -751,16 +751,23 @@ struct BackendClientDTO: Decodable {
     let incomingTranslation: String?
     let incomingTime: String?
     let needsReply: Bool
+    /// Rozszerzenie kontraktu (opcjonalne): dokładna chwila przyjęcia
+    /// zgłoszenia, telefon i e-mail. Starszy backend ich nie wysyła — wtedy
+    /// aplikacja liczy wiek leada z samej daty i nie proponuje dzwonienia.
+    let receivedAt: String?
+    let phone: String?
+    let email: String?
     let version: Int
 
     enum CodingKeys: String, CodingKey {
-        case id, initials, language, topic, stage, source, briefing, version
+        case id, initials, language, topic, stage, source, briefing, version, phone, email
         case displayName = "display_name"
         case createdAt = "created_at"
         case incomingMessage = "incoming_message"
         case incomingTranslation = "incoming_translation"
         case incomingTime = "incoming_time"
         case needsReply = "needs_reply"
+        case receivedAt = "received_at"
     }
 }
 

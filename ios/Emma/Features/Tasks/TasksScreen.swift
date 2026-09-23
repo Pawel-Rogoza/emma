@@ -108,6 +108,7 @@ struct TasksScreen: View {
         .scrollIndicators(.hidden)
         .navigationBarBackButtonHidden(true)
         .emmaPreservesSwipeBack()
+        .refreshable { await store.load(dependencies) }
         .task(id: dependencies.dataVersion) { await store.load(dependencies) }
         .onChange(of: store.scope) { _, _ in Task { await store.load(dependencies) } }
     }
@@ -197,6 +198,11 @@ struct TasksScreen: View {
     }
 
     private func toggle(_ task: TaskItem) async {
+        if task.isDone {
+            EmmaHaptics.tap()
+        } else {
+            EmmaHaptics.success()
+        }
         await dependencies.perform {
             _ = try await dependencies.repository.setDone(
                 taskID: task.id,

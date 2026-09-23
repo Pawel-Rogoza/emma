@@ -63,7 +63,9 @@ public enum DemoFixtures {
         incomingMessage: "Доброго дня, мого брата затримали. Чи можете допомогти?",
         incomingTranslation: "Dzień dobry, zatrzymano mojego brata. Czy może Pan pomóc?",
         incomingTime: TimeOfDay(hhmm: "09:29"),
-        needsReply: true
+        needsReply: true,
+        receivedAt: instant(referenceDay, "09:29"),
+        phone: "+48 600 100 200"
     )
 
     public static let maria = Client(
@@ -79,7 +81,9 @@ public enum DemoFixtures {
         incomingMessage: "Здравствуйте! Можно провести консультацию на русском?",
         incomingTranslation: "Dzień dobry! Czy konsultacja może odbyć się po rosyjsku?",
         incomingTime: TimeOfDay(hhmm: "09:03"),
-        needsReply: true
+        needsReply: true,
+        receivedAt: instant(referenceDay, "09:03"),
+        email: "maria.sokolowa@example.com"
     )
 
     public static let dmytro = Client(

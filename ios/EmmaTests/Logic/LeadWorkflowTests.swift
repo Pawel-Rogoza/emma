@@ -1,0 +1,193 @@
+import XCTest
+@testable import Emma
+
+// MARK: - Obsługa zgłoszeń: „nowy” przez 24 godziny, potem „oczekuje”
+//
+// Review właściciela z 23.09.2026: leady wisiały jako „Nowe” bez końca. Reguła
+// jest w rdzeniu (`LeadWorkflow`), więc testujemy ją tutaj, bez SwiftUI.
+
+final class LeadWorkflowTests: XCTestCase {
+
+    private static let warsaw = TimeZone(identifier: "Europe/Warsaw")!
+
+    private func instant(_ iso: String, _ hhmm: String) -> Date {
+        let day = LocalDate(iso: iso)!
+        let time = TimeOfDay(hhmm: hhmm)!
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = Self.warsaw
+        var components = DateComponents()
+        components.year = day.year
+        components.month = day.month
+        components.day = day.day
+        components.hour = time.hour
+        components.minute = time.minute
+        return calendar.date(from: components)!
+    }
+
+    private func lead(
+        _ id: String,
+        stage: ClientStage = .new,
+        created: String,
+        receivedAt: Date? = nil
+    ) -> Client {
+        Client(
+            id: ClientID(id),
+            displayName: "Osoba \(id)",
+            initials: "OS",
+            language: .pl,
+            topic: "Temat",
+            stage: stage,
+            source: .webForm,
+            createdAt: LocalDate(iso: created)!,
+            briefing: "",
+            receivedAt: receivedAt
+        )
+    }
+
+    // MARK: Status
+
+    func testExactTimestampSwitchesToWaitingAfterTwentyFourHours() {
+        let received = instant("2026-09-22", "14:00")
+        let client = lead("lead-1", created: "2026-09-22", receivedAt: received)
+
+        XCTAssertEqual(LeadWorkflow.status(of: client, now: instant("2026-09-23", "13:59")), .fresh)
+        XCTAssertEqual(LeadWorkflow.status(of: client, now: instant("2026-09-23", "14:00")), .waiting)
+    }
+
+    func testDateOnlyLeadIsFreshUntilNoonOfNextDay() {
+        // Bez godziny przyjmujemy południe dnia zgłoszenia.
+        let client = lead("lead-2", created: "2026-09-22")
+
+        XCTAssertEqual(LeadWorkflow.status(of: client, now: instant("2026-09-22", "08:00")), .fresh)
+        XCTAssertEqual(LeadWorkflow.status(of: client, now: instant("2026-09-23", "11:59")), .fresh)
+        XCTAssertEqual(LeadWorkflow.status(of: client, now: instant("2026-09-23", "12:00")), .waiting)
+    }
+
+    func testStageDecidesForContactedLeadsAndClients() {
+        let now = instant("2026-09-30", "10:00")
+        XCTAssertEqual(LeadWorkflow.status(of: lead("a", stage: .inContact, created: "2026-09-01"), now: now), .inContact)
+        XCTAssertEqual(LeadWorkflow.status(of: lead("b", stage: .client, created: "2026-09-01"), now: now), .client)
+        XCTAssertFalse(LeadStatus.inContact.needsAction)
+        XCTAssertTrue(LeadStatus.waiting.needsAction)
+        XCTAssertTrue(LeadStatus.fresh.needsAction)
+    }
+
+    // MARK: Kolejka
+
+    func testInboxOrdersWaitingOldestFirstAndFreshNewestFirst() {
+        let now = instant("2026-09-23", "10:00")
+        let clients = [
+            lead("lead-old", created: "2026-09-18"),
+            lead("lead-older", created: "2026-09-15"),
+            lead("lead-fresh-early", created: "2026-09-23", receivedAt: instant("2026-09-23", "07:00")),
+            lead("lead-fresh-late", created: "2026-09-23", receivedAt: instant("2026-09-23", "09:30")),
+            lead("lead-contacted", stage: .inContact, created: "2026-09-20"),
+            lead("client-1", stage: .client, created: "2026-01-01")
+        ]
+
+        let inbox = LeadWorkflow.inbox(clients, now: now)
+
+        XCTAssertEqual(inbox.waiting.map(\.id.rawValue), ["lead-older", "lead-old"])
+        XCTAssertEqual(inbox.fresh.map(\.id.rawValue), ["lead-fresh-late", "lead-fresh-early"])
+        XCTAssertEqual(inbox.inContact.map(\.id.rawValue), ["lead-contacted"])
+        XCTAssertEqual(inbox.needsAction.count, 4, "Kartoteka i obsłużone nie są do obsługi")
+    }
+
+    // MARK: Teksty
+
+    func testBadgeTextUsesHoursOnlyWhenTimeIsKnown() {
+        let now = instant("2026-09-23", "10:00")
+        let today = LocalDate(iso: "2026-09-23")!
+
+        let exact = lead("e", created: "2026-09-23", receivedAt: instant("2026-09-23", "07:00"))
+        XCTAssertEqual(LeadWorkflow.badgeText(for: exact, now: now, today: today), "Nowy · 3 godz. temu")
+
+        let minutes = lead("m", created: "2026-09-23", receivedAt: instant("2026-09-23", "09:48"))
+        XCTAssertEqual(LeadWorkflow.receivedAgoText(of: minutes, now: now, today: today), "12 min temu")
+
+        let justNow = lead("j", created: "2026-09-23", receivedAt: now)
+        XCTAssertEqual(LeadWorkflow.receivedAgoText(of: justNow, now: now, today: today), "przed chwilą")
+
+        let dateOnly = lead("d", created: "2026-09-23")
+        XCTAssertEqual(LeadWorkflow.badgeText(for: dateOnly, now: now, today: today), "Nowy · dziś")
+
+        let yesterday = lead("y", created: "2026-09-22")
+        XCTAssertEqual(LeadWorkflow.badgeText(for: yesterday, now: now, today: today), "Nowy · wczoraj")
+    }
+
+    func testWaitingTextCountsDaysWithPolishPlural() {
+        let today = LocalDate(iso: "2026-09-23")!
+        let now = instant("2026-09-23", "15:00")
+
+        XCTAssertEqual(
+            LeadWorkflow.badgeText(for: lead("a", created: "2026-09-22"), now: now, today: today),
+            "Oczekuje · od wczoraj"
+        )
+        XCTAssertEqual(
+            LeadWorkflow.badgeText(for: lead("b", created: "2026-09-18"), now: now, today: today),
+            "Oczekuje · 5 dni"
+        )
+        let exact = lead("c", created: "2026-09-21", receivedAt: instant("2026-09-21", "14:00"))
+        XCTAssertEqual(LeadWorkflow.waitingText(of: exact, now: now, today: today), "2 dni")
+        let oneDay = lead("d", created: "2026-09-22", receivedAt: instant("2026-09-22", "09:00"))
+        XCTAssertEqual(LeadWorkflow.waitingText(of: oneDay, now: now, today: today), "1 dzień")
+        XCTAssertEqual(
+            LeadWorkflow.receivedAgoText(of: lead("e", created: "2026-09-19"), now: now, today: today),
+            "4 dni temu"
+        )
+        XCTAssertEqual(LeadWorkflow.badgeText(for: lead("f", stage: .inContact, created: "2026-09-01"), now: now, today: today), "W kontakcie")
+        XCTAssertEqual(EmmaPlural.leads(1), "1 zgłoszenie")
+        XCTAssertEqual(EmmaPlural.leads(3), "3 zgłoszenia")
+        XCTAssertEqual(EmmaPlural.leads(12), "12 zgłoszeń")
+    }
+
+    // MARK: Temat z rezerwacji
+
+    func testBookingPrefixIsSeparatedFromTopic() {
+        let topic = LeadTopic.parse("Termin: 2026-09-15 20:00 Hello, I need urgent assistance")
+        XCTAssertEqual(topic.booking, LeadBooking(day: LocalDate(iso: "2026-09-15")!, time: TimeOfDay(hhmm: "20:00")))
+        XCTAssertEqual(topic.text, "Hello, I need urgent assistance")
+    }
+
+    func testBookingPrefixAcceptsSingleDigitHourAndNewlines() {
+        let topic = LeadTopic.parse("Termin: 2026-09-15 9:30\n\nOpis sprawy")
+        XCTAssertEqual(topic.booking?.time, TimeOfDay(hhmm: "09:30"))
+        XCTAssertEqual(topic.text, "Opis sprawy")
+    }
+
+    func testTopicWithoutBookingIsUntouched() {
+        XCTAssertEqual(LeadTopic.parse("  Zatrzymanie osoby bliskiej "), LeadTopic(booking: nil, text: "Zatrzymanie osoby bliskiej"))
+        // Nieczytelna data: tekst zostaje w całości, parser niczego nie ucina.
+        XCTAssertEqual(LeadTopic.parse("Termin: jutro rano").text, "Termin: jutro rano")
+        XCTAssertNil(LeadTopic.parse("Termin: jutro rano").booking)
+        // Termin bez godziny (urwany skrót tematu) nadal daje dzień.
+        let cut = LeadTopic.parse("Termin: 2026-09-15 20:0…")
+        XCTAssertEqual(cut.booking?.day, LocalDate(iso: "2026-09-15"))
+        XCTAssertNil(cut.booking?.time)
+        XCTAssertEqual(cut.text, "20:0…")
+    }
+
+    // MARK: Linki kontaktowe
+
+    func testPhoneNumbersNormalizeToInternationalDigits() {
+        XCTAssertEqual(ContactLinks.internationalDigits("600 100 200"), "48600100200")
+        XCTAssertEqual(ContactLinks.internationalDigits("+48 600-100-200"), "48600100200")
+        XCTAssertEqual(ContactLinks.internationalDigits("0048 600 100 200"), "48600100200")
+        XCTAssertEqual(ContactLinks.internationalDigits("+380 67 123 4567"), "380671234567")
+        XCTAssertNil(ContactLinks.internationalDigits("brak"))
+        XCTAssertNil(ContactLinks.internationalDigits("123"))
+
+        XCTAssertEqual(ContactLinks.phoneURL("600 100 200")?.absoluteString, "tel:+48600100200")
+        XCTAssertEqual(ContactLinks.whatsAppURL("600 100 200")?.absoluteString, "https://wa.me/48600100200")
+        XCTAssertEqual(ContactLinks.mailURL(" anna@example.com ")?.absoluteString, "mailto:anna@example.com")
+        XCTAssertNil(ContactLinks.mailURL("anna example.com"))
+    }
+
+    func testDemoLeadsCarryExactReceivedTime() {
+        let now = DemoClock().now()
+        XCTAssertEqual(LeadWorkflow.status(of: DemoFixtures.andrii, now: now), .fresh)
+        XCTAssertEqual(LeadWorkflow.receivedInstant(of: DemoFixtures.andrii).isExact, true)
+        XCTAssertEqual(DemoFixtures.andrii.phone, "+48 600 100 200")
+        XCTAssertNotNil(DemoFixtures.maria.email)
+    }
+}

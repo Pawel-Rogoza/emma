@@ -57,6 +57,22 @@ final class BackendRepositoryTests: XCTestCase {
         XCTAssertEqual(clients[1].version, Version(5))
     }
 
+    /// Rozszerzenie kontraktu: dokładna chwila przyjęcia, telefon i e-mail.
+    /// Stary backend ich nie wysyła — wtedy pola są puste, a nie zgadywane.
+    func testClientReceivedAtAndContactFieldsAreOptional() async throws {
+        StubURLProtocol.respond(json: Data(Self.clientWithContactJSON.utf8), status: 200)
+        let clients = try await makeRepository().clients(matching: "", stage: nil)
+
+        XCTAssertEqual(clients.count, 2)
+        XCTAssertEqual(clients[0].receivedAt, MobileAuthClient.parseISO8601("2026-09-22T14:05:12.345Z"))
+        XCTAssertEqual(clients[0].phone, "+48 600 700 800")
+        XCTAssertEqual(clients[0].email, "ihor@example.com")
+        // Pusty numer to brak numeru, a zepsuty znacznik czasu nie psuje listy.
+        XCTAssertNil(clients[1].phone)
+        XCTAssertNil(clients[1].email)
+        XCTAssertNil(clients[1].receivedAt)
+    }
+
     func testInContactStageAndImportSourceMapToKnownValues() async throws {
         StubURLProtocol.respond(json: Data(Self.importClientJSON.utf8), status: 200)
         let clients = try await makeRepository().clients(matching: "", stage: nil)
@@ -664,6 +680,20 @@ final class BackendRepositoryTests: XCTestCase {
        "topic":"Sprawa spadkowa","stage":"client","source":"whatsapp","created_at":"2026-08-01",
        "briefing":"Skrót sprawy","incoming_message":null,"incoming_translation":null,
        "incoming_time":"11:30","needs_reply":false,"version":5}
+    ],"next_cursor":null,"has_more":false}
+    """#
+
+    private static let clientWithContactJSON = #"""
+    {"items":[
+      {"id":"lead-8","display_name":"Ihor Bondar","initials":"IB","language":"uk",
+       "topic":"Termin: 2026-09-24 10:00 Rozwód","stage":"new","source":"web_form","created_at":"2026-09-22",
+       "briefing":null,"incoming_message":null,"incoming_translation":null,"incoming_time":null,
+       "needs_reply":false,"received_at":"2026-09-22T14:05:12.345Z","phone":"+48 600 700 800",
+       "email":"ihor@example.com","version":1},
+      {"id":"lead-9","display_name":"Anna Nowak","initials":"AN","language":"pl",
+       "topic":"Spadek","stage":"new","source":"manual","created_at":"2026-09-20",
+       "briefing":null,"incoming_message":null,"incoming_translation":null,"incoming_time":null,
+       "needs_reply":false,"received_at":"wczoraj","phone":"  ","email":"","version":1}
     ],"next_cursor":null,"has_more":false}
     """#
 

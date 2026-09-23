@@ -35,7 +35,11 @@ public struct RootShell: View {
                 )
             }
 
-            EmmaTabBar(selection: $dependencies.tab, unreadCount: dependencies.unreadTotal)
+            EmmaTabBar(
+                selection: $dependencies.tab,
+                unreadCount: dependencies.unreadTotal,
+                leadCount: dependencies.leadsNeedingAction
+            )
         }
         .background(EmmaTheme.bg)
         .overlay(alignment: .bottom) { toastLayer }
@@ -52,6 +56,7 @@ public struct RootShell: View {
         }
         .onAppear {
             dependencies.refreshUnreadTotal()
+            dependencies.refreshLeadCount()
             // Literówka w nazwie zestawu danych nie może wyglądać jak „inne demo”:
             // pokazujemy ją raz, wprost, i zaraz zniknie.
             if let notice = dependencies.fixtureNotice {
@@ -65,27 +70,36 @@ public struct RootShell: View {
     private var content: some View {
         switch dependencies.tab {
         case .today:
-            TabContent(tab: .today) { TodayScreen() }
+            TabContent(tab: .today) { TodayScreen(store: dependencies.todayStore) }
         case .clients:
-            TabContent(tab: .clients) { ClientsScreen() }
+            TabContent(tab: .clients) { ClientsScreen(store: dependencies.clientsStore) }
         case .emma:
             TabContent(tab: .emma) { AssistantScreen() }
         case .messages:
             TabContent(tab: .messages) { MessagesScreen() }
         case .calendar:
-            TabContent(tab: .calendar) { CalendarScreen() }
+            TabContent(tab: .calendar) { CalendarScreen(store: dependencies.calendarStore) }
         }
     }
 
-    @ViewBuilder
+    /// Komunikat nad paskiem zakładek. Bez akcji nie przechwytuje dotyku (nie
+    /// zasłania treści); z akcją („Cofnij”) musi dać się nacisnąć.
     private var toastLayer: some View {
-        if let toast = dependencies.toast {
-            TraceToast(toast)
+        ZStack(alignment: .bottom) {
+            if let toast = dependencies.toast {
+                TraceToast(
+                    toast,
+                    actionTitle: dependencies.toastAction?.title,
+                    // Przycisk pojawia się tylko razem z tytułem akcji.
+                    action: { dependencies.runToastAction() }
+                )
                 .padding(.horizontal, EmmaSpacing.screenH)
                 .padding(.bottom, EmmaMetrics.tabBarHeight + 18)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
-                .allowsHitTesting(false)
+                .allowsHitTesting(dependencies.toastAction != nil)
+            }
         }
+        .animation(.easeOut(duration: 0.22), value: dependencies.toast)
     }
 }
 

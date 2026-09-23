@@ -12,10 +12,13 @@ public struct EmmaTabBar: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @Binding private var selection: AppTab
     private let unreadCount: Int
+    /// Zgłoszenia do obsługi — plakietka na zakładce „Klienci”.
+    private let leadCount: Int
 
-    public init(selection: Binding<AppTab>, unreadCount: Int) {
+    public init(selection: Binding<AppTab>, unreadCount: Int, leadCount: Int = 0) {
         self._selection = selection
         self.unreadCount = unreadCount
+        self.leadCount = leadCount
     }
 
     public var body: some View {
@@ -42,6 +45,7 @@ public struct EmmaTabBar: View {
             if isSelected {
                 dependencies.go(to: tab, resetStack: true)
             } else {
+                EmmaHaptics.selection()
                 selection = tab
             }
         } label: {
@@ -62,6 +66,10 @@ public struct EmmaTabBar: View {
                         if tab == .messages && unreadCount > 0 {
                             UnreadBadge(count: unreadCount, compact: true)
                                 .offset(x: 10, y: -4)
+                        }
+                        if tab == .clients && leadCount > 0 {
+                            CountBadge(count: leadCount, accessibilityText: EmmaPlural.leads(leadCount))
+                                .offset(x: 12, y: -4)
                         }
                     }
                 }
@@ -90,6 +98,9 @@ public struct EmmaTabBar: View {
     private func accessibilityLabel(for tab: AppTab) -> String {
         if tab == .messages && unreadCount > 0 {
             return "\(tab.title), \(EmmaPlural.unread(unreadCount))"
+        }
+        if tab == .clients && leadCount > 0 {
+            return "\(tab.title), \(EmmaPlural.leads(leadCount)) do obsługi"
         }
         return tab.title
     }

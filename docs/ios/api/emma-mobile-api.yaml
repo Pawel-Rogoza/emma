@@ -1246,6 +1246,22 @@ components:
             `incoming_message: null` — gdy nie ma wiadomości, nie ma też godziny;
             wpisanie tu 00:00 byłoby nieprawdą.
         needs_reply: { type: boolean }
+        received_at:
+          type: [string, "null"]
+          format: date-time
+          description: >-
+            Rozszerzenie (2026-09-23, opcjonalne): dokładna chwila przyjęcia
+            zgłoszenia (`leads.created_at`). Aplikacja pokazuje lead jako „Nowy”
+            przez 24 godziny, a potem jako „Oczekuje”. Bez tego pola liczy wiek
+            z samej daty `created_at` (przyjmując południe) i nie pokazuje godzin.
+        phone:
+          type: [string, "null"]
+          description: >-
+            Rozszerzenie (opcjonalne): telefon kontaktu (`leads.phone` /
+            `clients.phone`). Karta klienta proponuje wtedy „Zadzwoń” i WhatsApp.
+        email:
+          type: [string, "null"]
+          description: Rozszerzenie (opcjonalne) — e-mail kontaktu.
         version: { $ref: "#/components/schemas/Version" }
 
     LegalCase:

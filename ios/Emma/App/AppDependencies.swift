@@ -83,8 +83,26 @@ public final class AppDependencies: ObservableObject {
     @Published public var navigation: [AppTab: TabNavigation] = [:]
     @Published public var sheet: AppSheet?
     @Published public var toast: String?
+    /// Akcja dołączona do bieżącego komunikatu (np. „Cofnij” po obsłużeniu leada).
+    @Published public private(set) var toastAction: ToastAction?
     /// Liczba nieprzeczytanych wiadomości pokazywana na zakładce „Rozmowy”.
     @Published public var unreadTotal: Int = 0
+    /// Liczba zgłoszeń czekających na ruch kancelarii (etap `new`) — plakietka
+    /// na zakładce „Klienci”. Nowy lead jest widoczny z każdego ekranu.
+    @Published public var leadsNeedingAction: Int = 0
+    /// Filtr listy leadów, który ma się otworzyć po przejściu z innego ekranu
+    /// (np. „Wszystkie” przy leadach na „Dzisiaj” otwiera „Do obsługi”).
+    @Published var pendingLeadFilter: LeadListFilter?
+
+    // MARK: Pamięć ekranów zakładek
+    //
+    // Zakładki są przełączane wymianą widoku, więc `@StateObject` ekranu ginął
+    // przy każdym przejściu: lista mrugała „Wczytuję…”, a przewinięcie
+    // przepadało. Magazyny zakładek żyją tutaj — powrót na zakładkę pokazuje
+    // od razu ostatni stan i odświeża go w tle.
+    let todayStore: TodayStore
+    let clientsStore: ClientsStore
+    let calendarStore: CalendarStore
 
     /// Kontekst Emmy wybrany na innym ekranie (odpowiada `emmaContext` z referencji).
     @Published public var emmaContext: ClientID?
@@ -108,6 +126,17 @@ public final class AppDependencies: ObservableObject {
         case cases = "Sprawy"
     }
 
+    /// Akcja komunikatu. Wykonuje się na głównym aktorze, jak cały stan powłoki.
+    public struct ToastAction {
+        public let title: String
+        public let handler: @MainActor () -> Void
+
+        public init(title: String, handler: @escaping @MainActor () -> Void) {
+            self.title = title
+            self.handler = handler
+        }
+    }
+
     private var toastTask: Task<Void, Never>?
     /// Wykonawca narzędzi `app_*` dla Gemini Live. Podpina go ekran Emmy
     /// (`AssistantStore.attach`); słaba referencja, żeby nie trzymać ekranu.
@@ -127,6 +156,9 @@ public final class AppDependencies: ObservableObject {
     ) {
         self.configuration = configuration
         self.fixtureName = fixtureName
+        self.todayStore = TodayStore()
+        self.clientsStore = ClientsStore()
+        self.calendarStore = CalendarStore()
         self.accessTokenProvider = accessTokenProvider
         self.sessionTokenProvider = sessionTokenProvider
         self.sessionTokenRefresher = sessionTokenRefresher
@@ -390,6 +422,13 @@ public final class AppDependencies: ObservableObject {
         appendingToClients(.legalCase(caseID))
     }
 
+    /// Lista leadów z wybranym filtrem — wejście z ekranu „Dzisiaj”.
+    func openLeads(filter: LeadListFilter) {
+        clientMode = .leads
+        pendingLeadFilter = filter
+        go(to: .clients, resetStack: true)
+    }
+
     public func openTasks() {
         var state = navigation[.today] ?? TabNavigation()
         state.reset(to: .tasks)
@@ -437,15 +476,32 @@ public final class AppDependencies: ObservableObject {
         await voice.end(reason: .userRequested, preserveDraft: true, revokedCapability: false)
     }
 
-/// Krótkie potwierdzenie operacji. Znika po 3,8 s — jak w referencji.
+    /// Krótkie potwierdzenie operacji. Znika po 3,8 s — jak w referencji.
     public func showToast(_ message: String) {
+        showToast(message, action: nil)
+    }
+
+    /// Komunikat z akcją (np. „Cofnij”). Zostaje dłużej, żeby dało się zdążyć.
+    public func showToast(_ message: String, action: ToastAction?) {
         toast = message
+        toastAction = action
         toastTask?.cancel()
+        let duration: UInt64 = action == nil ? 3_800_000_000 : 6_000_000_000
         toastTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 3_800_000_000)
+            try? await Task.sleep(nanoseconds: duration)
             guard !Task.isCancelled else { return }
             self?.toast = nil
+            self?.toastAction = nil
         }
+    }
+
+    /// Wykonanie akcji komunikatu i jego zamknięcie — jedno dotknięcie.
+    public func runToastAction() {
+        guard let action = toastAction else { return }
+        toastTask?.cancel()
+        toast = nil
+        toastAction = nil
+        action.handler()
     }
 
     // MARK: Emma
@@ -486,7 +542,21 @@ public final class AppDependencies: ObservableObject {
     public func dataChanged() {
         dataVersion &+= 1
         refreshUnreadTotal()
+        refreshLeadCount()
     }
+
+    /// Plakietka „Klienci”: zgłoszenia na etapie `new` (nowe i oczekujące).
+    /// Błąd odczytu zostawia poprzednią liczbę — plakietka nie mruga zerem.
+    public func refreshLeadCount() {
+        Task { [weak self] in
+            guard let self else { return }
+            guard let leads = try? await self.repository.clients(matching: "", stage: .new) else { return }
+            self.leadsNeedingAction = leads.count
+        }
+    }
+
+    /// Chwila „teraz” według zegara aplikacji (w Demo — stały dzień referencyjny).
+    public var now: Date { clock.now() }
 
     public func refreshUnreadTotal() {
         let userID = currentUser.id
@@ -512,6 +582,7 @@ public final class AppDependencies: ObservableObject {
         pendingEmmaAction = nil
         pendingVoiceStart = false
         clientMode = .leads
+        pendingLeadFilter = nil
         refreshUnreadTotal()
         dataChanged()
         showToast("Przywrócono dane przykładowe.")

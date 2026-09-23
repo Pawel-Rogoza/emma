@@ -71,6 +71,14 @@ public struct Client: Identifiable, Hashable, Codable, Sendable {
     public var incomingTime: TimeOfDay?
     /// `needsReply` to stan pracy backendu/briefingu, **nie** etykieta na liście rozmów (§3.3 pkt 4).
     public var needsReply: Bool
+    /// Dokładna chwila przyjęcia zgłoszenia (`received_at`), gdy backend ją podaje.
+    /// Sama data (`createdAt`) nie wystarcza do reguły „nowy przez 24 godziny”
+    /// — patrz `LeadWorkflow`.
+    public var receivedAt: Date?
+    /// Telefon kontaktu. Pusty, dopóki backend go nie udostępni — karta nie
+    /// proponuje wtedy dzwonienia ani WhatsApp.
+    public var phone: String?
+    public var email: String?
     public var version: Version
 
     public init(
@@ -87,6 +95,9 @@ public struct Client: Identifiable, Hashable, Codable, Sendable {
         incomingTranslation: String? = nil,
         incomingTime: TimeOfDay? = nil,
         needsReply: Bool = false,
+        receivedAt: Date? = nil,
+        phone: String? = nil,
+        email: String? = nil,
         version: Version = .initial
     ) {
         self.id = id
@@ -102,6 +113,9 @@ public struct Client: Identifiable, Hashable, Codable, Sendable {
         self.incomingTranslation = incomingTranslation
         self.incomingTime = incomingTime
         self.needsReply = needsReply
+        self.receivedAt = receivedAt
+        self.phone = phone
+        self.email = email
         self.version = version
     }
 

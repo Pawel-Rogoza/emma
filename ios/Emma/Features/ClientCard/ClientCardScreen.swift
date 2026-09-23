@@ -12,8 +12,11 @@ struct ClientCardScreen: View {
 
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.emmaLayout) private var layout
+    @Environment(\.openURL) private var openURL
 
     @StateObject private var store = ClientCardStore()
+    /// Zgłoszenie czekające na potwierdzenie konwersji w kartotekę.
+    @State private var pendingConversion: Client?
 
     var body: some View {
         ScrollView {
@@ -29,8 +32,26 @@ struct ClientCardScreen: View {
         // `emmaPreservesSwipeBack()`.
         .navigationBarBackButtonHidden(true)
         .emmaPreservesSwipeBack()
+        .refreshable { await store.load(dependencies, clientID: clientID) }
         .task(id: dependencies.dataVersion) {
             await store.load(dependencies, clientID: clientID)
+        }
+        .confirmationDialog(
+            "Konwertować na klienta?",
+            isPresented: Binding(
+                get: { pendingConversion != nil },
+                set: { if !$0 { pendingConversion = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingConversion
+        ) { client in
+            Button("Konwertuj na klienta") {
+                pendingConversion = nil
+                Task { await LeadActions.convertToClient(client, dependencies: dependencies) }
+            }
+            Button("Anuluj", role: .cancel) { pendingConversion = nil }
+        } message: { client in
+            Text("Dla „\(client.displayName)” powstanie kartoteka klienta. Tego nie cofa się z aplikacji.")
         }
     }
 
@@ -62,7 +83,11 @@ struct ClientCardScreen: View {
             hero(client)
 
             quickActions(model)
-                .padding(.bottom, 22)
+                .padding(.bottom, 16)
+
+            if client.stage != .client {
+                leadPanel(client)
+            }
 
             infoSection(client)
 
@@ -106,7 +131,9 @@ struct ClientCardScreen: View {
     // MARK: Hero
 
     private func hero(_ client: Client) -> some View {
-        VStack(spacing: 0) {
+        let topic = LeadTopic.parse(client.topic)
+        let topicText = LeadStatusStyle.topicText(topic)
+        return VStack(spacing: 0) {
             PersonAvatar(
                 initials: client.initials,
                 style: .person,
@@ -119,12 +146,22 @@ struct ClientCardScreen: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 15)
-            Text(client.topic)
-                .font(EmmaTypography.body(for: client.topic, size: 13))
+            Text(topicText)
+                .font(EmmaTypography.body(for: topicText, size: 13))
                 .foregroundStyle(EmmaTheme.mutedSoft)
                 .multilineTextAlignment(.center)
+                .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 5)
+            if let booking = topic.booking {
+                Label(
+                    LeadStatusStyle.bookingText(booking, dateText: dependencies.dateText, today: dependencies.today),
+                    systemImage: "calendar.badge.clock"
+                )
+                .font(EmmaTypography.caption(.medium))
+                .foregroundStyle(EmmaTheme.accent)
+                .padding(.top, 9)
+            }
             HStack(spacing: 7) {
                 statusPills(client)
             }
@@ -137,10 +174,82 @@ struct ClientCardScreen: View {
 
     @ViewBuilder
     private func statusPills(_ client: Client) -> some View {
-        StatusPill(client.stage.displayName)
+        let status = LeadWorkflow.status(of: client, now: dependencies.now)
+        LeadStatusBadge(
+            status: status,
+            text: LeadWorkflow.badgeText(for: client, now: dependencies.now, today: dependencies.today)
+        )
         StatusPill(client.language.displayName)
         if showsUrgentContact(client) {
             StatusPill("Pilny kontakt", kind: .amber)
+        }
+    }
+
+    // MARK: Obsługa zgłoszenia
+
+    /// Panel zgłoszenia: gdzie jest w kolejce i co dalej. Te same czynności co
+    /// na liście (obsłużone z „Cofnij”, konwersja po potwierdzeniu).
+    private func leadPanel(_ client: Client) -> some View {
+        let status = LeadWorkflow.status(of: client, now: dependencies.now)
+        return SurfaceCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Image(systemName: status.needsAction ? "tray.full" : "checkmark.circle.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(LeadStatusStyle.tone(status))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(leadPanelTitle(status))
+                            .font(EmmaTypography.ui(14, .semibold))
+                            .foregroundStyle(EmmaTheme.ink)
+                        Text(leadPanelMessage(client, status: status))
+                            .font(EmmaTypography.caption())
+                            .foregroundStyle(EmmaTheme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if status.needsAction {
+                    PrimaryButton("Oznacz jako obsłużone", systemImage: "checkmark") {
+                        Task { await LeadActions.markHandled(client, dependencies: dependencies) }
+                    }
+                    SecondaryButton("Konwertuj na klienta", systemImage: "person.crop.circle.badge.checkmark") {
+                        pendingConversion = client
+                    }
+                } else {
+                    PrimaryButton("Konwertuj na klienta", systemImage: "person.crop.circle.badge.checkmark") {
+                        pendingConversion = client
+                    }
+                    SecondaryButton("Przywróć do obsługi", systemImage: "arrow.uturn.backward") {
+                        Task { await LeadActions.reopen(client, dependencies: dependencies) }
+                    }
+                }
+            }
+        }
+        .padding(.bottom, 4)
+    }
+
+    private func leadPanelTitle(_ status: LeadStatus) -> String {
+        switch status {
+        case .fresh: return "Nowe zgłoszenie"
+        case .waiting: return "Zgłoszenie czeka na kontakt"
+        case .inContact: return "W kontakcie"
+        case .client: return "Klient kancelarii"
+        }
+    }
+
+    private func leadPanelMessage(_ client: Client, status: LeadStatus) -> String {
+        let now = dependencies.now
+        let today = dependencies.today
+        switch status {
+        case .fresh:
+            return "Wpłynęło \(LeadWorkflow.receivedAgoText(of: client, now: now, today: today)). Po pierwszym kontakcie oznacz je jako obsłużone."
+        case .waiting:
+            return "Bez kontaktu od \(LeadWorkflow.waitingText(of: client, now: now, today: today)). Oddzwoń albo napisz i oznacz jako obsłużone."
+        case .inContact:
+            return "Kontakt nawiązany. Gdy klient się zdecyduje, załóż mu kartotekę."
+        case .client:
+            return "Zgłoszenie ma już kartotekę klienta."
         }
     }
 
@@ -150,9 +259,7 @@ struct ClientCardScreen: View {
         let client = model.client
         let caseID = model.legalCase?.id
         return QuickActions([
-            QuickActions.Action(systemImage: "message", title: "WhatsApp") {
-                openWhatsApp(model)
-            },
+            contactAction(model),
             QuickActions.Action(systemImage: "sparkles", title: "Emma") {
                 dependencies.openEmma(clientID: client.id)
             },
@@ -163,6 +270,19 @@ struct ClientCardScreen: View {
                 dependencies.present(.eventForm(editing: nil, clientID: client.id, caseID: caseID, initialDay: nil))
             }
         ])
+    }
+
+    /// Pierwszy kafel: telefon, gdy go znamy (zgłoszenie to zwykle „oddzwoń”),
+    /// a bez numeru — wątek WhatsApp w aplikacji, jak dotąd.
+    private func contactAction(_ model: ClientCardModel) -> QuickActions.Action {
+        if let phone = model.client.phone, let url = ContactLinks.phoneURL(phone) {
+            return QuickActions.Action(systemImage: "phone", title: "Zadzwoń") {
+                openURL(url)
+            }
+        }
+        return QuickActions.Action(systemImage: "message", title: "WhatsApp") {
+            openWhatsApp(model)
+        }
     }
 
     private func openWhatsApp(_ model: ClientCardModel) {
@@ -178,11 +298,52 @@ struct ClientCardScreen: View {
     // MARK: Lista informacji
 
     private func infoSection(_ client: Client) -> some View {
-        InfoList([
-            InfoList.Row("Źródło", client.source.rawValue),
-            InfoList.Row("Kontakt od", dependencies.dateText.dayLabel(client.createdAt))
-        ])
+        VStack(spacing: 10) {
+            InfoList(infoRows(client))
+            contactLinks(client)
+        }
         .padding(.vertical, 20)
+    }
+
+    private func infoRows(_ client: Client) -> [InfoList.Row] {
+        var rows = [InfoList.Row("Źródło", client.source.rawValue)]
+        rows.append(InfoList.Row("Zgłoszono", receivedText(client)))
+        if let phone = client.phone {
+            rows.append(InfoList.Row("Telefon", phone))
+        }
+        if let email = client.email {
+            rows.append(InfoList.Row("E-mail", email))
+        }
+        return rows
+    }
+
+    /// „Dzisiaj, 09:29” przy dokładnym znaczniku, inaczej sama data.
+    private func receivedText(_ client: Client) -> String {
+        let day = dependencies.dateText.dayLabel(client.createdAt)
+        guard let receivedAt = client.receivedAt else { return day }
+        return "\(day), \(dependencies.dateText.clockTime(receivedAt))"
+    }
+
+    /// WhatsApp i e-mail poza aplikacją — skrzynka WhatsApp w Emmie nie jest
+    /// jeszcze połączona z numerem kancelarii, a klient czeka na odpowiedź teraz.
+    @ViewBuilder
+    private func contactLinks(_ client: Client) -> some View {
+        let whatsApp = client.phone.flatMap(ContactLinks.whatsAppURL)
+        let mail = client.email.flatMap(ContactLinks.mailURL)
+        if whatsApp != nil || mail != nil {
+            HStack(spacing: 10) {
+                if let whatsApp {
+                    SecondaryButton("WhatsApp", systemImage: "message") {
+                        openURL(whatsApp)
+                    }
+                }
+                if let mail {
+                    SecondaryButton("E-mail", systemImage: "envelope") {
+                        openURL(mail)
+                    }
+                }
+            }
+        }
     }
 
     // MARK: Sprawa
@@ -242,9 +403,12 @@ struct ClientCardScreen: View {
     // MARK: Zgłoszenie
 
     private func proseCard(_ client: Client) -> some View {
-        SurfaceCard {
-            Text(client.briefing)
-                .font(EmmaTypography.body(for: client.briefing, size: 14))
+        // Treść zgłoszenia z rezerwacji zaczyna się od „Termin: …” — termin jest
+        // już wyżej, w nagłówku karty, więc tu zostaje sama wiadomość klienta.
+        let briefing = LeadTopic.parse(client.briefing).text
+        return SurfaceCard {
+            Text(briefing.isEmpty ? "Brak treści zgłoszenia." : briefing)
+                .font(EmmaTypography.body(for: briefing, size: 14))
                 .foregroundStyle(EmmaTheme.muted)
                 .lineSpacing(7)
                 .fixedSize(horizontal: false, vertical: true)

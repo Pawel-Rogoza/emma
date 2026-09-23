@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import SwiftUI
 
 // MARK: - Magazyn ekranu „Klienci”
 //
@@ -63,16 +64,23 @@ final class ClientsStore: ObservableObject {
                 nextLeadEvents[client.id] = earliest(activeEvents.filter { $0.clientID == client.id })
             }
 
-            phase = .loaded(
-                ClientsModel(
-                    clients: clients,
-                    cases: cases,
-                    openTaskCounts: openTaskCounts,
-                    nextCaseEvents: nextCaseEvents,
-                    nextLeadEvents: nextLeadEvents,
-                    clientNames: Dictionary(clients.map { ($0.id, $0.displayName) }, uniquingKeysWith: { first, _ in first })
-                )
+            let model = ClientsModel(
+                clients: clients,
+                cases: cases,
+                openTaskCounts: openTaskCounts,
+                nextCaseEvents: nextCaseEvents,
+                nextLeadEvents: nextLeadEvents,
+                clientNames: Dictionary(clients.map { ($0.id, $0.displayName) }, uniquingKeysWith: { first, _ in first })
             )
+            // Odświeżenie po zapisie jest animowane: obsłużony lead wysuwa się
+            // z listy, zamiast zniknąć skokiem. Pierwsze wczytanie — bez animacji.
+            if phase.hasLoaded {
+                withAnimation(.easeInOut(duration: 0.28)) { phase = .loaded(model) }
+            } else {
+                phase = .loaded(model)
+            }
+            // Plakietka zakładki liczona z tych samych danych co lista.
+            dependencies.leadsNeedingAction = clients.filter { $0.stage == .new }.count
         } catch {
             phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać bazy kancelarii."))
         }

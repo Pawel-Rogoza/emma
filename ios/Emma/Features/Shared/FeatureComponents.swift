@@ -130,9 +130,10 @@ struct MeetingCard: View {
                 RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
                     .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
             }
+            .emmaCardShadow()
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(EmmaCardButtonStyle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             "\(event.title), \(clientName), \(event.time.hhmm), \(event.durationMinutes) minut, \(event.status.rawValue), \(event.place)"
@@ -229,9 +230,10 @@ struct CaseCard: View {
                 RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
                     .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
             }
+            .emmaCardShadow()
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(EmmaCardButtonStyle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             "\(legalCase.title), \(legalCase.number), \(legalCase.status.displayName), \(clientName), \(EmmaPlural.tasks(openTaskCount))"

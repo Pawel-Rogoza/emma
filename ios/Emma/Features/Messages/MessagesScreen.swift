@@ -50,7 +50,8 @@ final class MessagesStore: ObservableObject {
     @Published var searchText: String = ""
 
     func load(_ dependencies: AppDependencies) async {
-        phase = .loading
+        // Odświeżenie po zapisie nie zdejmuje listy z ekranu (jak na „Dzisiaj”).
+        if !phase.hasLoaded { phase = .loading }
         do {
             let repository = dependencies.repository
             let userID = dependencies.currentUser.id
@@ -136,13 +137,13 @@ struct MessagesScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                ScreenHeader(
-                    kicker: "WHATSAPP",
-                    title: "Rozmowy",
-                )
-
-                HStack {
-                    Spacer(minLength: 0)
+                // Nowa rozmowa obok tytułu — jak „+” na liście klientów; osobny
+                // wiersz na jeden przycisk zabierał wysokość nad listą.
+                HStack(alignment: .top, spacing: 10) {
+                    ScreenHeader(
+                        kicker: "WHATSAPP",
+                        title: "Rozmowy"
+                    )
                     IconButton(systemName: "square.and.pencil", accessibilityLabel: "Nowa rozmowa") {
                         dependencies.present(.newConversation)
                     }
@@ -158,7 +159,10 @@ struct MessagesScreen: View {
                 SegmentedFilter(items: MessagesStore.Filter.allCases, selection: $store.filter) { $0.rawValue }
                     .padding(.bottom, 14)
                     .onChange(of: store.filter) { _, _ in
-                        Task { await store.load(dependencies) }
+                        // Filtr działa na wczytanych wierszach — bez ponownego
+                        // odpytywania wszystkich wątków i bez mrugnięcia listy.
+                        EmmaHaptics.selection()
+                        Task { await store.applyLocalFilter() }
                     }
 
                 switch store.phase {
@@ -200,9 +204,10 @@ struct MessagesScreen: View {
                         }
                     }
 
-                    Text("Wiadomości przykładowe · WhatsApp niepołączony")
+                    Text(disclosureText)
                         .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.mutedSoft)
+                        .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, 14)
                 }
@@ -213,7 +218,16 @@ struct MessagesScreen: View {
         }
         .background(EmmaTheme.bg)
         .scrollIndicators(.hidden)
+        .refreshable { await store.load(dependencies) }
         .task(id: dependencies.dataVersion) { await store.load(dependencies) }
+    }
+
+    /// Stopka mówi prawdę o źródle: w Demo wiadomości są przykładowe, a poza
+    /// Demo skrzynka jest pusta, bo numer kancelarii nie jest jeszcze podłączony.
+    private var disclosureText: String {
+        dependencies.configuration.usesMockServices
+            ? "Wiadomości przykładowe · WhatsApp niepołączony"
+            : "WhatsApp niepołączony · rozmowy pojawią się po podłączeniu numeru kancelarii"
     }
 
     @ViewBuilder
@@ -229,6 +243,14 @@ struct MessagesScreen: View {
                 systemImage: "checkmark.circle",
                 title: "Wszystko przeczytane",
                 message: "Nowe wiadomości pojawią się tutaj."
+            )
+        } else if model.filter == .all {
+            // Wcześniej pusta skrzynka (np. poza Demo) mówiła „Brak przypiętych
+            // rozmów”, bo ta gałąź była domyślna dla każdego filtra.
+            EmptyState(
+                systemImage: "bubble.left.and.bubble.right",
+                title: "Brak rozmów",
+                message: "Rozmowy z klientami pojawią się tutaj."
             )
         } else {
             EmptyState(

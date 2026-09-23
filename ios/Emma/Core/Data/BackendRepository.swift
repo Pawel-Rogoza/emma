@@ -721,8 +721,21 @@ extension BackendRepository {
             incomingTranslation: dto.incomingTranslation,
             incomingTime: try mapTime(dto.incomingTime),
             needsReply: dto.needsReply,
+            // Znacznik spoza formatu ISO nie zatrzymuje listy: zgłoszenie
+            // zostaje, a wiek liczymy wtedy z samej daty (`LeadWorkflow`).
+            receivedAt: dto.receivedAt.flatMap(MobileAuthClient.parseISO8601),
+            phone: nonEmpty(dto.phone),
+            email: nonEmpty(dto.email),
             version: Version(dto.version)
         )
+    }
+
+    /// Pusty napis z backendu to brak danych, nie „numer” do wybrania.
+    static func nonEmpty(_ raw: String?) -> String? {
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
     }
 
     static func mapStage(_ raw: String) throws -> ClientStage {

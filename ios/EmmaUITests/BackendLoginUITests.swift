@@ -136,7 +136,7 @@ final class BackendLoginUITests: XCTestCase {
         XCTAssertTrue(clientsTab.waitForExistence(timeout: 30), "Brak zakładki „Klienci” po zalogowaniu")
         clientsTab.tap()
 
-        // Ekran otwiera się na „Nowych”, a ten test szuka konkretnej osoby
+        // Ekran otwiera się na „Do obsługi”, a ten test szuka konkretnej osoby
         // z bazy — dlatego filtr wybieramy jawnie, zamiast liczyć na domyślny.
         // Domyślny filtr ma osobny test: `testRealNewLeadsAreDefaultView`.
         let allChip = application.buttons.matching(
@@ -184,11 +184,13 @@ final class BackendLoginUITests: XCTestCase {
         XCTAssertTrue(clientsTab.waitForExistence(timeout: 30), "Brak zakładki „Klienci” po zalogowaniu")
         clientsTab.tap()
 
+        // Od 23.09.2026 domyślna jest kolejka „Do obsługi” (nowe + czekające
+        // ≥ 24 h), a „Nowe” to wyłącznie zgłoszenia z ostatniej doby.
         let newChip = application.buttons.matching(
-            NSPredicate(format: "label BEGINSWITH %@", "Nowe")
+            NSPredicate(format: "label BEGINSWITH %@", "Do obsługi")
         ).firstMatch
-        XCTAssertTrue(newChip.waitForExistence(timeout: 25), "Brak filtra „Nowe”")
-        XCTAssertTrue(newChip.isSelected, "Zakładka nie otworzyła się na „Nowych”")
+        XCTAssertTrue(newChip.waitForExistence(timeout: 25), "Brak filtra „Do obsługi”")
+        XCTAssertTrue(newChip.isSelected, "Zakładka nie otworzyła się na „Do obsługi”")
 
         // Licznik pokazuje, ile zgłoszeń naprawdę czeka — a nie ile jest w bazie.
         XCTAssertFalse(newChip.label.isEmpty)

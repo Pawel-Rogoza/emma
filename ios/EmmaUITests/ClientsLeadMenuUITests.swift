@@ -1,15 +1,16 @@
 import XCTest
 
-// MARK: - Lista leadów: domyślny filtr i menu po przytrzymaniu
+// MARK: - Lista leadów: domyślny filtr, odhaczenie i menu po przytrzymaniu
 //
-// Dwa zachowania z review Tomasza:
-//   1. ekran „Klienci” ma otwierać się na **nowych** zgłoszeniach, bo leady to
-//      rezerwacje konsultacji ze strony i sensem widoku jest ich przerobienie,
-//   2. przytrzymanie leada ma dawać menu z przeniesieniem między etapami.
+// Zachowania z review Tomasza i właściciela (23.09.2026):
+//   1. ekran „Klienci” otwiera się na kolejce **„Do obsługi”** (nowe i czekające
+//      zgłoszenia), bo sensem widoku jest ich przerobienie,
+//   2. okrągły przycisk na karcie oznacza zgłoszenie jako obsłużone, a komunikat
+//      daje „Cofnij”,
+//   3. przytrzymanie leada daje menu z pozostałymi czynnościami.
 //
 // Test chodzi na danych Demo (bez sieci), ale wykonuje **prawdziwą** operację
-// zapisu przez repozytorium: przeniesienie leada zmienia jego etap i po
-// odświeżeniu zgłoszenie znika z filtra „Nowe”.
+// zapisu przez repozytorium: obsłużony lead zmienia etap i znika z kolejki.
 
 final class ClientsLeadMenuUITests: XCTestCase {
 
@@ -34,16 +35,16 @@ final class ClientsLeadMenuUITests: XCTestCase {
         clientsTab.tap()
     }
 
-    func testNoweIsTheDefaultFilter() {
+    func testNeedsActionIsTheDefaultFilter() {
         openClients()
 
-        // Etykieta filtra niesie licznik („Nowe 3”), więc dopasowujemy po początku.
-        let nowe = application.buttons
-            .matching(NSPredicate(format: "label BEGINSWITH %@", "Nowe"))
+        // Etykieta filtra niesie licznik („Do obsługi 2”), więc dopasowujemy po początku.
+        let queue = application.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Do obsługi"))
             .firstMatch
-        XCTAssertTrue(nowe.waitForExistence(timeout: 15), "Brak filtra „Nowe”")
-        XCTAssertTrue(nowe.isSelected, "Ekran ma się otwierać z wybranym filtrem „Nowe”")
-        attachScreenshot(name: "lista-nowe")
+        XCTAssertTrue(queue.waitForExistence(timeout: 15), "Brak filtra „Do obsługi”")
+        XCTAssertTrue(queue.isSelected, "Ekran ma się otwierać z wybranym filtrem „Do obsługi”")
+        attachScreenshot(name: "lista-do-obslugi")
     }
 
     /// Zrzuty zmienionych ekranów zostają w wyniku testu — po to, żeby dało się
@@ -88,7 +89,7 @@ final class ClientsLeadMenuUITests: XCTestCase {
         submit.tap()
 
         // Po zapisie aplikacja otwiera kartę nowego kontaktu — sprawdzamy to,
-        // a potem wracamy na listę, żeby zobaczyć zgłoszenie na filtrze „Nowe”.
+        // a potem wracamy na listę, żeby zobaczyć zgłoszenie w kolejce „Do obsługi”.
         let cardTitle = application.staticTexts["Anna Testowa"]
         XCTAssertTrue(cardTitle.waitForExistence(timeout: 20), "Nie otworzyła się karta nowego kontaktu")
         XCTAssertTrue(application.staticTexts["DODANO RĘCZNIE"].exists, "Nowy kontakt nie ma źródła „Dodano ręcznie”")
@@ -145,31 +146,59 @@ final class ClientsLeadMenuUITests: XCTestCase {
         )
     }
 
-    func testLongPressMovesLeadToContact() {
+    func testCheckButtonMarksLeadHandledAndUndoRestoresIt() {
         openClients()
 
         // Karta leada ma własny identyfikator: jej etykieta niesie treść dla
         // VoiceOver (imię, temat, status, język), więc zmienia się razem z danymi.
         let lead = application.buttons.matching(identifier: "lead-card").firstMatch
-        XCTAssertTrue(lead.waitForExistence(timeout: 15), "Brak nowego zgłoszenia na liście")
+        XCTAssertTrue(lead.waitForExistence(timeout: 15), "Brak zgłoszenia w kolejce")
         let leadLabel = lead.label
+        let countBefore = application.buttons.matching(identifier: "lead-card").count
+        attachScreenshot(name: "przed-odhaczeniem")
 
-        attachScreenshot(name: "przed-menu")
-        lead.press(forDuration: 1.2)
+        let check = application.buttons.matching(identifier: "lead-check").firstMatch
+        XCTAssertTrue(check.waitForExistence(timeout: 10), "Brak przycisku „Oznacz jako obsłużone”")
+        check.tap()
 
-        let moveToContact = application.buttons["Przenieś do: w kontakcie"]
-        XCTAssertTrue(
-            moveToContact.waitForExistence(timeout: 10),
-            "Przytrzymanie leada nie pokazało menu z przeniesieniem"
-        )
-        attachScreenshot(name: "menu-etapy")
-        moveToContact.tap()
-
-        // Po przeniesieniu zgłoszenie ma zniknąć z filtra „Nowe”.
+        // Obsłużone zgłoszenie znika z kolejki „Do obsługi”…
         let sameCard = application.buttons
             .matching(NSPredicate(format: "label == %@", leadLabel))
             .firstMatch
         let disappeared = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: sameCard)
         wait(for: [disappeared], timeout: 15)
+        XCTAssertLessThan(application.buttons.matching(identifier: "lead-card").count, countBefore)
+
+        // …a komunikat pozwala to cofnąć jednym dotknięciem.
+        let undo = application.buttons["Cofnij"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 5), "Komunikat nie dał „Cofnij”")
+        attachScreenshot(name: "po-odhaczeniu-cofnij")
+        undo.tap()
+
+        let restored = application.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", String(leadLabel.prefix(while: { $0 != "," }))))
+            .firstMatch
+        XCTAssertTrue(restored.waitForExistence(timeout: 15), "„Cofnij” nie przywróciło zgłoszenia do kolejki")
+    }
+
+    func testLongPressOffersHandledAndConversion() {
+        openClients()
+
+        let lead = application.buttons.matching(identifier: "lead-card").firstMatch
+        XCTAssertTrue(lead.waitForExistence(timeout: 15), "Brak zgłoszenia na liście")
+        lead.press(forDuration: 1.2)
+
+        let convert = application.buttons["Konwertuj na klienta"]
+        XCTAssertTrue(
+            convert.waitForExistence(timeout: 10),
+            "Przytrzymanie leada nie pokazało menu z konwersją"
+        )
+        attachScreenshot(name: "menu-czynnosci")
+        convert.tap()
+
+        // Konwersja zakłada kartotekę, więc aplikacja musi zapytać.
+        let confirm = application.buttons["Konwertuj na klienta"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 10), "Brak pytania o potwierdzenie konwersji")
+        attachScreenshot(name: "potwierdzenie-konwersji")
     }
 }

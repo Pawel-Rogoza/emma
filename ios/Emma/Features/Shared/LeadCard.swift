@@ -2,81 +2,315 @@ import SwiftUI
 
 // MARK: - Karta leada
 //
-// Odtworzenie `.card.large-lead` z referencji (`clientList()` w
-// `reference/prototype/app.js`): wiersz metadanych z pigułką statusu i językiem,
-// wiersz osoby oraz stopkę z najbliższym terminem.
+// Przebudowa z review 23.09.2026. Karta odpowiada na trzy pytania w tej
+// kolejności, w jakiej zadaje je prawnik:
 //
-// Karta jest jednym przyciskiem — jak w referencji, gdzie całe `.large-lead`
-// było elementem klikalnym prowadzącym do karty klienta.
+//   1. **Czy to czeka?** — kolorowy pasek z lewej i plakietka „Nowy · 3 godz.
+//      temu” / „Oczekuje · 2 dni” / „W kontakcie” (reguła w `LeadWorkflow`),
+//   2. **Kto i w jakiej sprawie?** — osoba i temat bez surowego prefiksu
+//      „Termin: 2026-09-15 20:00”, który z formularza trafiał na początek tematu,
+//   3. **Kiedy chce rozmawiać?** — termin z rezerwacji jako osobna linia.
+//
+// Po prawej jest okrągły przycisk „obsłużone” — ten sam gest co odhaczenie
+// zadania. Karta sama jest przyciskiem otwierającym kartę klienta; przycisk
+// obsłużenia leży obok niej (nie w środku), żeby dotknięcia się nie myliły.
+
+/// Wygląd stanu zgłoszenia: kolor paska, kropki i plakietki.
+enum LeadStatusStyle {
+    static func tone(_ status: LeadStatus) -> Color {
+        switch status {
+        case .fresh: return EmmaTheme.accent
+        case .waiting: return EmmaTheme.pillAmberText
+        case .inContact: return EmmaTheme.pillGreenText
+        case .client: return EmmaTheme.mutedSoft
+        }
+    }
+
+    static func pillKind(_ status: LeadStatus) -> StatusPill.Kind {
+        switch status {
+        case .fresh, .client: return .neutral
+        case .waiting: return .amber
+        case .inContact: return .green
+        }
+    }
+
+    /// Temat do pokazania: bez prefiksu rezerwacji, a gdy nic nie zostało —
+    /// opis zastępczy zamiast pustej linii.
+    static func topicText(_ topic: LeadTopic) -> String {
+        if !topic.text.isEmpty { return topic.text }
+        return topic.booking == nil ? "Bez opisu zgłoszenia" : "Rezerwacja konsultacji"
+    }
+
+    /// „Termin z rezerwacji: Jutro, 10:00”; termin, który już minął, mówi to wprost.
+    static func bookingText(_ booking: LeadBooking, dateText: DateTextFormatter, today: LocalDate) -> String {
+        var text = "Termin z rezerwacji: \(dateText.dayLabel(booking.day))"
+        if let time = booking.time {
+            text += ", \(time.hhmm)"
+        }
+        if booking.day < today {
+            text += " · minął"
+        }
+        return text
+    }
+}
+
+/// Plakietka stanu z kropką: „● Oczekuje · 2 dni”.
+struct LeadStatusBadge: View {
+    let status: LeadStatus
+    let text: String
+
+    var body: some View {
+        let colors = LeadStatusStyle.pillKind(status).colors
+        HStack(spacing: 6) {
+            Circle()
+                .fill(LeadStatusStyle.tone(status))
+                .frame(width: 6, height: 6)
+            Text(text)
+                .font(EmmaTypography.pill)
+                .foregroundStyle(colors.text)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(colors.background)
+        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.pill, style: .continuous))
+    }
+}
+
+/// Okrągły przycisk „obsłużone” — ten sam gest co odhaczenie zadania.
+///
+/// W stanie nieodhaczonym ptaszek jest widoczny, ale blady: podpowiada, co się
+/// stanie po dotknięciu, zamiast udawać pole do wypełnienia.
+struct LeadCheckButton: View {
+    let isDone: Bool
+    let isBusy: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .fill(isDone ? EmmaTheme.pillGreenText : EmmaTheme.surface)
+                Circle()
+                    .strokeBorder(EmmaTheme.pillGreenText.opacity(isDone ? 0 : 0.45), lineWidth: 1.6)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(isDone ? EmmaTheme.primaryButtonText : EmmaTheme.pillGreenText.opacity(0.5))
+                    .symbolEffect(.bounce, value: isDone)
+            }
+            .frame(width: 30, height: 30)
+            .frame(width: EmmaSpacing.hitTarget, height: EmmaSpacing.hitTarget)
+            .contentShape(Rectangle())
+            .animation(.spring(response: 0.3, dampingFraction: 0.62), value: isDone)
+        }
+        .buttonStyle(.plain)
+        .disabled(isBusy)
+        .accessibilityLabel(isDone ? "Przywróć do obsługi" : "Oznacz jako obsłużone")
+        .accessibilityIdentifier("lead-check")
+    }
+}
 
 struct LeadCard: View {
 
     @EnvironmentObject private var dependencies: AppDependencies
+    @Environment(\.openURL) private var openURL
 
     private let client: Client
     private let nextEvent: ScheduledEvent?
     private let onOpen: () -> Void
-    private let onSetStage: ((ClientStage) -> Void)?
+    private let onMarkHandled: (() async -> Void)?
+    private let onReopen: (() async -> Void)?
+    private let onConvert: (() -> Void)?
     private let onRename: (() -> Void)?
     private let onDelete: (() -> Void)?
+
+    /// Natychmiastowe „odhaczenie”, zanim wróci zapis — odpowiedź na dotknięcie
+    /// nie może czekać na sieć.
+    @State private var isMarking = false
 
     init(
         client: Client,
         nextEvent: ScheduledEvent?,
         onOpen: @escaping () -> Void,
-        onSetStage: ((ClientStage) -> Void)? = nil,
+        onMarkHandled: (() async -> Void)? = nil,
+        onReopen: (() async -> Void)? = nil,
+        onConvert: (() -> Void)? = nil,
         onRename: (() -> Void)? = nil,
         onDelete: (() -> Void)? = nil
     ) {
         self.client = client
         self.nextEvent = nextEvent
         self.onOpen = onOpen
-        self.onSetStage = onSetStage
+        self.onMarkHandled = onMarkHandled
+        self.onReopen = onReopen
+        self.onConvert = onConvert
         self.onRename = onRename
         self.onDelete = onDelete
     }
 
     var body: some View {
-        Button(action: onOpen) {
-            SurfaceCard(padding: EdgeInsets(top: 17, leading: 17, bottom: 17, trailing: 17)) {
-                VStack(alignment: .leading, spacing: 0) {
-                    metaRow
-                    PersonRow(client: client, subtitle: client.topic, showsChevron: false, onOpen: nil)
-                        .padding(.vertical, 11)
-                        // Karta jest jednym celem dotyku; wiersz osoby nie przechwytuje tapnięcia.
-                        .allowsHitTesting(false)
-                    footerRow
+        let status = LeadWorkflow.status(of: client, now: dependencies.now)
+        ZStack(alignment: .trailing) {
+            Button(action: onOpen) {
+                cardContent(status)
+            }
+            .buttonStyle(EmmaCardButtonStyle())
+            .contextMenu { contextMenuItems(status) }
+            // Identyfikator dla testów: etykieta niesie treść dla VoiceOver i zmienia
+            // się razem z danymi, więc nie da się po niej stabilnie znaleźć karty.
+            .accessibilityIdentifier("lead-card")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityText(status))
+            .accessibilityHint("Otwiera kartę klienta. Przytrzymaj, aby zobaczyć więcej czynności.")
+            .accessibilityAddTraits(.isButton)
+
+            if status != .client {
+                LeadCheckButton(isDone: isMarking || status == .inContact, isBusy: isMarking) {
+                    toggleHandled(status)
                 }
+                .padding(.trailing, 6)
             }
         }
-        .buttonStyle(.plain)
-        .contextMenu {
-            contextMenuItems
-        }
-        // Identyfikator dla testów: etykieta niesie treść dla VoiceOver i zmienia
-        // się razem z danymi, więc nie da się po niej stabilnie znaleźć karty.
-        .accessibilityIdentifier("lead-card")
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityText)
-        .accessibilityHint("Otwiera kartę klienta. Przytrzymaj, aby przenieść, zmienić nazwę albo usunąć zgłoszenie.")
-        .accessibilityAddTraits(.isButton)
     }
 
-    // MARK: Menu po przytrzymaniu
+    // MARK: Treść
 
-    /// Menu zbiera to, co backend naprawdę potrafi przyjąć: zmianę etapu
-    /// (wejście na „Klient" konwertuje zgłoszenie w kartotekę) i zmianę nazwy.
-    /// Usuwania nie ma — kontrakt mobilny nie zna `DELETE` dla kontaktu, więc
-    /// nie udajemy, że jest.
-    @ViewBuilder
-    private var contextMenuItems: some View {
-        if let onSetStage, client.stage != .client {
-            ForEach(stageTargets, id: \.self) { stage in
-                Button {
-                    onSetStage(stage)
-                } label: {
-                    Label(stageActionLabel(stage), systemImage: stageIcon(stage))
+    private func cardContent(_ status: LeadStatus) -> some View {
+        let topic = LeadTopic.parse(client.topic)
+        let topicText = LeadStatusStyle.topicText(topic)
+        return VStack(alignment: .leading, spacing: 11) {
+            HStack(alignment: .center, spacing: 8) {
+                LeadStatusBadge(
+                    status: status,
+                    text: LeadWorkflow.badgeText(for: client, now: dependencies.now, today: dependencies.today)
+                )
+                Spacer(minLength: 8)
+                Text(client.language.displayName)
+                    .font(EmmaTypography.caption())
+                    .foregroundStyle(EmmaTheme.muted)
+                    .lineLimit(1)
+            }
+
+            HStack(alignment: .center, spacing: 12) {
+                PersonAvatar(initials: client.initials, style: .person)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(client.displayName)
+                        .font(EmmaTypography.personName)
+                        .foregroundStyle(EmmaTheme.ink)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    Text(topicText)
+                        .font(EmmaTypography.body(for: topicText, size: 13))
+                        .foregroundStyle(EmmaTheme.muted)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if let footer = footerLine(topic) {
+                HStack(spacing: 6) {
+                    Image(systemName: footer.systemImage)
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(footer.text)
+                        .font(EmmaTypography.caption(.medium))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+                .foregroundStyle(footer.isSoon ? EmmaTheme.accent : EmmaTheme.mutedSoft)
+            }
+        }
+        .padding(.leading, 20)
+        // Miejsce na przycisk „obsłużone” po prawej — treść nie wchodzi pod niego.
+        .padding(.trailing, status == .client ? 17 : 50)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(EmmaTheme.surface)
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(LeadStatusStyle.tone(status))
+                .frame(width: 4)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
+                .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
+        }
+        .emmaCardShadow()
+        .contentShape(Rectangle())
+    }
+
+    private struct Footer {
+        let systemImage: String
+        let text: String
+        /// Dziś albo jutro — wtedy linia jest wyróżniona.
+        let isSoon: Bool
+    }
+
+    /// Stopka mówi, kiedy jest rozmowa: umówiony termin, a gdy go nie ma —
+    /// termin wybrany przy rezerwacji na stronie.
+    private func footerLine(_ topic: LeadTopic) -> Footer? {
+        let today = dependencies.today
+        if let nextEvent {
+            return Footer(
+                systemImage: "calendar",
+                text: "Spotkanie: \(dependencies.dateText.dayLabel(nextEvent.day)), \(nextEvent.time.hhmm)",
+                isSoon: nextEvent.day >= today && nextEvent.day <= today.adding(days: 1)
+            )
+        }
+        if let booking = topic.booking {
+            return Footer(
+                systemImage: "calendar.badge.clock",
+                text: LeadStatusStyle.bookingText(booking, dateText: dependencies.dateText, today: today),
+                isSoon: booking.day >= today && booking.day <= today.adding(days: 1)
+            )
+        }
+        return nil
+    }
+
+    // MARK: Czynności
+
+    private func toggleHandled(_ status: LeadStatus) {
+        if status.needsAction, let onMarkHandled {
+            isMarking = true
+            Task {
+                await onMarkHandled()
+                isMarking = false
+            }
+        } else if status == .inContact, let onReopen {
+            Task { await onReopen() }
+        }
+    }
+
+    /// Menu po przytrzymaniu: wszystko, co backend przyjmuje dla zgłoszenia.
+    @ViewBuilder
+    private func contextMenuItems(_ status: LeadStatus) -> some View {
+        if status.needsAction, onMarkHandled != nil {
+            Button {
+                toggleHandled(status)
+            } label: {
+                Label("Oznacz jako obsłużone", systemImage: "checkmark.circle")
+            }
+        }
+        if status == .inContact, onReopen != nil {
+            Button {
+                toggleHandled(status)
+            } label: {
+                Label("Przywróć do obsługi", systemImage: "arrow.uturn.backward.circle")
+            }
+        }
+        if let phoneURL = client.phone.flatMap(ContactLinks.phoneURL) {
+            Button {
+                openURL(phoneURL)
+            } label: {
+                Label("Zadzwoń", systemImage: "phone")
+            }
+        }
+        if let onConvert, status != .client {
+            Button {
+                onConvert()
+            } label: {
+                Label("Konwertuj na klienta", systemImage: "person.crop.circle.badge.checkmark")
             }
         }
         if let onRename {
@@ -88,7 +322,7 @@ struct LeadCard: View {
         }
         // Usuwanie jest tylko dla zgłoszeń. Kartoteka ma sprawy, terminy
         // i dokumenty — jej usunięcie nie jest tym samym co skasowanie spamu.
-        if let onDelete, client.stage != .client {
+        if let onDelete, status != .client {
             Button(role: .destructive) {
                 onDelete()
             } label: {
@@ -102,76 +336,89 @@ struct LeadCard: View {
         }
     }
 
-    private var stageTargets: [ClientStage] {
-        [.new, .inContact, .client].filter { $0 != client.stage }
-    }
-
-    private func stageActionLabel(_ stage: ClientStage) -> String {
-        switch stage {
-        case .new: return "Przenieś do: nowe"
-        case .inContact: return "Przenieś do: w kontakcie"
-        case .client: return "Przenieś do: klient"
+    private func accessibilityText(_ status: LeadStatus) -> String {
+        let topic = LeadTopic.parse(client.topic)
+        var parts = [
+            client.displayName,
+            LeadStatusStyle.topicText(topic),
+            LeadWorkflow.badgeText(for: client, now: dependencies.now, today: dependencies.today),
+            client.language.displayName
+        ]
+        if let footer = footerLine(topic) {
+            parts.append(footer.text)
         }
-    }
-
-    private func stageIcon(_ stage: ClientStage) -> String {
-        switch stage {
-        case .new: return "tray.and.arrow.down"
-        case .inContact: return "bubble.left.and.bubble.right"
-        case .client: return "person.crop.circle.badge.checkmark"
-        }
-    }
-
-    // MARK: Wiersze
-
-    private var metaRow: some View {
-        HStack(alignment: .center, spacing: 8) {
-            StatusPill(statusPillText, kind: showsUrgentContact ? .amber : .neutral)
-            Spacer(minLength: 8)
-            Text(client.language.displayName)
-                .font(EmmaTypography.caption())
-                .foregroundStyle(EmmaTheme.muted)
-        }
-    }
-
-    private var footerRow: some View {
-        HStack(alignment: .center, spacing: 8) {
-            Text(nextEventText)
-                .font(EmmaTypography.caption())
-                .foregroundStyle(EmmaTheme.muted)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
-        }
-    }
-
-    // MARK: Treści
-
-    /// Referencja pokazywała pigułkę „Pilny kontakt”, gdy `urgent && needsReply`.
-    /// Model domeny nie ma osobnego pola `urgent` na kliencie (`Client` w
-    /// `Core/Domain/Models.swift`), więc znacznikiem pilności jest `needsReply`.
-    private var showsUrgentContact: Bool { client.needsReply }
-
-    private var statusPillText: String {
-        showsUrgentContact ? "Pilny kontakt" : client.stage.displayName
-    }
-
-    /// Stopka mówi, co jest do zrobienia. Gdy nie ma terminu, zamiast pustego
-    /// „Termin do ustalenia" pokazujemy datę zgłoszenia — przy rezerwacji ze
-    /// strony to najważniejsza informacja: jak długo zgłoszenie czeka.
-    private var nextEventText: String {
-        guard let nextEvent else {
-            // `dayLabel` oddaje „Dzisiaj”/„Wczoraj” wielką literą, bo stoi na
-            // początku zdania — tutaj jest w środku, więc zmniejszamy pierwszą.
-            let label = dependencies.dateText.dayLabel(client.createdAt)
-            let lowered = label.prefix(1).lowercased() + label.dropFirst()
-            return "Zgłoszono \(lowered)"
-        }
-        return "\(dependencies.dateText.dayLabel(nextEvent.day)), \(nextEvent.time.hhmm)"
-    }
-
-    private var accessibilityText: String {
-        var parts = [client.displayName, client.topic, statusPillText, client.language.displayName]
-        parts.append(nextEventText)
         return parts.joined(separator: ", ")
+    }
+}
+
+// MARK: - Wiersz leada na „Dzisiaj”
+
+/// Zwarty wiersz zgłoszenia do sekcji „Leady do obsługi” na ekranie głównym:
+/// awatar z kropką stanu, osoba, wiek i temat w jednej linii, przycisk „obsłużone”.
+struct LeadInboxRow: View {
+
+    @EnvironmentObject private var dependencies: AppDependencies
+
+    let client: Client
+    let onOpen: () -> Void
+    let onMarkHandled: () async -> Void
+
+    @State private var isMarking = false
+
+    var body: some View {
+        let status = LeadWorkflow.status(of: client, now: dependencies.now)
+        let subtitle = subtitleText(status)
+        HStack(alignment: .center, spacing: 2) {
+            Button(action: onOpen) {
+                HStack(alignment: .center, spacing: 11) {
+                    ZStack(alignment: .bottomTrailing) {
+                        PersonAvatar(initials: client.initials, style: .person, diameter: 38)
+                        Circle()
+                            .fill(LeadStatusStyle.tone(status))
+                            .frame(width: 11, height: 11)
+                            .overlay {
+                                Circle().strokeBorder(EmmaTheme.surface, lineWidth: 2)
+                            }
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(client.displayName)
+                            .font(EmmaTypography.ui(14, .semibold))
+                            .foregroundStyle(EmmaTheme.ink)
+                            .lineLimit(1)
+                        Text(subtitle)
+                            .font(EmmaTypography.body(for: subtitle, size: 12))
+                            .foregroundStyle(status == .waiting ? EmmaTheme.pillAmberText : EmmaTheme.muted)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(client.displayName), \(subtitle)")
+            .accessibilityHint("Otwiera kartę klienta")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("today-lead-row")
+
+            LeadCheckButton(isDone: isMarking, isBusy: isMarking) {
+                isMarking = true
+                Task {
+                    await onMarkHandled()
+                    isMarking = false
+                }
+            }
+        }
+        .padding(.leading, 15)
+        .padding(.trailing, 5)
+        .padding(.vertical, 6)
+    }
+
+    /// „Oczekuje · 2 dni · Zatrzymanie osoby bliskiej”.
+    private func subtitleText(_ status: LeadStatus) -> String {
+        let badge = LeadWorkflow.badgeText(for: client, now: dependencies.now, today: dependencies.today)
+        let topic = LeadStatusStyle.topicText(LeadTopic.parse(client.topic))
+        return "\(badge) · \(topic)"
     }
 }

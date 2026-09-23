@@ -113,7 +113,10 @@ public actor MockRepository:
             source: draft.source,
             createdAt: draft.createdAt,
             briefing: draft.context,
-            needsReply: false
+            needsReply: false,
+            // Zgłoszenie dodane teraz ma dokładną chwilę przyjęcia — tak jak
+            // `received_at` z backendu — więc od razu liczy się do reguły 24 h.
+            receivedAt: clock.now()
         )
         dataset.clients.append(client)
         dataset.threads.append(
