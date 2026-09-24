@@ -240,5 +240,15 @@ instalacja → czyścimy sesję w kluczyku przed utworzeniem `MobileSessionKeepe
 - Kontrole z `ios/scripts/verify-linux-logic.sh`, które nie wymagają Swifta:
   odwołania (1530, bez braków), kontrakt API, struktura CI, martwe API (717
   składowych, brak), czytelność — bez zastrzeżeń.
-- Kompilacja i testy (`swift test`, Xcode) — przez workflow `Emma · iOS` na
-  macOS (w kontenerze audytu nie ma toolchaina Swift).
+- **Kompilacja i testy nie zostały wykonane.** W kontenerze audytu nie ma
+  toolchaina Swift (pobranie zablokowane), a workflow `Emma · iOS` (run
+  36066592854) nie dostał runnera macOS — job kończy się po ~8 s bez kroków
+  i logów. Tak samo kończą się wszystkie runy macOS od 23.09, także na
+  `master` i TestFlight, więc to stan konta GitHub Actions (limit/rozliczenie
+  minut macOS), nie tej zmiany.
+- Przed scaleniem: na Macu `bash ios/scripts/verify-linux-logic.sh`, potem
+  `xcodebuild test -scheme Emma-Demo` (EmmaTests) oraz
+  `-only-testing:EmmaUITests/LockPreservesWorkUITests` — ten test sprawdza S1.
+  Miejsca najbardziej narażone na błąd kompilacji w Swift 6:
+  `LockOverlayWindow.swift`, `@MainActor static let lockOverlay` w `EmmaApp`,
+  `EventReminderScheduler.removeAll()` (`deliveredNotifications()`).
