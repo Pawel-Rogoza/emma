@@ -174,6 +174,33 @@ idempotencji. Timeout wysyłki = stan nieznany; rozstrzyga webhook statusu z `wa
 oraz przyjęcia zasady „bez danych wrażliwych przez WhatsApp”. Alternatywa: 360dialog
 (dojrzalszy, ale widzi całą treść w obie strony).
 
+## 9. Dokumenty od klientów (media przychodzące)
+
+Klienci wysyłają kancelarii dokumenty spraw przez WhatsApp (wyroki, skany dowodów,
+czasem dokumentacja medyczna).
+
+**Mechanika:** webhook zawiera tylko `document.id` (media ID), nazwę, typ i `sha256`.
+Pobranie wymaga tokenu Meta (`GET /{media-id}` → tymczasowy URL → `GET` z tokenem). Token
+jest u Dualhook, więc **pobranie pliku idzie przez ich relay** — pełna treść dokumentu
+jawna w tranzycie. Potencjalny konflikt z ToS §10 (zakaz danych wrażliwych i
+identyfikatorów urzędowych) — do wyjaśnienia na piśmie.
+
+**Zmiana modelu poufności niezależna od partnera:** w aplikacji WhatsApp Business
+wiadomości są szyfrowane E2E aż do telefonu. Po podłączeniu Cloud API (koegzystencja)
+wiadomości są kopiowane także do Cloud API, gdzie punktem końcowym szyfrowania jest Meta —
+Meta ma treść jawną. Dotyczy każdego partnera. Retencja mediów w Cloud API (z pamięci:
+do 30 dni) **[do potwierdzenia]**. Decyzja właściciela kancelarii, najlepiej po konsultacji
+wytycznych samorządu zawodowego dot. chmury.
+
+**Warianty:**
+
+1. Emma pokazuje metadane dokumentu („Klient przesłał: plik.pdf”), nie pobiera go; plik
+   otwierany w aplikacji WA Business. Dokument nie trafia do Dualhook, backendu ani AI
+   (Meta ma kopię i tak). **Rekomendowany start.**
+2. Emma pobiera dokumenty przez relay Dualhook — do akt sprawy, AI może je czytać. Wymaga
+   pisemnej zgody Dualhook wobec §10; dochodzi Gemini jako podmiot przetwarzający.
+3. 360dialog — pełny BSP, treść przez nich w obie strony.
+
 ## Źródła
 
 - Meta — cennik: https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing
