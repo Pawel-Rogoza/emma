@@ -94,6 +94,42 @@ Przed decyzją do sprawdzenia u partnera: umowa powierzenia przetwarzania danych
 lokalizacja danych, obsługa importu historii (`history`, `smb_app_state_sync`) i echo
 (`smb_message_echoes`), wersja Embedded Signup, kto fakturuje opłaty Meta.
 
+## 7. Dualhook — umowa powierzenia (DPA) i przepływ treści
+
+Tekst DPA (obowiązuje od 2026-07-21) dostarczony przez właściciela ze strony Dualhook.
+
+**Kontrahent:** WADA BV (spółka z UE — BV to forma holenderska lub belgijska).
+
+**Sprostowanie do sekcji 2:** treść nie omija Dualhook w obu kierunkach.
+
+- przychodzące (klient → kancelaria): Webhook Override, Meta wysyła prosto na backend Emmy,
+  Dualhook treści nie widzi;
+- wychodzące (Emma → klient): przechodzą przez ich relay na Cloudflare (DPA §4). Deklarują
+  brak zapisu i cache treści oraz brak treści i odbiorców w logach relay. Treść jest przez
+  chwilę jawna w pamięci ich runtime'u — to deklaracja, nie gwarancja techniczna.
+
+Kontekst: w Cloud API szyfrowanie E2E kończy się na serwerach Meta, a pełny BSP (360dialog)
+widzi treść w obie strony. Dualhook widzi mniej niż pełny BSP, ale nie nic.
+
+**Ocena wobec art. 28 ust. 3 RODO:** formalnie kompletna. Polecenia (§2), poufność (§5),
+TOMs (§6, aneks `/security`), podwykonawcy z 30-dniowym uprzedzeniem i sprzeciwem (§7),
+pomoc (§8, możliwe opłaty), SCC moduł 2 i 3 przy transferach (§10). Słabsze punkty:
+
+- §9 — zgłoszenie naruszenia „without undue delay”, bez terminu w godzinach (kancelaria ma
+  72 h wobec UODO),
+- §11 — szerokie wyjątki od usunięcia danych (backup, audit, dispute) bez terminu,
+- §12 — audyt głównie jako „informacje”, raz w roku.
+
+**Do sprawdzenia przed założeniem konta:**
+
+1. `https://dualhook.com/subprocessors` — lista i lokalizacje podwykonawców,
+2. `https://dualhook.com/security` — aneks TOMs,
+3. `https://dualhook.com/terms` — limit odpowiedzialności,
+4. pytanie: czy wysyłka może iść bezpośrednio do Graph API własnym tokenem, z pominięciem relay,
+5. pytanie: termin zgłoszenia naruszenia w godzinach,
+6. po stronie kancelarii: zachować PDF DPA z datą akceptacji, wpis w rejestrze czynności
+   przetwarzania, aktualizacja klauzuli informacyjnej.
+
 ## Źródła
 
 - Meta — cennik: https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing
