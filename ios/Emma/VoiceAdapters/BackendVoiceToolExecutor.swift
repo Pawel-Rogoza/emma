@@ -22,7 +22,7 @@ actor BackendVoiceToolExecutor: VoiceToolExecuting {
     init(
         baseURL: URL?,
         tokens: VoiceAccessTokenSource,
-        session: URLSession = .shared,
+        session: URLSession = .emmaAPI,
         timeout: TimeInterval = 15
     ) {
         self.baseURL = baseURL
@@ -32,7 +32,7 @@ actor BackendVoiceToolExecutor: VoiceToolExecuting {
     }
 
     /// Stały token — testy i podglądy.
-    init(baseURL: URL?, accessToken: String?, session: URLSession = .shared, timeout: TimeInterval = 15) {
+    init(baseURL: URL?, accessToken: String?, session: URLSession = .emmaAPI, timeout: TimeInterval = 15) {
         self.init(baseURL: baseURL, tokens: .fixed(accessToken), session: session, timeout: timeout)
     }
 

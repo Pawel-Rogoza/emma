@@ -181,6 +181,13 @@ final class LeadWorkflowTests: XCTestCase {
         XCTAssertEqual(ContactLinks.whatsAppURL("600 100 200")?.absoluteString, "https://wa.me/48600100200")
         XCTAssertEqual(ContactLinks.mailURL(" anna@example.com ")?.absoluteString, "mailto:anna@example.com")
         XCTAssertNil(ContactLinks.mailURL("anna example.com"))
+        XCTAssertEqual(ContactLinks.mailURL("jan.o'neil+kancelaria@sub.example.pl")?.absoluteString, "mailto:jan.o'neil+kancelaria@sub.example.pl")
+        // Adres z formularza strony nie może dopisać ukrytych odbiorców ani treści.
+        XCTAssertNil(ContactLinks.mailURL("anna@example.com?bcc=obcy@evil.test&body=x"))
+        XCTAssertNil(ContactLinks.mailURL("anna@example.com,obcy@evil.test"))
+        XCTAssertNil(ContactLinks.mailURL("anna@example.com%0Abcc:obcy@evil.test"))
+        XCTAssertNil(ContactLinks.mailURL("anna@@example.com"))
+        XCTAssertNil(ContactLinks.mailURL("anna@localhost"))
     }
 
     func testDemoLeadsCarryExactReceivedTime() {

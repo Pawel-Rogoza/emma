@@ -385,9 +385,17 @@ final class AuthStore: ObservableObject {
         deviceName: String
     ) -> MobileSessionKeeper? {
         guard let baseURL = configuration.apiBaseURL else { return nil }
+        // Pęk kluczy przeżywa usunięcie aplikacji, `UserDefaults` — nie. Brak
+        // identyfikatora instalacji oznacza więc świeżą instalację, a sesja
+        // w kluczyku należy do poprzedniej: kasujemy ją, zamiast trzymać
+        // tokeny cudzej instalacji na urządzeniu.
+        let store = KeychainMobileSessionStore()
+        if defaults.string(forKey: InstallationIdentity.defaultsKey) == nil {
+            try? store.clear()
+        }
         return MobileSessionKeeper(
             client: MobileAuthClient(baseURL: baseURL),
-            store: KeychainMobileSessionStore(),
+            store: store,
             installationID: InstallationIdentity.current(defaults: defaults),
             deviceName: deviceName
         )

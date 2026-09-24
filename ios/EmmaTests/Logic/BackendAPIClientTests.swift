@@ -93,6 +93,20 @@ final class BackendAPIClientTests: XCTestCase {
         XCTAssertEqual(StubURLProtocol.lastRequest?.url?.path, "/api/mobile/v1/clients/client-12")
     }
 
+    /// Audyt bezpieczeństwa 24.09.2026: identyfikator od modelu (`app_open_case`)
+    /// nie może wyjść poza swoją trasę przez `..` ani dopisać zapytania.
+    func testUnsafeIdentifierIsRejectedWithoutRequest() async throws {
+        StubURLProtocol.reset()
+        StubURLProtocol.respond(json: Data(Self.cardJSON.utf8), status: 200)
+        for unsafe in ["client-12/../../actions/7/confirm", "..", "client-12?x=1", "client%2F12", ""] {
+            await assertError(.notFound) {
+                _ = try await self.makeClient().clientCard(id: ClientID(unsafe))
+            }
+        }
+        XCTAssertNil(StubURLProtocol.lastRequest, "Żadne żądanie nie może wyjść z niebezpiecznym identyfikatorem")
+        XCTAssertTrue(BackendAPIClient.isSafePath("api/mobile/v1/voice/sessions/3F2504E0-4F89-11D3-9A0C-0305E82C3301/status"))
+    }
+
     func testMissingTokenOmitsAuthorizationHeader() async throws {
         StubURLProtocol.respond(json: Data(#"{"items":[],"next_cursor":null,"has_more":false}"#.utf8), status: 200)
         _ = try await makeClient(token: nil).clients(query: "", stage: nil)

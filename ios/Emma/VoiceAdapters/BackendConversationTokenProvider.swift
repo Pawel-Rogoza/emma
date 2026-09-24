@@ -65,7 +65,7 @@ actor BackendConversationTokenProvider {
     private let session: URLSession
     private let decoder: JSONDecoder
 
-    init(baseURL: URL?, session: URLSession = .shared) {
+    init(baseURL: URL?, session: URLSession = .emmaAPI) {
         self.baseURL = baseURL
         self.session = session
         self.decoder = JSONDecoder()

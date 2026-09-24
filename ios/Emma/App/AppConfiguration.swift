@@ -84,17 +84,25 @@ public struct AppConfiguration: Sendable {
         let rawVoiceProvider = (infoDictionary["EMMAVoiceProvider"] as? String) ?? ""
         let voiceModel = (infoDictionary["EMMAVoiceModel"] as? String) ?? ""
 
-        if let index = arguments.firstIndex(of: "-EMMAEnvironment"), index + 1 < arguments.count {
-            environment = Environment(rawValue: arguments[index + 1]) ?? environment
+        // Nadpisania z argumentów startowych służą testom i podglądom. W buildzie
+        // wydawniczym (TestFlight, App Store) ich nie ma: adres backendu, do
+        // którego trafiają hasło i token, pochodzi wyłącznie z konfiguracji.
+        #if DEBUG || EMMA_DEMO
+        let overrides = arguments
+        #else
+        let overrides: [String] = []
+        #endif
+        if let index = overrides.firstIndex(of: "-EMMAEnvironment"), index + 1 < overrides.count {
+            environment = Environment(rawValue: overrides[index + 1]) ?? environment
         }
-        if let index = arguments.firstIndex(of: "-EMMAApiBaseURL"), index + 1 < arguments.count {
-            rawBaseURL = arguments[index + 1]
+        if let index = overrides.firstIndex(of: "-EMMAApiBaseURL"), index + 1 < overrides.count {
+            rawBaseURL = overrides[index + 1]
         }
         // Pozwala porównać dostawców na jednym buildzie (A/B na urządzeniu) bez
         // przebudowywania konfiguracji.
         var rawVoiceProviderOverride = rawVoiceProvider
-        if let index = arguments.firstIndex(of: "-EMMAVoiceProvider"), index + 1 < arguments.count {
-            rawVoiceProviderOverride = arguments[index + 1]
+        if let index = overrides.firstIndex(of: "-EMMAVoiceProvider"), index + 1 < overrides.count {
+            rawVoiceProviderOverride = overrides[index + 1]
         }
 
         // Nieznana lub pusta wartość nie może uruchomić innego dostawcy.

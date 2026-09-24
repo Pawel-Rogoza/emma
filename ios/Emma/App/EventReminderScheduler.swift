@@ -109,6 +109,24 @@ final class EventReminderScheduler {
         }
     }
 
+    /// Koniec sesji. Przypomnienia niosą nazwy klientów i terminów, więc nie
+    /// mogą przeżyć wylogowania — pojawiałyby się na ekranie blokady telefonu
+    /// osobie, która nie ma już dostępu do danych kancelarii.
+    func removeAll() async {
+        refreshTask?.cancel()
+        refreshTask = nil
+        let center = UNUserNotificationCenter.current()
+        let prefix = EventReminderPlan.identifierPrefix
+        let pending = await center.pendingNotificationRequests()
+            .map(\.identifier)
+            .filter { $0.hasPrefix(prefix) }
+        center.removePendingNotificationRequests(withIdentifiers: pending)
+        let delivered = await center.deliveredNotifications()
+            .map(\.request.identifier)
+            .filter { $0.hasPrefix(prefix) }
+        center.removeDeliveredNotifications(withIdentifiers: delivered)
+    }
+
     /// Zdjęcie przypomnienia usuniętego terminu od razu, bez czekania na odświeżenie.
     func removeReminder(for eventID: EventID) {
         UNUserNotificationCenter.current().removePendingNotificationRequests(

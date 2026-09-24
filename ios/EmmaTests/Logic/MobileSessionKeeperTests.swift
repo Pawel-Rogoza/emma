@@ -248,6 +248,37 @@ final class MobileSessionKeeperTests: XCTestCase {
         XCTAssertNil(try store.load())
     }
 
+    /// Audyt bezpieczeństwa 24.09.2026: wylogowanie po ponad 30 minutach
+    /// bezczynności wysyłało wygasły token, serwer odpowiadał 401, aplikacja
+    /// uznawała to za sukces, a token odświeżania zostawał ważny na serwerze.
+    func testSignOutWithExpiredAccessTokenRefreshesBeforeRevoking() async throws {
+        let client = FakeClient()
+        client.refreshResults = [.success(FakeClient.session(accessToken: "access-2", refreshToken: "refresh-2"))]
+        let clock = Clock()
+        let store = InMemoryMobileSessionStore(session: FakeClient.session(expiresIn: 60))
+        let keeper = makeKeeper(client: client, store: store, clock: clock)
+        clock.advance(3600)
+
+        await keeper.signOut()
+
+        XCTAssertEqual(client.refreshCalls, ["refresh-1"])
+        XCTAssertEqual(client.revokeCalls.map { $0.token }, ["access-2"], "Unieważnienie musi iść ważnym tokenem")
+        XCTAssertNil(try store.load(), "Odnowiona sesja nie może wrócić do kluczyka")
+        let hasSession = await keeper.hasStoredSession
+        XCTAssertFalse(hasSession)
+    }
+
+    func testSignOutWithValidAccessTokenDoesNotRefresh() async throws {
+        let client = FakeClient()
+        let store = InMemoryMobileSessionStore(session: FakeClient.session())
+        let keeper = makeKeeper(client: client, store: store)
+
+        await keeper.signOut()
+
+        XCTAssertTrue(client.refreshCalls.isEmpty)
+        XCTAssertEqual(client.revokeCalls.map { $0.token }, ["access-1"])
+    }
+
     func testSignOutClearsDeviceEvenWhenServerIsUnreachable() async throws {
         let client = FakeClient()
         client.revokeError = .transport("brak sieci")
@@ -311,6 +342,10 @@ final class MobileSessionKeeperTests: XCTestCase {
         XCTAssertNil(try store.load(), "Wylogowane urządzenie nie może odzyskać tokenów")
         let signedIn = await keeper.hasStoredSession
         XCTAssertFalse(signedIn)
+        // Wylogowanie wykorzystało trwające odnowienie (jedno wywołanie, nie dwa
+        // z tym samym rotowanym tokenem) i unieważniło sesję ważnym tokenem.
+        XCTAssertEqual(client.refreshCalls, ["refresh-1"])
+        XCTAssertEqual(client.revokeCalls.map { $0.token }, ["access-2"])
     }
 
     /// Spóźnione odnowienie starej sesji nie nadpisuje świeżego logowania.

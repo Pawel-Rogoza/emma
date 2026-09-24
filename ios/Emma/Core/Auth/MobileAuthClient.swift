@@ -21,7 +21,7 @@ public struct MobileAuthClient: MobileAuthServicing {
     private let session: URLSession
     private let timeout: TimeInterval
 
-    public init(baseURL: URL, session: URLSession = .shared, timeout: TimeInterval = 20) {
+    public init(baseURL: URL, session: URLSession = .emmaAPI, timeout: TimeInterval = 20) {
         self.baseURL = baseURL
         self.session = session
         self.timeout = timeout

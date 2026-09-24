@@ -41,7 +41,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
         accessTokenProvider: @escaping @Sendable () async -> String?,
         tokenRefresher: (@Sendable () async -> String?)? = nil,
         currentUser: @escaping @Sendable () async -> User?,
-        session: URLSession = .shared,
+        session: URLSession = .emmaAPI,
         timeout: TimeInterval = 20
     ) {
         self.api = BackendAPIClient(

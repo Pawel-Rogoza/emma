@@ -28,7 +28,7 @@ public struct BackendVoiceSessionRepository: VoiceSessionRepository, Sendable {
         baseURL: URL,
         accessTokenProvider: @escaping @Sendable () async -> String?,
         tokenRefresher: (@Sendable () async -> String?)? = nil,
-        session: URLSession = .shared,
+        session: URLSession = .emmaAPI,
         timeout: TimeInterval = 20
     ) {
         self.api = BackendAPIClient(

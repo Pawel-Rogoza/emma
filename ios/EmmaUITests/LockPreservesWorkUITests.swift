@@ -50,7 +50,11 @@ final class LockPreservesWorkUITests: XCTestCase {
 
         let unlock = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Odblokuj")).firstMatch
         XCTAssertTrue(unlock.waitForExistence(timeout: 15), "Po powrocie aplikacja nie jest zablokowana")
-        if unlock.isHittable { unlock.tap() }
+        // Audyt bezpieczeństwa 24.09.2026: blokada leżała pod otwartym arkuszem,
+        // więc przycisk był niedotykalny, a notatka widoczna bez Face ID.
+        // Wcześniejsze `if unlock.isHittable` maskowało dokładnie ten błąd.
+        XCTAssertTrue(unlock.isHittable, "Blokada musi zasłaniać otwarty arkusz")
+        unlock.tap()
 
         XCTAssertTrue(
             app.textViews.firstMatch.waitForExistence(timeout: 15),

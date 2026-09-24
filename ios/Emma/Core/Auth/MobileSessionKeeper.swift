@@ -203,7 +203,7 @@ public actor MobileSessionKeeper {
     /// usunięcia tokenów z urządzenia — użytkownik ma być wylogowany lokalnie
     /// nawet bez sieci (token i tak wygaśnie na serwerze).
     public func signOut(reason: String = "logout") async {
-        refreshTask?.cancel()
+        let inFlightRefresh = refreshTask
         refreshTask = nil
         // Lokalny stan czyścimy **przed** `await` na serwer: w trakcie
         // unieważniania użytkownik może się już zalogować ponownie, a wtedy
@@ -212,13 +212,36 @@ public actor MobileSessionKeeper {
         try? store.clear()
         session = nil
         epoch += 1
-        if let current {
-            try? await client.revokeSession(
-                accessToken: current.accessToken,
-                installationID: installationID,
-                reason: reason
-            )
+        guard let current else {
+            inFlightRefresh?.cancel()
+            return
         }
+        // Wygasły token dostępu dostałby 401, które `revokeSession` uznaje za
+        // „już wylogowany” — a token odświeżania żyłby dalej na serwerze. Dlatego
+        // wygasły albo wygasający token najpierw odnawiamy, a wynik służy
+        // wyłącznie do unieważnienia: nie trafia do pamięci ani do kluczyka
+        // (epoka już się zmieniła). Trwające odnowienie wykorzystujemy, zamiast
+        // wysyłać drugie z tym samym, właśnie rotowanym tokenem odświeżania.
+        var accessToken = current.accessToken
+        if current.expiresAt.timeIntervalSince(now()) <= refreshLeeway {
+            if let inFlightRefresh {
+                if let refreshed = try? await inFlightRefresh.value {
+                    accessToken = refreshed.accessToken
+                }
+            } else if let refreshed = try? await client.refreshSession(
+                refreshToken: current.refreshToken,
+                installationID: installationID
+            ) {
+                accessToken = refreshed.accessToken
+            }
+        } else {
+            inFlightRefresh?.cancel()
+        }
+        try? await client.revokeSession(
+            accessToken: accessToken,
+            installationID: installationID,
+            reason: reason
+        )
     }
 
     /// Zmiana konta na tym samym urządzeniu: unieważniamy poprzednią instalację

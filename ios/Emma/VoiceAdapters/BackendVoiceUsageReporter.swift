@@ -11,7 +11,7 @@ import Foundation
 struct BackendVoiceUsageReporter: Sendable {
     let baseURL: URL
     let tokens: VoiceAccessTokenSource
-    var session: URLSession = .shared
+    var session: URLSession = .emmaAPI
 
     func report(sessionID: VoiceSessionID, usage: GeminiLiveUsage) async {
         guard !usage.isEmpty else { return }

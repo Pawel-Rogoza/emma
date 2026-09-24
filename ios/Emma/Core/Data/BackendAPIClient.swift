@@ -59,6 +59,23 @@ public enum BackendRepositoryError: Error, Equatable, Sendable {
     }
 }
 
+// MARK: - Sesja HTTP bez pamięci podręcznej
+//
+// `URLSession.shared` korzysta z `URLCache.shared`, który może zapisać odpowiedź
+// GET na dysk (`Library/Caches/…/Cache.db`) — także z nazwiskami klientów
+// i treścią spraw, jeśli serwer nie wyśle `Cache-Control: no-store`. Dane
+// kancelarii mają żyć w pamięci procesu, nie w pliku, który przeżywa
+// wylogowanie. Tej sesji używają wszystkie klienty backendu.
+
+public extension URLSession {
+    static let emmaAPI: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: configuration)
+    }()
+}
+
 // MARK: - Klient HTTP odczytu danych kancelarii
 //
 // To wyłącznie transport i dekodowanie JSON-a kontraktu mobilnego. Nie ma tu
@@ -110,7 +127,7 @@ public struct BackendAPIClient: Sendable {
         baseURL: URL,
         accessToken: @escaping @Sendable () async -> String?,
         refreshToken: (@Sendable () async -> String?)? = nil,
-        session: URLSession = .shared,
+        session: URLSession = .emmaAPI,
         timeout: TimeInterval = 20
     ) {
         self.baseURL = baseURL
@@ -509,6 +526,13 @@ public struct BackendAPIClient: Sendable {
         headers: [String: String] = [:],
         token: String?
     ) throws -> URLRequest {
+        // Identyfikatory w ścieżce bywają niezaufane (np. `case_id` od modelu
+        // w narzędziu `app_open_case`). `appendingPathComponent` nie usuwa
+        // `..` ani `/`, więc `case-1/../../actions/7/confirm` trafiłby w inną
+        // trasę — z tokenem użytkownika. Nieprawidłowy identyfikator = brak rekordu.
+        guard Self.isSafePath(path) else {
+            throw BackendRepositoryError.notFound
+        }
         guard var components = URLComponents(
             url: baseURL.appendingPathComponent(path),
             resolvingAgainstBaseURL: false
@@ -541,6 +565,16 @@ public struct BackendAPIClient: Sendable {
             request.setValue(value, forHTTPHeaderField: name)
         }
         return request
+    }
+
+    /// Każdy segment ścieżki jest niepusty, nie jest `.` ani `..` i składa się
+    /// wyłącznie ze znaków spotykanych w identyfikatorach kontraktu
+    /// (`client-12`, `lead-7`, UUID sesji głosu).
+    static func isSafePath(_ path: String) -> Bool {
+        let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.:")
+        return path.split(separator: "/", omittingEmptySubsequences: false).allSatisfy { segment in
+            !segment.isEmpty && segment != "." && segment != ".." && segment.allSatisfy(allowed.contains)
+        }
     }
 
     /// Zapis z odpowiedzią JSON. `Idempotency-Key` jest wymagany przez kontrakt,

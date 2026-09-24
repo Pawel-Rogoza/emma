@@ -246,10 +246,15 @@ final class AssistantStore: ObservableObject {
         let intent = AssistantIntentParser.parse(text, today: dependencies.today)
         switch intent.kind {
         case .confirm:
-            // Zgoda pochodzi z interfejsu, więc dowodem jest `.directUIButton` —
-            // nadal dla prezentacji, którą użytkownik widzi.
+            // Wpisane „tak” to działanie w interfejsie (`.directUIButton`). „Tak”
+            // z transkrypcji mowy nim nie jest — mógł je powiedzieć telewizor albo
+            // klient na głośniku — więc idzie jako `.authenticatedVoiceTurn`
+            // i podlega regułom głosu: uzbrojona prezentacja, cofnięte zapisy.
             if let pending = pendingAction {
-                await confirmFromTypedCommand(pending)
+                await confirmFromTypedCommand(
+                    pending,
+                    origin: origin == .voice ? .authenticatedVoiceTurn : .directUIButton
+                )
             } else {
                 await answer("Nie ma przygotowanego działania do zatwierdzenia.")
             }
@@ -797,7 +802,10 @@ final class AssistantStore: ObservableObject {
         await performConfirmation(action.proposal, origin: .directUIButton)
     }
 
-    private func confirmFromTypedCommand(_ pending: ActionTurn) async {
+    private func confirmFromTypedCommand(
+        _ pending: ActionTurn,
+        origin: ActionEngine.Confirmation.Origin
+    ) async {
         guard let dependencies else { return }
         guard pending.proposal.state == .proposed else {
             await answer("Ta propozycja nie jest już aktualna.")
@@ -817,7 +825,7 @@ final class AssistantStore: ObservableObject {
             await answer("Propozycja zmieniła się od czasu jej pokazania. Sprawdź treść i zatwierdź przyciskiem w karcie.")
             return
         }
-        await performConfirmation(pending.proposal, origin: .directUIButton)
+        await performConfirmation(pending.proposal, origin: origin)
     }
 
     /// Jedno miejsce, w którym powstaje zgoda. `.languageModelArgument` nie jest

@@ -36,9 +36,18 @@ public enum ContactLinks {
         internationalDigits(raw).flatMap { URL(string: "https://wa.me/\($0)") }
     }
 
+    /// Adres pochodzi z publicznego formularza strony, więc jest niezaufany:
+    /// `a@b.pl?bcc=obcy@x.pl&body=…` dopisałby do wiadomości ukrytego odbiorcę
+    /// i treść, a przecinek — kolejnych adresatów. Przepuszczamy tylko jeden
+    /// adres ze znaków dozwolonych w zwykłym e-mailu, bez `?`, `&`, `%`, `,`.
     public static func mailURL(_ raw: String) -> URL? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.contains("@"), !trimmed.contains(" ") else { return nil }
+        let parts = trimmed.split(separator: "@", omittingEmptySubsequences: false)
+        guard parts.count == 2, (1...64).contains(parts[0].count), (3...253).contains(parts[1].count),
+              parts[1].contains("."), !parts[1].hasPrefix("."), !parts[1].hasSuffix(".") else { return nil }
+        let localAllowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.!#$'*+/=^_`{|}~-")
+        let domainAllowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-")
+        guard parts[0].allSatisfy(localAllowed.contains), parts[1].allSatisfy(domainAllowed.contains) else { return nil }
         return URL(string: "mailto:\(trimmed)")
     }
 }
