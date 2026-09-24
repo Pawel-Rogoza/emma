@@ -130,6 +130,50 @@ pomoc (§8, możliwe opłaty), SCC moduł 2 i 3 przy transferach (§10). Słabsz
 6. po stronie kancelarii: zachować PDF DPA z datą akceptacji, wpis w rejestrze czynności
    przetwarzania, aktualizacja klauzuli informacyjnej.
 
+## 8. Dualhook — podwykonawcy, ToS i TOMs (wersje z 2026-07-21)
+
+Teksty dostarczone przez właściciela ze stron `/subprocessors`, `/terms`, `/security`.
+
+**Kontrahent:** WADA BV, Sint-Paulusplaats 10, 2000 Antwerpen, Belgia, VAT BE0786.772.938.
+Prawo belgijskie, sąd w Antwerpii.
+
+**Wysyłka bez relay — niemożliwa.** TOMs §2: tokeny Meta nigdy nie są zwracane klientowi.
+Token należy do aplikacji Meta Dualhook; backend Emmy wysyła przez ich Cloudflare Worker
+kluczem `dh_live_` (przypisanym do jednego połączenia, przechowywanym jako SHA-256). Worker
+odszyfrowuje token (AES-256-GCM) tylko na czas żądania i dodaje `appsecret_proof`.
+
+**Podwykonawcy:** Clerk (logowanie), Stripe (płatności), Vercel (hosting, bez gwarancji
+regionu UE), Cloudflare (relay wychodzących — treść w tranzycie), Turso/libSQL (baza,
+w tym zaszyfrowane tokeny Meta), Umami i PostHog EU (analityka bez danych WhatsApp),
+Resend (e-mail).
+
+**Czerwone flagi / do wyjaśnienia:**
+
+- Turso: sami piszą, że region i DPA trzeba potwierdzić — czyli nie publikują ich;
+- ToS §10: zakaz przesyłania danych wrażliwych i identyfikatorów urzędowych → w kancelarii
+  WhatsApp tylko do komunikacji organizacyjnej, bez meritum spraw, PESEL-i, danych o zdrowiu
+  (reguła także dla promptu asystenta i akceptacji szkiców);
+- brak niezależnych certyfikatów (ISO 27001, SOC 2) i brak SLA;
+- zgłoszenie naruszenia nadal bez terminu w godzinach.
+
+**ToS — ryzyka prawne:** odpowiedzialność do opłat z 3 miesięcy (§14), jednostronne
+zwolnienie z odpowiedzialności na rzecz Dualhook (§15), natychmiastowe zawieszenie (§13),
+zmiany regulaminu przez dalsze korzystanie (§18). Zawieszenie usługi wyłącza tylko
+integrację — numer i historia zostają w aplikacji WhatsApp Business.
+
+**ToS §5 — kto zakłada konto:** organizację Dualhook i Embedded Signup musi wykonać
+kancelaria (właściciel Meta Business Portfolio). Zewnętrzny wykonawca backendu może dostać
+tylko klucz `dh_live_` na podstawie pisemnej umowy; nie może trzymać danych dostępowych
+Meta ani kontrolować organizacji.
+
+**Wniosek dla backendu:** relay nie ponawia wysyłek (TOMs §5), a Cloud API nie ma klucza
+idempotencji. Timeout wysyłki = stan nieznany; rozstrzyga webhook statusu z `wamid`, nie
+ślepe ponowienie (ryzyko podwójnej wiadomości do klienta).
+
+**Werdykt:** akceptowalny pod warunkiem wyjaśnienia Turso i terminu zgłoszenia naruszeń
+oraz przyjęcia zasady „bez danych wrażliwych przez WhatsApp”. Alternatywa: 360dialog
+(dojrzalszy, ale widzi całą treść w obie strony).
+
 ## Źródła
 
 - Meta — cennik: https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing
