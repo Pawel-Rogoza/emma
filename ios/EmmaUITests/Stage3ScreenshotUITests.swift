@@ -35,7 +35,8 @@ final class Stage3ScreenshotUITests: XCTestCase {
             let section = application.staticTexts["Najbliższy termin"]
             guard section.waitForExistence(timeout: 10) else { return "brak sekcji najbliższego terminu" }
             guard section.isHittable else { return "najbliższy termin poza pierwszym widokiem" }
-            guard application.buttons["Wszystkie zadania"].isHittable else {
+            // Od 0.3.0 wejściem do zadań w pierwszym widoku jest kafelek pulsu dnia.
+            guard application.buttons["pulse-tasks"].isHittable else {
                 return "wejście do zadań poza pierwszym widokiem"
             }
             return nil
@@ -51,7 +52,7 @@ final class Stage3ScreenshotUITests: XCTestCase {
 
         capture("23-zadania-grupy", description: "Zadania — grupa „NA DZIŚ” zamiast płaskiej listy") {
             selectTab("today")
-            let entry = application.buttons["Wszystkie zadania"]
+            let entry = application.buttons["pulse-tasks"]
             guard entry.waitForExistence(timeout: 10) else { return "brak wejścia do zadań" }
             entry.tap()
             guard application.staticTexts["Zadania"].waitForExistence(timeout: 10) else {
@@ -71,14 +72,14 @@ final class Stage3ScreenshotUITests: XCTestCase {
             guard section.waitForExistence(timeout: 10) else {
                 return "ekran dnia nie wczytał się przy dużym tekście"
             }
-            guard application.buttons["Wszystkie zadania"].exists else {
+            guard application.buttons["pulse-tasks"].exists else {
                 return "brak wejścia do zadań przy dużym tekście"
             }
             return nil
         }
 
         capture("25-duzy-tekst-zadania", description: "Zadania przy największym tekście dostępności") {
-            let entry = application.buttons["Wszystkie zadania"]
+            let entry = application.buttons["pulse-tasks"]
             guard entry.waitForExistence(timeout: 10) else { return "brak wejścia do zadań" }
             entry.tap()
             guard application.staticTexts["Zadania"].waitForExistence(timeout: 10) else {

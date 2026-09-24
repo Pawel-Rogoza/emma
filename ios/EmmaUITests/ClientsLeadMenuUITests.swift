@@ -158,10 +158,10 @@ final class ClientsLeadMenuUITests: XCTestCase {
         attachScreenshot(name: "przed-odhaczeniem")
 
         let check = application.buttons.matching(identifier: "lead-check").firstMatch
-        XCTAssertTrue(check.waitForExistence(timeout: 10), "Brak przycisku „Oznacz jako obsłużone”")
+        XCTAssertTrue(check.waitForExistence(timeout: 10), "Brak przycisku „Oznacz jako w kontakcie”")
         check.tap()
 
-        // Obsłużone zgłoszenie znika z kolejki „Do obsługi”…
+        // Zgłoszenie „W kontakcie” znika z kolejki „Do obsługi”…
         let sameCard = application.buttons
             .matching(NSPredicate(format: "label == %@", leadLabel))
             .firstMatch
@@ -181,24 +181,66 @@ final class ClientsLeadMenuUITests: XCTestCase {
         XCTAssertTrue(restored.waitForExistence(timeout: 15), "„Cofnij” nie przywróciło zgłoszenia do kolejki")
     }
 
-    func testLongPressOffersHandledAndConversion() {
+    /// Menu leada prowadzi ścieżką zgłoszenia: kontakt, konsultacja, sprawa.
+    /// Osobnej „konwersji na klienta” już nie ma (review 24.09.2026).
+    func testLongPressOffersScheduleWithoutConversion() {
         openClients()
 
         let lead = application.buttons.matching(identifier: "lead-card").firstMatch
         XCTAssertTrue(lead.waitForExistence(timeout: 15), "Brak zgłoszenia na liście")
         lead.press(forDuration: 1.2)
 
-        let convert = application.buttons["Konwertuj na klienta"]
+        let schedule = application.buttons["Umów konsultację"]
         XCTAssertTrue(
-            convert.waitForExistence(timeout: 10),
-            "Przytrzymanie leada nie pokazało menu z konwersją"
+            schedule.waitForExistence(timeout: 10),
+            "Przytrzymanie leada nie pokazało menu z umówieniem konsultacji"
         )
+        XCTAssertFalse(application.buttons["Konwertuj na klienta"].exists, "Konwersja wróciła do menu")
         attachScreenshot(name: "menu-czynnosci")
-        convert.tap()
+        schedule.tap()
 
-        // Konwersja zakłada kartotekę, więc aplikacja musi zapytać.
-        let confirm = application.buttons["Konwertuj na klienta"]
-        XCTAssertTrue(confirm.waitForExistence(timeout: 10), "Brak pytania o potwierdzenie konwersji")
-        attachScreenshot(name: "potwierdzenie-konwersji")
+        XCTAssertTrue(
+            application.staticTexts["Nowy termin"].waitForExistence(timeout: 10),
+            "Formularz terminu się nie otworzył"
+        )
+        XCTAssertTrue(application.buttons["event-save"].exists, "Brak przycisku zapisu terminu")
+        attachScreenshot(name: "formularz-konsultacji")
+    }
+
+    /// Ścieżka zgłoszenia na karcie: „Umów konsultację” zapisuje termin
+    /// i sama przenosi zgłoszenie do „W kontakcie”; następny krok to
+    /// „Przyjmij sprawę”. Notatka zapisuje się i od razu widnieje na karcie.
+    func testLeadPathScheduleThenNoteOnCard() {
+        openClients()
+
+        let lead = application.buttons.matching(identifier: "lead-card").firstMatch
+        XCTAssertTrue(lead.waitForExistence(timeout: 15), "Brak zgłoszenia na liście")
+        lead.tap()
+
+        let schedule = application.buttons["lead-schedule"]
+        XCTAssertTrue(schedule.waitForExistence(timeout: 15), "Brak „Umów konsultację” na karcie nowego zgłoszenia")
+        schedule.tap()
+        let save = application.buttons["event-save"]
+        XCTAssertTrue(save.waitForExistence(timeout: 10), "Formularz terminu się nie otworzył")
+        save.tap()
+
+        XCTAssertTrue(application.buttons["Cofnij"].waitForExistence(timeout: 10), "Brak komunikatu z „Cofnij”")
+        let accept = application.buttons["lead-accept-case"]
+        XCTAssertTrue(accept.waitForExistence(timeout: 10), "Zgłoszenie nie przeszło do „W kontakcie”")
+        attachScreenshot(name: "po-umowieniu-w-kontakcie")
+
+        let noteAction = application.buttons["Notatka"].firstMatch
+        XCTAssertTrue(noteAction.waitForExistence(timeout: 10))
+        noteAction.tap()
+        let text = application.textViews["note-text"]
+        XCTAssertTrue(text.waitForExistence(timeout: 10), "Arkusz notatki się nie otworzył")
+        text.tap()
+        text.typeText("Notatka z testu interfejsu")
+        application.buttons["note-save"].tap()
+
+        let saved = application.staticTexts["Notatka z testu interfejsu"]
+        for _ in 0..<6 where !saved.exists { application.swipeUp() }
+        XCTAssertTrue(saved.waitForExistence(timeout: 10), "Zapisana notatka nie pojawiła się na karcie")
+        attachScreenshot(name: "notatka-na-karcie")
     }
 }

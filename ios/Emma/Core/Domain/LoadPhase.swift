@@ -38,6 +38,31 @@ public enum LoadPhase<Value> {
         if case .loaded = self { return true }
         return false
     }
+
+    /// Nieudane wczytanie według jednej zasady dla wszystkich ekranów.
+    ///
+    /// Review 24.09.2026: pociągnięcie w dół czasem kończyło się ekranem
+    /// „Nie udało się wczytać dnia.” i trzeba było odświeżać drugi raz. Przyczyny
+    /// były dwie: **anulowane** wczytanie (nakładające się odświeżenia — gest,
+    /// powrót z tła, zapis w innym miejscu) było traktowane jak awaria, a nieudane
+    /// odświeżenie zastępowało wczytane dane pełnoekranowym błędem.
+    ///
+    /// Teraz:
+    ///   • anulowanie nie zmienia niczego — nowsze wczytanie jest już w drodze,
+    ///   • nieudane **odświeżenie** zostawia dane na ekranie i zwraca komunikat
+    ///     do pokazania w krótkim powiadomieniu,
+    ///   • dopiero nieudane **pierwsze** wczytanie pokazuje stan błędu.
+    ///
+    /// - Returns: komunikat do pokazania, gdy dane zostały na ekranie; `nil`, gdy
+    ///   nie ma czego pokazywać (anulowanie) albo błąd jest już stanem ekranu.
+    @discardableResult
+    public mutating func recordFailure(_ error: Error, fallback: String) -> String? {
+        if ScreenLoad.isCancellation(error) { return nil }
+        let failure = ScreenLoad.failure(for: error, fallback: fallback)
+        if hasLoaded { return failure.message }
+        self = .failed(failure)
+        return nil
+    }
 }
 
 extension LoadPhase: Equatable where Value: Equatable {}
@@ -70,6 +95,14 @@ public struct LoadFailure: Equatable, Sendable {
 /// ekran zaczął mówić coś innego albo — gorzej — pokazał surowy błąd techniczny.
 /// `DomainError` ma własny komunikat bezpieczny; wszystko inne dostaje tekst ekranu.
 public enum ScreenLoad {
+    /// Anulowanie to decyzja aplikacji (nowsze wczytanie zastąpiło starsze),
+    /// a nie awaria — nie może trafić na ekran jako błąd.
+    public static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+        return false
+    }
+
     public static func message(for error: Error, fallback: String) -> String {
         failure(for: error, fallback: fallback).message
     }

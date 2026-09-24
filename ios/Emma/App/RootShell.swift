@@ -43,7 +43,9 @@ public struct RootShell: View {
             )
         }
         .background(EmmaTheme.bg)
-        .overlay(alignment: .bottom) { toastLayer }
+        .overlay(alignment: .bottom) {
+            ToastLayer(bottomPadding: EmmaMetrics.tabBarHeight + 18)
+        }
         .sheet(item: $dependencies.sheet) { sheet in
             SheetHost(sheet: sheet)
                 .environmentObject(dependencies)
@@ -66,6 +68,7 @@ public struct RootShell: View {
         .onAppear {
             dependencies.refreshUnreadTotal()
             dependencies.refreshLeadCount()
+            dependencies.reminders.scheduleRefresh(dependencies)
             // Literówka w nazwie zestawu danych nie może wyglądać jak „inne demo”:
             // pokazujemy ją raz, wprost, i zaraz zniknie.
             if let notice = dependencies.fixtureNotice {
@@ -91,9 +94,19 @@ public struct RootShell: View {
         }
     }
 
-    /// Komunikat nad paskiem zakładek. Bez akcji nie przechwytuje dotyku (nie
-    /// zasłania treści); z akcją („Cofnij”) musi dać się nacisnąć.
-    private var toastLayer: some View {
+}
+
+/// Komunikat nad paskiem zakładek albo nad treścią arkusza. Bez akcji nie
+/// przechwytuje dotyku (nie zasłania treści); z akcją („Cofnij”) musi dać się
+/// nacisnąć.
+///
+/// Arkusz ma własną kopię warstwy: komunikat powłoki rysował się **pod**
+/// arkuszem, więc potwierdzenia i błędy z formularzy były niewidoczne.
+struct ToastLayer: View {
+    @EnvironmentObject private var dependencies: AppDependencies
+    let bottomPadding: CGFloat
+
+    var body: some View {
         ZStack(alignment: .bottom) {
             if let toast = dependencies.toast {
                 TraceToast(
@@ -103,7 +116,7 @@ public struct RootShell: View {
                     action: { dependencies.runToastAction() }
                 )
                 .padding(.horizontal, EmmaSpacing.screenH)
-                .padding(.bottom, EmmaMetrics.tabBarHeight + 18)
+                .padding(.bottom, bottomPadding)
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
                 .allowsHitTesting(dependencies.toastAction != nil)
             }
@@ -167,6 +180,7 @@ struct SheetHost: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .environment(\.emmaLayout, EmmaLayoutMetrics(width: EmmaMetrics.sheetMaxWidth))
+                .overlay(alignment: .bottom) { ToastLayer(bottomPadding: 20) }
 
                 if dependencies.voiceState.showsGlobalVoicePanel {
                     VoiceMiniPanel(

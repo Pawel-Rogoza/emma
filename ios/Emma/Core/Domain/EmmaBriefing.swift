@@ -27,10 +27,15 @@ public enum EmmaBriefing {
             let relevant = events.filter { $0.status != .finished }.sorted { $0.time < $1.time }
             lines.append("Dzisiaj w zespole: \(EmmaPlural.label(relevant.count, "wydarzenie", "wydarzenia", "wydarzeń")).")
             for event in relevant {
-                let who = clientNames[event.clientID] ?? Client.unknownDisplayName
-                var line = "\(event.time.hhmm): \(who), \(event.title)."
-                if event.status == .toConfirm { line += " Termin czeka na potwierdzenie." }
-                lines.append(line)
+                // Termin bez klienta (rozprawa, spotkanie wewnętrzne) to sam tytuł.
+                // Stanu „do potwierdzenia” już nie czytamy: CRM go nie prowadzi,
+                // więc każdy termin brzmiał jak niepotwierdzony.
+                if let clientID = event.clientID {
+                    let who = clientNames[clientID] ?? Client.unknownDisplayName
+                    lines.append("\(event.time.hhmm): \(who), \(event.title).")
+                } else {
+                    lines.append("\(event.time.hhmm): \(event.title).")
+                }
             }
         } else {
             lines.append("Nie udało się sprawdzić kalendarza. Nie mam pewności, czy dziś są terminy.")

@@ -2,134 +2,195 @@ import SwiftUI
 
 // MARK: - Ekran „Kalendarz”
 //
-// Port `calendar()` z referencji. Świadomie **bez kolumny godzin**: referencja
-// pokazuje pasek tygodnia z numerami dni i znacznikiem wydarzenia, a poniżej
-// listę wydarzeń wybranego dnia w kartach.
+// Review 24.09.2026: „kalendarz bym znacznie usprawnił i rozbudował, fajnie
+// by było widać od razu podgląd np. miesiąca”. Kalendarz ma teraz trzy widoki:
 //
-// Rachuba tygodnia opiera się na typie `LocalDate` (poniedziałek jako pierwszy dzień),
-// a nie na `Calendar.current` — prezentacja ma być deterministyczna i niezależna
-// od ustawień telefonu (§2.2).
+//   • **Miesiąc** (domyślny) — siatka 6×7 z kropkami terminów w każdym dniu;
+//     dotknięcie dnia pokazuje jego terminy pod siatką, przesunięcie w bok
+//     zmienia miesiąc,
+//   • **Tydzień** — dotychczasowy pasek tygodnia z listą dnia,
+//   • **Lista** — najbliższe 60 dni pogrupowane po dniach (tylko dni z terminami).
+//
+// Terminy całego widoku są wczytywane jednym zapytaniem, a wybór dnia w obrębie
+// wczytanego zakresu nie pyta serwera. Rachuba tygodnia opiera się na `LocalDate`
+// (poniedziałek pierwszy), a nie na `Calendar.current` (§2.2).
+
+enum CalendarMode: String, CaseIterable, Hashable {
+    case month = "Miesiąc"
+    case week = "Tydzień"
+    case agenda = "Lista"
+}
 
 @MainActor
 final class CalendarStore: ObservableObject {
 
     struct Model {
-        var weekStart: LocalDate
-        var days: [LocalDate]
-        var selectedDay: LocalDate
+        var mode: CalendarMode
         var today: LocalDate
-        var events: [ScheduledEvent]
-        var daysWithEvents: Set<LocalDate>
+        var selectedDay: LocalDate
+        /// Pierwszy dzień wyświetlanego miesiąca (widok miesiąca).
+        var visibleMonth: LocalDate
+        /// Dni siatki (miesiąc: 42, tydzień: 7).
+        var days: [LocalDate]
+        /// Terminy wybranego dnia.
+        var dayEvents: [ScheduledEvent]
+        /// Terminy każdego dnia wczytanego zakresu (kropki w siatce, lista).
+        var eventsByDay: [LocalDate: [ScheduledEvent]]
         var clientNames: [ClientID: String]
     }
 
     @Published private(set) var phase: LoadPhase<Model> = .idle
+    @Published private(set) var mode: CalendarMode = .month
     @Published private(set) var selectedDay: LocalDate = LocalDate(year: 2026, month: 9, day: 11)
-    @Published private(set) var weekStart: LocalDate = LocalDate(year: 2026, month: 9, day: 7)
+    @Published private(set) var visibleMonth: LocalDate = LocalDate(year: 2026, month: 9, day: 1)
 
-    /// Jednorazowa inicjalizacja odświeżania (F01). Wcześniej `configure` sprawdzał
-    /// `phase.hasLoaded`, ale `load` ustawiał `.loading` **przed** wywołaniem
-    /// `configure` — warunek był zawsze fałszywy, więc każde odświeżenie cofało
-    /// wybrany dzień i przesunięcie tygodnia do „dzisiaj”.
+    /// Jednorazowa inicjalizacja (F01): odświeżenie nie cofa wyboru dnia.
     private var didConfigure = false
-
-    /// Terminy wczytanego tygodnia i nazwy klientów. Wybór dnia w obrębie
-    /// tygodnia liczy się z nich lokalnie — wcześniej każde dotknięcie dnia
-    /// wysyłało trzy zapytania (tydzień, dzień i **cała** lista klientów).
-    private var weekEvents: [ScheduledEvent] = []
-    private var loadedWeekStart: LocalDate?
+    private var events: [ScheduledEvent] = []
+    private var loadedRange: DateIntervalFilter?
     private var clientNames: [ClientID: String] = [:]
+
+    /// Horyzont widoku listy.
+    static let agendaDays = 60
 
     func configure(today: LocalDate) {
         guard !didConfigure else { return }
         didConfigure = true
         selectedDay = today
-        weekStart = today.startOfWeekMonday
+        visibleMonth = today.firstOfMonth
+    }
+
+    /// Zakres dat potrzebny bieżącemu widokowi.
+    func range(today: LocalDate) -> DateIntervalFilter {
+        switch mode {
+        case .month:
+            let start = visibleMonth.startOfWeekMonday
+            return DateIntervalFilter(from: start, through: start.adding(days: 41))
+        case .week:
+            let start = selectedDay.startOfWeekMonday
+            return DateIntervalFilter(from: start, through: start.adding(days: 6))
+        case .agenda:
+            return DateIntervalFilter(from: today, through: today.adding(days: Self.agendaDays - 1))
+        }
     }
 
     func load(_ dependencies: AppDependencies) async {
-        // Odświeżenie nie chowa już wczytanej listy: pasek tygodnia i wydarzenia
-        // zostają na ekranie, a wybór dnia nie jest resetowany (F01).
         if !phase.hasLoaded { phase = .loading }
         let today = dependencies.today
         configure(today: today)
-        let requestedWeek = weekStart
+        let requested = range(today: today)
         let repository = dependencies.repository
         do {
-            let range = DateIntervalFilter(from: requestedWeek, through: requestedWeek.adding(days: 6))
-            async let eventsTask = repository.events(in: range)
+            async let eventsTask = repository.events(in: requested)
             async let clientsTask = repository.clients(matching: "", stage: nil)
-            let events = try await eventsTask
+            let loadedEvents = try await eventsTask
             let clients = try await clientsTask
-
-            // W międzyczasie wybrano inny tydzień — jego wczytanie jest w drodze
-            // i to ono ma ostatnie słowo.
-            guard requestedWeek == weekStart else { return }
-            weekEvents = events
-            loadedWeekStart = requestedWeek
+            // W międzyczasie wybrano inny zakres — jego wczytanie ma ostatnie słowo.
+            guard requested == range(today: today) else { return }
+            events = loadedEvents
+            loadedRange = requested
             clientNames = Dictionary(clients.map { ($0.id, $0.displayName) }, uniquingKeysWith: { first, _ in first })
             rebuild(today: today)
         } catch {
-            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać kalendarza."))
+            if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać kalendarza.") {
+                dependencies.showToast(message)
+            }
         }
     }
 
-    /// Model ekranu z danych tygodnia, bez sieci.
+    /// Model ekranu z wczytanych danych, bez sieci.
     private func rebuild(today: LocalDate) {
-        let days = (0..<7).map { weekStart.adding(days: $0) }
-        // Znacznik „ma wydarzenie” liczymy z całego tygodnia, nie tylko z widocznego dnia.
-        var markers: Set<LocalDate> = []
-        for event in weekEvents where event.status != .finished {
-            markers.insert(event.day)
+        var byDay: [LocalDate: [ScheduledEvent]] = [:]
+        for event in events where event.status != .finished {
+            byDay[event.day, default: []].append(event)
+        }
+        for day in byDay.keys {
+            byDay[day]?.sort { lhs, rhs in
+                if lhs.isAllDay != rhs.isAllDay { return lhs.isAllDay }
+                return lhs.time != rhs.time ? lhs.time < rhs.time : lhs.id.rawValue < rhs.id.rawValue
+            }
+        }
+        let days: [LocalDate]
+        switch mode {
+        case .month:
+            let start = visibleMonth.startOfWeekMonday
+            days = (0..<42).map { start.adding(days: $0) }
+        case .week:
+            let start = selectedDay.startOfWeekMonday
+            days = (0..<7).map { start.adding(days: $0) }
+        case .agenda:
+            days = []
         }
         phase = .loaded(
             Model(
-                weekStart: weekStart,
-                days: days,
-                selectedDay: selectedDay,
+                mode: mode,
                 today: today,
-                events: weekEvents
-                    .filter { $0.day == selectedDay && $0.status != .finished }
-                    .sorted { $0.time < $1.time },
-                daysWithEvents: markers,
+                selectedDay: selectedDay,
+                visibleMonth: visibleMonth,
+                days: days,
+                dayEvents: byDay[selectedDay] ?? [],
+                eventsByDay: byDay,
                 clientNames: clientNames
             )
         )
     }
 
-    /// Przesunięcie tygodnia razem z wybranym dniem — jak `shiftWeek(n)` w referencji.
-    func shiftWeek(by days: Int, dependencies: AppDependencies) async {
-        weekStart = weekStart.adding(days: days)
-        selectedDay = selectedDay.adding(days: days)
+    private func isLoaded(_ day: LocalDate) -> Bool {
+        loadedRange?.contains(day) == true && phase.hasLoaded
+    }
+
+    func setMode(_ newMode: CalendarMode, dependencies: AppDependencies) async {
+        guard newMode != mode else { return }
+        mode = newMode
+        if newMode == .month { visibleMonth = selectedDay.firstOfMonth }
         await load(dependencies)
     }
 
-    /// Wybór dnia. W obrębie wczytanego tygodnia — natychmiast, bez zapytań;
-    /// dzień z innego tygodnia przestawia pasek na jego tydzień.
+    /// Wybór dnia. W obrębie wczytanego zakresu — natychmiast; dzień spoza
+    /// zakresu przestawia widok na jego miesiąc albo tydzień.
     func select(_ day: LocalDate, dependencies: AppDependencies) async {
+        configure(today: dependencies.today)
         selectedDay = day
-        if day.startOfWeekMonday == weekStart, loadedWeekStart == weekStart, phase.hasLoaded {
+        if mode == .agenda { mode = .month }
+        if mode == .month, day.firstOfMonth != visibleMonth {
+            visibleMonth = day.firstOfMonth
+            await load(dependencies)
+            return
+        }
+        if isLoaded(day) && (mode != .week || loadedRange?.from == day.startOfWeekMonday) {
             rebuild(today: dependencies.today)
         } else {
-            weekStart = day.startOfWeekMonday
             await load(dependencies)
         }
     }
 
-    /// Trasa formularza nowego terminu. **Zawsze** dziedziczy wybrany dzień (F10):
-    /// przycisk w nagłówku i przycisk w sekcji dnia muszą prowadzić do tego samego
-    /// dnia, który użytkownik widzi na pasku tygodnia. Wcześniej nagłówek otwierał
-    /// formularz z `initialDay: nil`, więc formularz pokazywał „dzisiaj”, ignorując
-    /// wybór dnia — mimo że data na ekranie była inna (§8, wiersz 1).
-    var newEventRoute: AppSheet {
-        .eventForm(editing: nil, clientID: nil, caseID: nil, initialDay: selectedDay)
+    /// Poprzedni/następny miesiąc albo tydzień.
+    func shift(by step: Int, dependencies: AppDependencies) async {
+        switch mode {
+        case .month:
+            visibleMonth = visibleMonth.addingMonths(step)
+            // Wybrany dzień idzie za miesiącem: dziś, gdy to bieżący miesiąc,
+            // inaczej ten sam dzień miesiąca.
+            let today = dependencies.today
+            selectedDay = visibleMonth == today.firstOfMonth ? today : selectedDay.addingMonths(step)
+        case .week:
+            selectedDay = selectedDay.adding(days: 7 * step)
+        case .agenda:
+            return
+        }
+        await load(dependencies)
     }
 
     func backToToday(_ dependencies: AppDependencies) async {
         let today = dependencies.today
-        weekStart = today.startOfWeekMonday
         selectedDay = today
+        visibleMonth = today.firstOfMonth
         await load(dependencies)
+    }
+
+    /// Formularz nowego terminu **zawsze** dziedziczy wybrany dzień (F10).
+    var newEventRoute: AppSheet {
+        .eventForm(editing: nil, clientID: nil, caseID: nil, initialDay: selectedDay)
     }
 }
 
@@ -137,28 +198,35 @@ struct CalendarScreen: View {
 
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.emmaLayout) private var layout: EmmaLayoutMetrics
-    /// Magazyn żyje w `AppDependencies`: wybrany dzień i tydzień przetrwają
-    /// przejście na inną zakładkę.
+    /// Magazyn żyje w `AppDependencies`: widok, miesiąc i wybrany dzień
+    /// przetrwają przejście na inną zakładkę.
     @ObservedObject var store: CalendarStore
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // „+” obok tytułu, jak na liście klientów — wcześniej stał
-                // w osobnym wierszu i zabierał wysokość nad paskiem tygodnia.
                 HStack(alignment: .top, spacing: 10) {
-                    ScreenHeader(
-                        kicker: "WSPÓLNY PLAN",
-                        title: dependencies.dateText.monthTitle(for: store.selectedDay)
-                    )
+                    ScreenHeader(kicker: "WSPÓLNY PLAN", title: headerTitle)
                     IconButton(systemName: "plus", accessibilityLabel: "Dodaj termin") {
                         dependencies.present(store.newEventRoute)
                     }
                 }
                 .padding(.bottom, 12)
 
-                weekControls
-                    .padding(.bottom, 12)
+                SegmentedFilter(
+                    items: CalendarMode.allCases,
+                    selection: Binding(
+                        get: { store.mode },
+                        set: { newMode in Task { await store.setMode(newMode, dependencies: dependencies) } }
+                    ),
+                    title: { $0.rawValue }
+                )
+                .padding(.bottom, 12)
+
+                if store.mode != .agenda {
+                    navigationControls
+                        .padding(.bottom, 12)
+                }
 
                 switch store.phase {
                 case .idle, .loading:
@@ -168,43 +236,7 @@ struct CalendarScreen: View {
                         Task { await store.load(dependencies) }
                     }
                 case .loaded(let model):
-                    dayStrip(model)
-                        .padding(.bottom, 6)
-                        // Przesunięcie paska w bok zmienia tydzień — tak jak
-                        // w systemowym kalendarzu. Strzałki zostają dla VoiceOver.
-                        .simultaneousGesture(weekSwipe)
-
-                    SectionHeader(daySectionTitle(model))
-                    if model.events.isEmpty {
-                        EmptyState(
-                            systemImage: "calendar",
-                            title: "Wolny termin",
-                            message: "Nie ma wydarzeń w wybranym dniu."
-                        )
-                        .background(EmmaTheme.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
-                                .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
-                        }
-                    } else {
-                        ForEach(model.events, id: \.id) { event in
-                            MeetingCard(
-                                event: event,
-                                clientName: model.clientNames[event.clientID] ?? Client.unknownDisplayName
-                            ) {
-                                dependencies.present(.eventDetail(event.id))
-                            }
-                            .padding(.bottom, EmmaSpacing.cardGap)
-                        }
-                    }
-
-                    SecondaryButton("Dodaj termin na ten dzień", systemImage: "plus") {
-                        // Wybrany dzień paska tygodnia jest dniem, na który naprawdę
-                        // dodajemy termin — formularz dziedziczy go jawnie (F10).
-                        dependencies.present(store.newEventRoute)
-                    }
-                    .padding(.top, 6)
+                    loaded(model)
                 }
             }
             .padding(.horizontal, layout.horizontalPadding)
@@ -217,31 +249,46 @@ struct CalendarScreen: View {
         .task(id: dependencies.dataVersion) { await store.load(dependencies) }
     }
 
-    /// „Dzisiaj · 3 terminy” — liczba mówi od razu, jak wygląda dzień.
-    private func daySectionTitle(_ model: CalendarStore.Model) -> String {
-        let label = dependencies.dateText.dayLabel(model.selectedDay)
-        guard !model.events.isEmpty else { return label }
-        let count = model.events.count
-        return "\(label) · \(count) \(EmmaPlural.form(count, "termin", "terminy", "terminów"))"
+    private var headerTitle: String {
+        switch store.mode {
+        case .month: return dependencies.dateText.monthTitle(for: store.visibleMonth)
+        case .week: return dependencies.dateText.monthTitle(for: store.selectedDay)
+        case .agenda: return "Najbliższe terminy"
+        }
     }
 
-    /// Gest zmiany tygodnia: wyraźnie poziomy ruch, żeby nie łapał przewijania.
-    private var weekSwipe: some Gesture {
-        DragGesture(minimumDistance: 24)
-            .onEnded { value in
-                let horizontal = value.translation.width
-                guard abs(horizontal) > 60, abs(horizontal) > abs(value.translation.height) * 1.5 else { return }
-                EmmaHaptics.selection()
-                Task { await store.shiftWeek(by: horizontal < 0 ? 7 : -7, dependencies: dependencies) }
+    @ViewBuilder
+    private func loaded(_ model: CalendarStore.Model) -> some View {
+        switch model.mode {
+        case .month:
+            MonthGrid(model: model) { day in
+                Task { await store.select(day, dependencies: dependencies) }
             }
+            .simultaneousGesture(swipe)
+            .padding(.bottom, 6)
+            dayAgenda(model)
+        case .week:
+            weekStrip(model)
+                .simultaneousGesture(swipe)
+                .padding(.bottom, 6)
+            dayAgenda(model)
+        case .agenda:
+            agendaList(model)
+        }
     }
 
-    private var weekControls: some View {
+    // MARK: Nawigacja
+
+    private var navigationControls: some View {
         HStack(spacing: 10) {
-            IconButton(systemName: "chevron.left", accessibilityLabel: "Poprzedni tydzień") {
-                Task { await store.shiftWeek(by: -7, dependencies: dependencies) }
+            IconButton(
+                systemName: "chevron.left",
+                accessibilityLabel: store.mode == .month ? "Poprzedni miesiąc" : "Poprzedni tydzień"
+            ) {
+                Task { await store.shift(by: -1, dependencies: dependencies) }
             }
-            Button("Wróć do dzisiaj") {
+            Button("Dzisiaj") {
+                EmmaHaptics.selection()
                 Task { await store.backToToday(dependencies) }
             }
             .font(EmmaTypography.caption(.medium))
@@ -250,20 +297,87 @@ struct CalendarScreen: View {
             .background(EmmaTheme.weekControlBackground)
             .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous))
 
-            IconButton(systemName: "chevron.right", accessibilityLabel: "Następny tydzień") {
-                Task { await store.shiftWeek(by: 7, dependencies: dependencies) }
+            IconButton(
+                systemName: "chevron.right",
+                accessibilityLabel: store.mode == .month ? "Następny miesiąc" : "Następny tydzień"
+            ) {
+                Task { await store.shift(by: 1, dependencies: dependencies) }
             }
         }
     }
 
-    private func dayStrip(_ model: CalendarStore.Model) -> some View {
+    /// Wyraźnie poziomy ruch zmienia miesiąc/tydzień — nie łapie przewijania.
+    private var swipe: some Gesture {
+        DragGesture(minimumDistance: 24)
+            .onEnded { value in
+                let horizontal = value.translation.width
+                guard abs(horizontal) > 60, abs(horizontal) > abs(value.translation.height) * 1.5 else { return }
+                EmmaHaptics.selection()
+                Task { await store.shift(by: horizontal < 0 ? 1 : -1, dependencies: dependencies) }
+            }
+    }
+
+    // MARK: Dzień
+
+    @ViewBuilder
+    private func dayAgenda(_ model: CalendarStore.Model) -> some View {
+        SectionHeader(daySectionTitle(model), actionTitle: "Dodaj", compact: true) {
+            dependencies.present(store.newEventRoute)
+        }
+        if model.dayEvents.isEmpty {
+            Button {
+                dependencies.present(store.newEventRoute)
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "calendar.badge.plus")
+                        .font(.system(size: 20))
+                        .foregroundStyle(EmmaTheme.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Wolny dzień")
+                            .font(EmmaTypography.ui(14, .semibold))
+                            .foregroundStyle(EmmaTheme.ink)
+                        Text("Dotknij, aby dodać termin na ten dzień.")
+                            .font(EmmaTypography.caption())
+                            .foregroundStyle(EmmaTheme.muted)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(15)
+                .background(EmmaTheme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
+                        .strokeBorder(EmmaTheme.cardBorder, style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(EmmaCardButtonStyle())
+        } else {
+            ForEach(model.dayEvents, id: \.id) { event in
+                MeetingCard(event: event, clientName: event.clientID.flatMap { model.clientNames[$0] }) {
+                    dependencies.present(.eventDetail(event.id))
+                }
+                .padding(.bottom, EmmaSpacing.cardGap)
+            }
+        }
+    }
+
+    /// „Dzisiaj, 24 września · 3 terminy”.
+    private func daySectionTitle(_ model: CalendarStore.Model) -> String {
+        let label = dependencies.dateText.dayTitle(model.selectedDay)
+        guard !model.dayEvents.isEmpty else { return label }
+        return "\(label) · \(model.dayEvents.count)"
+    }
+
+    // MARK: Tydzień
+
+    private func weekStrip(_ model: CalendarStore.Model) -> some View {
         HStack(spacing: 4) {
             ForEach(model.days, id: \.self) { day in
                 let isSelected = day == model.selectedDay
+                let count = model.eventsByDay[day]?.count ?? 0
                 Button {
-                    if day != model.selectedDay {
-                        EmmaHaptics.selection()
-                    }
+                    if day != model.selectedDay { EmmaHaptics.selection() }
                     Task { await store.select(day, dependencies: dependencies) }
                 } label: {
                     VStack(spacing: 5) {
@@ -273,11 +387,7 @@ struct CalendarScreen: View {
                         Text("\(day.day)")
                             .font(EmmaTypography.heading(16))
                             .foregroundStyle(isSelected ? EmmaTheme.daySelectedNumber : EmmaTheme.ink)
-                        Circle()
-                            .fill(model.daysWithEvents.contains(day)
-                                  ? (isSelected ? EmmaTheme.daySelectedNumber : EmmaTheme.accent)
-                                  : Color.clear)
-                            .frame(width: 5, height: 5)
+                        EventDots(count: count, highlighted: isSelected)
                     }
                     .frame(maxWidth: .infinity, minHeight: EmmaMetrics.dayCellMinHeight)
                     .background(isSelected ? EmmaTheme.daySelected : EmmaTheme.surface)
@@ -291,13 +401,142 @@ struct CalendarScreen: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(
-                    "\(dependencies.dateText.weekdayShort(for: day)) \(day.day), \(dependencies.dateText.dayLabel(day))"
-                    + (model.daysWithEvents.contains(day) ? ", są wydarzenia" : "")
-                )
+                .accessibilityLabel("\(dependencies.dateText.dayTitle(day)), \(EmmaPlural.events(count))")
                 .accessibilityAddTraits(isSelected ? [.isSelected] : [])
             }
         }
+    }
+
+    // MARK: Lista
+
+    @ViewBuilder
+    private func agendaList(_ model: CalendarStore.Model) -> some View {
+        let days = model.eventsByDay.keys.filter { $0 >= model.today }.sorted()
+        if days.isEmpty {
+            EmptyState(
+                systemImage: "calendar",
+                title: "Brak terminów",
+                message: "W najbliższych \(CalendarStore.agendaDays) dniach nie ma zaplanowanych terminów."
+            )
+        } else {
+            ForEach(days, id: \.self) { day in
+                let events = model.eventsByDay[day] ?? []
+                Text(dependencies.dateText.dayTitle(day).uppercased())
+                    .font(EmmaTypography.caption(.semibold))
+                    .tracking(0.6)
+                    .foregroundStyle(day == model.today ? EmmaTheme.accent : EmmaTheme.mutedSoft)
+                    .padding(.top, 14)
+                    .padding(.bottom, 7)
+                    .accessibilityAddTraits(.isHeader)
+                ForEach(events, id: \.id) { event in
+                    MeetingCard(event: event, clientName: event.clientID.flatMap { model.clientNames[$0] }) {
+                        dependencies.present(.eventDetail(event.id))
+                    }
+                    .padding(.bottom, EmmaSpacing.cardGap)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Siatka miesiąca
+
+/// Siatka 6×7: numer dnia, kropki terminów, dziś w obwódce, wybrany dzień
+/// wypełniony. Dni spoza miesiąca są przygaszone, ale klikalne.
+private struct MonthGrid: View {
+    @EnvironmentObject private var dependencies: AppDependencies
+
+    let model: CalendarStore.Model
+    let onSelect: (LocalDate) -> Void
+
+    private let weekdays = ["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"]
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
+
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 2) {
+                ForEach(weekdays, id: \.self) { name in
+                    Text(name)
+                        .font(EmmaTypography.caption(.medium))
+                        .foregroundStyle(name == "So" || name == "Nd" ? EmmaTheme.mutedSoft.opacity(0.7) : EmmaTheme.mutedSoft)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .accessibilityHidden(true)
+
+            LazyVGrid(columns: columns, spacing: 2) {
+                ForEach(model.days, id: \.self) { day in
+                    cell(day)
+                }
+            }
+        }
+        .padding(8)
+        .background(EmmaTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
+                .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
+        }
+        .emmaCardShadow()
+    }
+
+    private func cell(_ day: LocalDate) -> some View {
+        let isSelected = day == model.selectedDay
+        let isToday = day == model.today
+        let inMonth = day.month == model.visibleMonth.month && day.year == model.visibleMonth.year
+        let count = model.eventsByDay[day]?.count ?? 0
+        return Button {
+            if !isSelected { EmmaHaptics.selection() }
+            onSelect(day)
+        } label: {
+            VStack(spacing: 3) {
+                Text("\(day.day)")
+                    .font(EmmaTypography.ui(15, isSelected || isToday ? .semibold : .regular))
+                    .foregroundStyle(
+                        isSelected ? EmmaTheme.daySelectedNumber
+                            : (inMonth ? (isToday ? EmmaTheme.accent : EmmaTheme.ink) : EmmaTheme.mutedSoft.opacity(0.55))
+                    )
+                EventDots(count: count, highlighted: isSelected)
+                    .opacity(inMonth ? 1 : 0.5)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(EmmaTheme.daySelected)
+                } else if isToday {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(EmmaTheme.accent, lineWidth: 1.2)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(dependencies.dateText.dayTitle(day)), \(EmmaPlural.events(count))")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+}
+
+/// Kropki terminów dnia: do trzech kropek, powyżej — liczba.
+private struct EventDots: View {
+    let count: Int
+    let highlighted: Bool
+
+    var body: some View {
+        HStack(spacing: 3) {
+            if count > 3 {
+                Text("\(count)")
+                    .font(EmmaTypography.caption(.semibold))
+                    .foregroundStyle(highlighted ? EmmaTheme.daySelectedNumber : EmmaTheme.accent)
+            } else {
+                ForEach(0..<count, id: \.self) { _ in
+                    Circle()
+                        .fill(highlighted ? EmmaTheme.daySelectedNumber : EmmaTheme.accent)
+                        .frame(width: 5, height: 5)
+                }
+            }
+        }
+        .frame(height: 8)
     }
 }
 

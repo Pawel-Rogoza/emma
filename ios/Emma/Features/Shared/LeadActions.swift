@@ -2,27 +2,42 @@ import SwiftUI
 
 // MARK: - Czynności na zgłoszeniu
 //
-// Jedno miejsce dla listy leadów, ekranu „Dzisiaj” i karty klienta. Wcześniej
-// przeniesienie etapu żyło tylko w menu po przytrzymaniu na liście, więc
-// z karty klienta nie dało się zgłoszenia „odhaczyć”.
+// Jedno miejsce dla listy leadów, ekranu „Dzisiaj” i karty klienta.
 //
-// Zasada: szybka czynność nie pyta „czy na pewno” — wykonuje się od razu
-// i daje „Cofnij” w komunikacie. Pytamy wyłącznie o to, czego cofnąć się nie da
-// (konwersja w kartotekę zakłada rekord klienta, usunięcie jest nieodwracalne).
+// Review 24.09.2026 — ścieżka zgłoszenia była za długa: „wpada lead, trzeba go
+// oznaczyć jako obsłużony, potem skonwertować na klienta, potem założyć sprawę”.
+// Teraz są trzy etapy i każdy ma jedną oczywistą czynność:
+//
+//   1. **Do obsługi**  → skontaktuj się (telefon, WhatsApp, e-mail), umów
+//                        konsultację albo zapisz notatkę — każda z tych czynności
+//                        **sama** przenosi zgłoszenie do „W kontakcie”,
+//   2. **W kontakcie** → „Przyjmij sprawę”: jeden formularz zakłada kartotekę
+//                        i sprawę naraz (backend: `POST /cases` z `lead-N`),
+//   3. **Klient**      → sprawa jest prowadzona.
+//
+// Osobne „Konwertuj na klienta” zniknęło — kartoteka powstaje razem ze sprawą.
+// Szybka czynność nie pyta „czy na pewno” — wykonuje się od razu i daje „Cofnij”.
 
 @MainActor
 enum LeadActions {
 
-    /// „Obsłużone”: etap `in_contact`. Cofnięcie wraca na `new` z wersją,
+    /// „W kontakcie”: etap `in_contact`. Cofnięcie wraca na `new` z wersją,
     /// którą oddał zapis — nie nadpisze cudzej zmiany.
-    static func markHandled(_ client: Client, dependencies: AppDependencies) async {
+    static func markInContact(
+        _ client: Client,
+        dependencies: AppDependencies,
+        message: String? = nil
+    ) async {
         guard client.stage == .new else { return }
         EmmaHaptics.success()
-        guard let saved = await setStage(client, to: .inContact, dependencies: dependencies) else { return }
+        // Świeża wersja: zgłoszenie mogło się zmienić od wczytania listy.
+        let current = (try? await dependencies.repository.client(id: client.id)) ?? client
+        guard current.stage == .new else { return }
+        guard let saved = await setStage(current, to: .inContact, dependencies: dependencies) else { return }
         dependencies.showToast(
-            "Obsłużone: \(client.displayName)",
+            message ?? "W kontakcie: \(client.displayName)",
             action: AppDependencies.ToastAction(title: "Cofnij") {
-                Task { await LeadActions.undoHandled(saved, dependencies: dependencies) }
+                Task { await LeadActions.undoInContact(saved, dependencies: dependencies) }
             }
         )
     }
@@ -40,17 +55,30 @@ enum LeadActions {
         )
     }
 
-    /// Konwersja w kartotekę. Wywoływana dopiero po potwierdzeniu w interfejsie.
-    static func convertToClient(_ client: Client, dependencies: AppDependencies) async {
-        guard client.stage != .client else { return }
-        guard await setStage(client, to: .client, dependencies: dependencies) != nil else { return }
-        EmmaHaptics.success()
-        dependencies.showToast("\(client.displayName) jest teraz klientem kancelarii.")
+    /// Kontakt z zewnątrz aplikacji (telefon, WhatsApp, e-mail). Otwiera
+    /// połączenie i — dla zgłoszenia do obsługi — przenosi je do „W kontakcie”
+    /// z „Cofnij”, gdyby nikt nie odebrał.
+    static func contact(
+        _ client: Client,
+        url: URL,
+        channel: String,
+        dependencies: AppDependencies,
+        openURL: OpenURLAction
+    ) {
+        openURL(url)
+        guard client.stage == .new else { return }
+        Task {
+            await markInContact(
+                client,
+                dependencies: dependencies,
+                message: "\(channel) · \(client.displayName) jest teraz „W kontakcie”"
+            )
+        }
     }
 
     // MARK: Pomocnicze
 
-    private static func undoHandled(_ saved: Client, dependencies: AppDependencies) async {
+    private static func undoInContact(_ saved: Client, dependencies: AppDependencies) async {
         EmmaHaptics.tap()
         await setStage(saved, to: .new, dependencies: dependencies)
     }

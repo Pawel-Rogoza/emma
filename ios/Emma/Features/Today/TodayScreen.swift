@@ -12,6 +12,15 @@ import SwiftUI
 //   4. zadania z liczbą otwartych i zaległych oraz wejściem „Wszystkie zadania”,
 //   5. dopiero dalej pozostałe terminy dnia, a minione w zwijanej sekcji.
 //
+// Review 24.09.2026: ekran „wyglądał nudno, z dużą ilością nieużywanej
+// przestrzeni”, a sekcja leadów znikała, gdy ich nie było. Teraz:
+//   • pod nagłówkiem trzy kafelki pulsu dnia (leady do obsługi, terminy dziś,
+//     zadania) — każdy prowadzi do swojej listy,
+//   • sekcja „Nowe leady” jest zawsze; bez leadów mówi wprost „brak nowych”,
+//   • „Najbliższy termin” sięga dalej niż dziś (14 dni) — wolny dzień nie
+//     zostawia pustej karty,
+//   • pasek tygodnia pokazuje, ile terminów jest w najbliższych 7 dniach.
+//
 // Review 23.09.2026: leady do obsługi trafiły na ekran główny. Żeby najbliższy
 // termin i wejście do zadań nadal mieściły się w pierwszym widoku (F08),
 // kompaktowa karta Emmy (~110 pt) zamieniła się w portret w nagłówku: dotknięcie
@@ -24,7 +33,10 @@ final class TodayStore: ObservableObject {
 
     struct Model {
         var today: LocalDate
+        /// Terminy dzisiejsze.
         var events: [ScheduledEvent]
+        /// Terminy od jutra przez najbliższe dwa tygodnie.
+        var upcomingEvents: [ScheduledEvent]
         var tasks: [TaskItem]
         var clientNames: [ClientID: String]
         var caseNumbers: [CaseID: String]
@@ -34,6 +46,9 @@ final class TodayStore: ObservableObject {
 
     @Published private(set) var phase: LoadPhase<Model> = .idle
 
+    /// Jak daleko naprzód sięga „Najbliższy termin” i pasek tygodnia.
+    static let horizonDays = 14
+
     func load(_ dependencies: AppDependencies) async {
         // Ponowne wczytanie po zapisie nie mruga stanem ładowania.
         if !phase.hasLoaded { phase = .loading }
@@ -42,7 +57,9 @@ final class TodayStore: ObservableObject {
         do {
             async let clientsTask = repository.clients(matching: "", stage: nil)
             async let casesTask = repository.cases(status: nil)
-            async let eventsTask = repository.events(in: .day(today))
+            async let eventsTask = repository.events(
+                in: DateIntervalFilter(from: today, through: today.adding(days: Self.horizonDays))
+            )
             async let tasksTask = repository.tasks(
                 filter: TaskFilter(scope: .open, dueOnOrBefore: today)
             )
@@ -52,9 +69,13 @@ final class TodayStore: ObservableObject {
             let events = try await eventsTask
             let tasks = try await tasksTask
 
+            let active = events.filter { $0.status != .finished || $0.day == today }
             let model = Model(
                     today: today,
-                    events: events.sorted { $0.time < $1.time },
+                    events: active.filter { $0.day == today }.sorted { $0.time < $1.time },
+                    upcomingEvents: active
+                        .filter { $0.day > today }
+                        .sorted { $0.day != $1.day ? $0.day < $1.day : $0.time < $1.time },
                     tasks: tasks.sorted(by: TaskItem.isOrderedByDueDate),
                     clientNames: Dictionary(
                         clients.map { ($0.id, $0.displayName) },
@@ -76,7 +97,9 @@ final class TodayStore: ObservableObject {
             }
             dependencies.leadsNeedingAction = clients.filter { $0.stage == .new }.count
         } catch {
-            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać dnia."))
+            if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać dnia.") {
+                dependencies.showToast(message)
+            }
         }
     }
 }
@@ -151,15 +174,15 @@ struct TodayScreen: View {
 
         header(model)
 
+        pulse(model, inbox: inbox)
+            .padding(.top, 6)
+
         leadsSection(inbox)
 
-        SectionHeader("Najbliższy termin", compact: true)
-        nextEventCard(agenda.next, model: model)
-
-        SectionHeader("Zadania", actionTitle: "Wszystkie zadania", compact: true) {
-            dependencies.openTasks()
+        SectionHeader("Najbliższy termin", actionTitle: "Dodaj", compact: true) {
+            dependencies.present(.eventForm(editing: nil, clientID: nil, caseID: nil, initialDay: nil))
         }
-        tasksSection(model)
+        nextEventCard(agenda.next ?? model.upcomingEvents.first, model: model)
 
         if !agenda.upcoming.isEmpty {
             SectionHeader("Dalej dziś", actionTitle: "Kalendarz", compact: true) {
@@ -167,6 +190,13 @@ struct TodayScreen: View {
             }
             eventsCard(agenda.upcoming)
         }
+
+        SectionHeader("Zadania", actionTitle: "Wszystkie zadania", compact: true) {
+            dependencies.openTasks()
+        }
+        tasksSection(model)
+
+        weekStrip(model)
 
         if !agenda.past.isEmpty {
             pastEventsSection(agenda.past)
@@ -272,24 +302,47 @@ struct TodayScreen: View {
 
     /// Najwyżej trzy zgłoszenia: najpierw te, które czekają, potem nowe.
     /// Reszta jest pod „Wszystkie” — ekran główny nie zamienia się w listę.
+    /// Sekcja jest zawsze: brak leadów to też informacja („nic nie czeka”).
     @ViewBuilder
     private func leadsSection(_ inbox: LeadInbox) -> some View {
         let queue = inbox.needsAction
-        if !queue.isEmpty {
-            SectionHeader(
-                "Leady do obsługi · \(queue.count)",
-                actionTitle: queue.count > Self.leadsPreviewLimit ? "Wszystkie" : "Lista",
-                compact: true
-            ) {
-                dependencies.openLeads(filter: .needsAction)
+        SectionHeader(
+            queue.isEmpty ? "Nowe leady" : "Nowe leady · \(queue.count)",
+            actionTitle: queue.isEmpty ? "Wszystkie" : (queue.count > Self.leadsPreviewLimit ? "Wszystkie" : "Lista"),
+            compact: true
+        ) {
+            dependencies.openLeads(filter: queue.isEmpty ? .all : .needsAction)
+        }
+        if queue.isEmpty {
+            SurfaceCard {
+                HStack(spacing: 12) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 22))
+                        .foregroundStyle(EmmaTheme.pillGreenText)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Brak nowych leadów")
+                            .font(EmmaTypography.ui(14, .semibold))
+                            .foregroundStyle(EmmaTheme.ink)
+                        Text(inbox.inContact.isEmpty
+                             ? "Nowe zgłoszenia ze strony pojawią się tutaj."
+                             : "W kontakcie: \(EmmaPlural.leads(inbox.inContact.count)). Nowe zgłoszenia pojawią się tutaj.")
+                            .font(EmmaTypography.caption())
+                            .foregroundStyle(EmmaTheme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("today-no-leads")
+        } else {
             SurfaceCard(padding: EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0)) {
                 VStack(spacing: 0) {
                     ForEach(Array(queue.prefix(Self.leadsPreviewLimit).enumerated()), id: \.element.id) { index, client in
                         LeadInboxRow(
                             client: client,
                             onOpen: { dependencies.openPerson(client.id) },
-                            onMarkHandled: { await LeadActions.markHandled(client, dependencies: dependencies) }
+                            onMarkHandled: { await LeadActions.markInContact(client, dependencies: dependencies) }
                         )
                         if index < min(queue.count, Self.leadsPreviewLimit) - 1 {
                             Divider().overlay(EmmaTheme.rowSeparator).padding(.leading, 64)
@@ -310,19 +363,19 @@ struct TodayScreen: View {
             SurfaceCard {
                 VStack(alignment: .leading, spacing: 9) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(event.time.hhmm)
+                        Text(event.isAllDay ? "Cały dzień" : event.time.hhmm)
                             .font(EmmaTypography.heading(21))
                             .foregroundStyle(EmmaTheme.ink)
-                        if event.durationMinutes > 0 {
-                            Text("\(event.durationMinutes) min")
-                                .font(EmmaTypography.caption())
-                                .foregroundStyle(EmmaTheme.mutedSoft)
+                        if event.day != model.today {
+                            Text(dependencies.dateText.dayLabel(event.day))
+                                .font(EmmaTypography.ui(14, .semibold))
+                                .foregroundStyle(EmmaTheme.accent)
                         }
                         Spacer(minLength: 8)
-                        StatusPill(
-                            event.status.rawValue,
-                            kind: event.status == .confirmed ? .green : .amber
-                        )
+                        Label(event.kind.displayTitle, systemImage: event.kind.systemImage)
+                            .font(EmmaTypography.caption(.medium))
+                            .foregroundStyle(EmmaTheme.mutedSoft)
+                            .lineLimit(1)
                     }
 
                     Text(event.title)
@@ -336,22 +389,23 @@ struct TodayScreen: View {
                             .foregroundStyle(EmmaTheme.mutedSoft)
                     }
 
-                    // Linki do powiązanych rekordów: osoba i sprawa jednym dotknięciem,
-                    // bez szukania ich ponownie w listach.
+                    // Linki do powiązanych rekordów: osoba i sprawa jednym dotknięciem.
                     HStack(spacing: 14) {
-                        Button {
-                            dependencies.openPerson(event.clientID)
-                        } label: {
-                            Label(
-                                model.clientNames[event.clientID] ?? "Karta klienta",
-                                systemImage: "person"
-                            )
-                            .font(EmmaTypography.caption(.medium))
-                            .foregroundStyle(EmmaTheme.accent)
-                            .frame(minHeight: 28)
-                            .contentShape(Rectangle())
+                        if let clientID = event.clientID {
+                            Button {
+                                dependencies.openPerson(clientID)
+                            } label: {
+                                Label(
+                                    model.clientNames[clientID] ?? "Karta klienta",
+                                    systemImage: "person"
+                                )
+                                .font(EmmaTypography.caption(.medium))
+                                .foregroundStyle(EmmaTheme.accent)
+                                .frame(minHeight: 28)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
 
                         if let caseID = event.caseID, let number = model.caseNumbers[caseID] {
                             Button {
@@ -369,14 +423,16 @@ struct TodayScreen: View {
                     }
 
                     HStack(spacing: 10) {
-                        PrimaryButton("Przygotuj mnie") {
-                            // „Przygotuj mnie” to skrót do rozmowy z Emmą w kontekście
-                            // klienta — Emma robi streszczenie sprawy, nic nie zapisuje.
-                            dependencies.openEmma(
-                                clientID: event.clientID,
-                                action: .prepareCase,
-                                startVoice: false
-                            )
+                        if let clientID = event.clientID {
+                            PrimaryButton("Przygotuj mnie") {
+                                // Skrót do rozmowy z Emmą w kontekście klienta —
+                                // Emma robi streszczenie sprawy, nic nie zapisuje.
+                                dependencies.openEmma(
+                                    clientID: clientID,
+                                    action: .prepareCase,
+                                    startVoice: false
+                                )
+                            }
                         }
                         SecondaryButton("Szczegóły") {
                             dependencies.present(.eventDetail(event.id))
@@ -386,7 +442,104 @@ struct TodayScreen: View {
                 }
             }
         } else {
-            emptyCard("Nie masz już dziś zaplanowanych terminów.")
+            SurfaceCard {
+                HStack(spacing: 12) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 20))
+                        .foregroundStyle(EmmaTheme.mutedSoft)
+                    Text("Brak terminów w najbliższych dwóch tygodniach.")
+                        .font(EmmaTypography.caption())
+                        .foregroundStyle(EmmaTheme.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    // MARK: Puls dnia
+
+    /// Trzy kafelki: ile czeka leadów, ile terminów dziś, ile zadań.
+    private func pulse(_ model: TodayStore.Model, inbox: LeadInbox) -> some View {
+        let summary = TaskGrouping.summary(model.tasks, today: model.today)
+        return HStack(spacing: 8) {
+            PulseTile(
+                value: inbox.needsAction.count,
+                label: "leady do obsługi",
+                systemImage: "tray.full",
+                tone: inbox.waiting.isEmpty ? EmmaTheme.accent : EmmaTheme.pillAmberText
+            ) {
+                dependencies.openLeads(filter: .needsAction)
+            }
+            PulseTile(
+                value: model.events.count,
+                label: model.events.count == 1 ? "termin dziś" : "terminy dziś",
+                systemImage: "calendar",
+                tone: EmmaTheme.accent
+            ) {
+                dependencies.openCalendar(on: model.today)
+            }
+            PulseTile(
+                value: summary.open,
+                label: summary.hasOverdue ? "zadania · \(summary.overdue) po terminie" : "zadania na dziś",
+                systemImage: "checklist",
+                tone: summary.hasOverdue ? EmmaTheme.pillUrgentText : EmmaTheme.accent
+            ) {
+                dependencies.openTasks()
+            }
+            .accessibilityIdentifier("pulse-tasks")
+        }
+    }
+
+    // MARK: Tydzień
+
+    /// Siedem najbliższych dni z liczbą terminów — dotknięcie otwiera kalendarz
+    /// na tym dniu. Wolny dzień nie jest już pustą kartą, tylko częścią planu.
+    private func weekStrip(_ model: TodayStore.Model) -> some View {
+        let all = model.events + model.upcomingEvents
+        let days = (0..<7).map { model.today.adding(days: $0) }
+        return VStack(alignment: .leading, spacing: 0) {
+            SectionHeader("Najbliższe 7 dni", actionTitle: "Kalendarz", compact: true) {
+                dependencies.go(to: .calendar)
+            }
+            HStack(spacing: 5) {
+                ForEach(days, id: \.self) { day in
+                    let count = all.filter { $0.day == day }.count
+                    let isToday = day == model.today
+                    Button {
+                        EmmaHaptics.selection()
+                        dependencies.openCalendar(on: day)
+                    } label: {
+                        VStack(spacing: 4) {
+                            Text(dependencies.dateText.weekdayShort(for: day))
+                                .font(EmmaTypography.caption(.medium))
+                                .foregroundStyle(isToday ? EmmaTheme.daySelectedLabel : EmmaTheme.mutedSoft)
+                            Text("\(day.day)")
+                                .font(EmmaTypography.heading(16))
+                                .foregroundStyle(isToday ? EmmaTheme.daySelectedNumber : EmmaTheme.ink)
+                            Text(count == 0 ? "–" : "\(count)")
+                                .font(EmmaTypography.caption(.semibold))
+                                .foregroundStyle(isToday
+                                                 ? EmmaTheme.daySelectedNumber
+                                                 : (count == 0 ? EmmaTheme.mutedSoft : EmmaTheme.accent))
+                                .frame(minWidth: 20, minHeight: 18)
+                                .background(
+                                    count > 0 && !isToday ? EmmaTheme.accentSoft : Color.clear,
+                                    in: Capsule()
+                                )
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 74)
+                        .background(isToday ? EmmaTheme.daySelected : EmmaTheme.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.dayCell, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: EmmaRadii.dayCell, style: .continuous)
+                                .strokeBorder(isToday ? Color.clear : EmmaTheme.cardBorder, lineWidth: 1)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(EmmaCardButtonStyle())
+                    .accessibilityLabel("\(dependencies.dateText.dayLabel(day)), \(EmmaPlural.events(count))")
+                }
+            }
         }
     }
 
@@ -531,13 +684,53 @@ struct TodayScreen: View {
         }
     }
 
-    private func emptyCard(_ text: String) -> some View {
-        SurfaceCard {
-            Text(text)
-                .font(EmmaTypography.caption())
-                .foregroundStyle(EmmaTheme.muted)
-                .frame(maxWidth: .infinity, alignment: .leading)
+}
+
+/// Kafelek pulsu dnia: liczba, podpis i ikona; dotknięcie otwiera listę.
+private struct PulseTile: View {
+    let value: Int
+    let label: String
+    let systemImage: String
+    let tone: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .center) {
+                    Text("\(value)")
+                        .font(EmmaTypography.heading(24))
+                        .foregroundStyle(EmmaTheme.ink)
+                        .contentTransition(.numericText())
+                    Spacer(minLength: 4)
+                    Image(systemName: systemImage)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(tone)
+                        .frame(width: 26, height: 26)
+                        .background(EmmaTheme.accentSoft, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                Text(label)
+                    .font(EmmaTypography.caption())
+                    .foregroundStyle(EmmaTheme.muted)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, minHeight: 70, alignment: .topLeading)
+            .padding(12)
+            .background(EmmaTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
+                    .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
+            }
+            .emmaCardShadow()
+            .contentShape(Rectangle())
         }
+        .buttonStyle(EmmaCardButtonStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(value) \(label)")
+        .accessibilityAddTraits(.isButton)
     }
 }
 

@@ -676,3 +676,123 @@ final class TaskUrgentBadgeTests: XCTestCase {
         XCTAssertEqual(TaskPriority.normal.displayName, "Zwykłe")
     }
 }
+
+// MARK: - Review 24.09.2026: przypomnienia, miesiące, wczytywanie
+
+final class ReviewSeptember24Tests: XCTestCase {
+
+    private func event(
+        _ id: String,
+        day: LocalDate,
+        time: String,
+        clientID: ClientID? = nil,
+        allDay: Bool = false
+    ) -> ScheduledEvent {
+        ScheduledEvent(
+            id: EventID(id),
+            clientID: clientID,
+            caseID: nil,
+            title: "Termin \(id)",
+            day: day,
+            time: TimeOfDay(hhmm: time)!,
+            durationMinutes: 60,
+            kind: .consultation,
+            status: .toConfirm,
+            place: "Kancelaria",
+            isAllDay: allDay
+        )
+    }
+
+    func testReminderPlanFiresBeforeStartInFirmTimeZone() throws {
+        let day = LocalDate(year: 2026, month: 10, day: 2)
+        let items = EventReminderPlan.items(
+            events: [event("e1", day: day, time: "11:00", clientID: ClientID("client-1"))],
+            clientNames: [ClientID("client-1"): "Maria Kowalska"],
+            offset: { _ in .hour1 },
+            now: Date(timeIntervalSince1970: 0)
+        )
+        XCTAssertEqual(items.count, 1)
+        // 11:00 w Warszawie (CEST) = 09:00 UTC; godzinę wcześniej = 08:00 UTC.
+        XCTAssertEqual(items[0].fireAt, ISO8601DateFormatter().date(from: "2026-10-02T08:00:00Z"))
+        XCTAssertEqual(items[0].title, "Za godzinę: Termin e1")
+        XCTAssertEqual(items[0].body, "11:00 · Maria Kowalska · Kancelaria")
+        XCTAssertEqual(items[0].identifier, "emma.event.e1")
+    }
+
+    func testReminderPlanSkipsPastNoneAndCapsLimit() {
+        let now = ISO8601DateFormatter().date(from: "2026-10-02T09:30:00Z")!
+        let day = LocalDate(year: 2026, month: 10, day: 2)
+        let events = [
+            event("past", day: day, time: "10:00"),     // 08:00 UTC — minął
+            event("none", day: day, time: "18:00"),
+            event("soon", day: day, time: "17:00"),
+            event("later", day: day.adding(days: 1), time: "09:00")
+        ]
+        let items = EventReminderPlan.items(
+            events: events,
+            clientNames: [:],
+            offset: { $0.id.rawValue == "none" ? ReminderOffset.none : .hour1 },
+            now: now,
+            limit: 1
+        )
+        XCTAssertEqual(items.map(\.eventID.rawValue), ["soon"])
+    }
+
+    func testReminderPreferencesFallBackToDefault() {
+        let defaults = UserDefaults(suiteName: "reminders-test-\(UUID().uuidString)")!
+        let preferences = ReminderPreferences(defaults: defaults)
+        XCTAssertEqual(preferences.offset(for: EventID("x")), .hour1)
+        preferences.defaultOffset = .day1
+        XCTAssertEqual(preferences.offset(for: EventID("x")), .day1)
+        preferences.setOffset(.none, for: EventID("x"))
+        XCTAssertEqual(preferences.offset(for: EventID("x")), ReminderOffset.none)
+        preferences.removeOffset(for: EventID("x"))
+        XCTAssertEqual(preferences.offset(for: EventID("x")), .day1)
+    }
+
+    func testAddingMonthsClampsDayAndCrossesYear() {
+        XCTAssertEqual(LocalDate(year: 2026, month: 1, day: 31).addingMonths(1), LocalDate(year: 2026, month: 2, day: 28))
+        XCTAssertEqual(LocalDate(year: 2026, month: 12, day: 15).addingMonths(1), LocalDate(year: 2027, month: 1, day: 15))
+        XCTAssertEqual(LocalDate(year: 2026, month: 1, day: 10).addingMonths(-1), LocalDate(year: 2025, month: 12, day: 10))
+        XCTAssertEqual(LocalDate(year: 2026, month: 9, day: 24).firstOfMonth, LocalDate(year: 2026, month: 9, day: 1))
+    }
+
+    func testDayTitle() {
+        let formatter = DateTextFormatter(today: LocalDate(year: 2026, month: 9, day: 24))
+        XCTAssertEqual(formatter.dayTitle(LocalDate(year: 2026, month: 9, day: 24)), "Dzisiaj, 24 września")
+        XCTAssertEqual(formatter.dayTitle(LocalDate(year: 2026, month: 9, day: 28)), "Poniedziałek, 28 września")
+    }
+
+    /// Anulowane odświeżenie nie może zamienić ekranu w „Nie udało się wczytać dnia”.
+    func testCancelledRefreshKeepsLoadedData() {
+        var phase: LoadPhase<Int> = .loaded(1)
+        XCTAssertNil(phase.recordFailure(CancellationError(), fallback: "x"))
+        XCTAssertEqual(phase, .loaded(1))
+        XCTAssertNil(phase.recordFailure(URLError(.cancelled), fallback: "x"))
+        XCTAssertEqual(phase, .loaded(1))
+    }
+
+    /// Nieudane odświeżenie zostawia dane i zwraca komunikat do powiadomienia.
+    func testFailedRefreshKeepsDataAndReturnsMessage() {
+        var phase: LoadPhase<Int> = .loaded(1)
+        let message = phase.recordFailure(BackendRepositoryError.transport("offline"), fallback: "x")
+        XCTAssertEqual(message, "Błąd połączenia: offline.")
+        XCTAssertEqual(phase, .loaded(1))
+    }
+
+    func testFirstLoadFailureShowsErrorState() {
+        var phase: LoadPhase<Int> = .loading
+        XCTAssertNil(phase.recordFailure(BackendRepositoryError.transport("offline"), fallback: "x"))
+        XCTAssertEqual(phase.failure?.message, "Błąd połączenia: offline.")
+    }
+
+    func testOnlyReadsAreRetriedAfterDroppedConnection() {
+        var get = URLRequest(url: URL(string: "https://example.test")!)
+        get.httpMethod = "GET"
+        var post = get
+        post.httpMethod = "POST"
+        XCTAssertTrue(BackendAPIClient.isRetryableRead(get, error: URLError(.networkConnectionLost)))
+        XCTAssertFalse(BackendAPIClient.isRetryableRead(post, error: URLError(.networkConnectionLost)))
+        XCTAssertFalse(BackendAPIClient.isRetryableRead(get, error: URLError(.badServerResponse)))
+    }
+}

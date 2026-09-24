@@ -68,7 +68,9 @@ struct NewConversationSheet: View {
             threads = try await dependencies.repository.threads()
             phase = .loaded(clients)
         } catch {
-            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać kontaktów."))
+            if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać kontaktów.") {
+                dependencies.showToast(message)
+            }
         }
     }
 
@@ -145,7 +147,9 @@ struct ConversationOptionsSheet: View {
             }
             phase = .loaded(threadState)
         } catch {
-            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać rozmowy."))
+            if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać rozmowy.") {
+                dependencies.showToast(message)
+            }
         }
     }
 

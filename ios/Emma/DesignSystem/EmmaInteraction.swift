@@ -39,6 +39,13 @@ public enum EmmaHaptics {
         UISelectionFeedbackGenerator().selectionChanged()
         #endif
     }
+
+    /// Odrzucony zapis — formularz pokazuje przy tym komunikat.
+    public static func error() {
+        #if canImport(UIKit)
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+        #endif
+    }
 }
 
 /// Styl przycisku-karty: lekkie zapadnięcie i przygaszenie pod palcem.

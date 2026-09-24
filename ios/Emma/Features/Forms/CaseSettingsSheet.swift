@@ -110,7 +110,9 @@ struct CaseSettingsSheet: View {
             }
             phase = .loaded(legalCase)
         } catch {
-            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać sprawy."))
+            if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać sprawy.") {
+                dependencies.showToast(message)
+            }
         }
     }
 

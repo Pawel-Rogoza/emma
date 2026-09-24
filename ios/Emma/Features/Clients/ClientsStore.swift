@@ -82,7 +82,9 @@ final class ClientsStore: ObservableObject {
             // Plakietka zakładki liczona z tych samych danych co lista.
             dependencies.leadsNeedingAction = clients.filter { $0.stage == .new }.count
         } catch {
-            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać bazy kancelarii."))
+            if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać bazy kancelarii.") {
+                dependencies.showToast(message)
+            }
         }
     }
 

@@ -9,180 +9,71 @@ import SwiftUI
 // repozytorium. Formularz pokazuje komunikat zwrócony przez repozytorium zamiast
 // powielać te reguły po stronie widoku.
 
-// MARK: Wspólne pola
-
-/// Pole daty w formacie `yyyy-MM-dd` z zachowaniem typu `LocalDate`.
-///
-/// Niepoprawny tekst jest widoczny jako błąd i **blokuje zapis** (`isValid`).
-/// Wcześniej literówka po cichu zostawiała poprzednią datę, więc na ekranie było
-/// co innego, niż trafiało do repozytorium (F10).
-private struct DateField: View {
-    let label: String
-    @Binding var day: LocalDate
-    @Binding var isValid: Bool
-
-    @State private var text: String = ""
-    @State private var showsFormatError = false
-
-    var body: some View {
-        LabeledField(label) {
-            VStack(alignment: .leading, spacing: 6) {
-                TextField("2026-09-11", text: $text)
-                    .keyboardType(.numbersAndPunctuation)
-                    .emmaFieldStyle()
-                    .onAppear {
-                        text = day.isoString
-                        isValid = true
-                    }
-                    .onChange(of: text) { _, newValue in
-                        if let parsed = LocalDate(iso: newValue) {
-                            day = parsed
-                            isValid = true
-                            showsFormatError = false
-                        } else {
-                            isValid = false
-                            showsFormatError = true
-                        }
-                    }
-                    .onChange(of: day) { _, newValue in
-                        // Zmiana daty spoza pola (np. wczytanie istniejącego rekordu).
-                        guard LocalDate(iso: text) != newValue else { return }
-                        text = newValue.isoString
-                        isValid = true
-                        showsFormatError = false
-                    }
-                    .accessibilityLabel(label)
-                if showsFormatError {
-                    Text("Podaj datę w zapisie RRRR-MM-DD, np. 2026-09-11.")
-                        .font(EmmaTypography.caption())
-                        .foregroundStyle(EmmaTheme.danger)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-    }
-}
-
-/// Pole godziny w zapisie `HH:mm`. Ma tę samą jawną walidację co `DateField` (F10).
-private struct TimeField: View {
-    let label: String
-    @Binding var time: TimeOfDay
-    @Binding var isValid: Bool
-
-    @State private var text: String = ""
-    @State private var showsFormatError = false
-
-    var body: some View {
-        LabeledField(label) {
-            VStack(alignment: .leading, spacing: 6) {
-                TextField("10:30", text: $text)
-                    .keyboardType(.numbersAndPunctuation)
-                    .emmaFieldStyle()
-                    .onAppear {
-                        text = time.hhmm
-                        isValid = true
-                    }
-                    .onChange(of: text) { _, newValue in
-                        if let parsed = TimeOfDay(hhmm: newValue) {
-                            time = parsed
-                            isValid = true
-                            showsFormatError = false
-                        } else {
-                            isValid = false
-                            showsFormatError = true
-                        }
-                    }
-                    .onChange(of: time) { _, newValue in
-                        guard TimeOfDay(hhmm: text) != newValue else { return }
-                        text = newValue.hhmm
-                        isValid = true
-                        showsFormatError = false
-                    }
-                    .accessibilityLabel(label)
-                if showsFormatError {
-                    Text("Podaj godzinę w zapisie GG:MM, np. 15:00.")
-                        .font(EmmaTypography.caption())
-                        .foregroundStyle(EmmaTheme.danger)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-    }
-}
-
 // MARK: Notatka
 
-/// Arkusz notatki z rozmowy. Dyktowanie wpisuje tekst do pola i **niczego nie zapisuje**.
+/// Arkusz notatki z rozmowy. Dyktowanie wpisuje tekst do pola na bieżąco
+/// i **niczego nie zapisuje** — zapis jest zawsze decyzją użytkownika.
 struct NoteSheet: View {
 
     let clientID: ClientID
     let caseID: CaseID?
 
     @EnvironmentObject private var dependencies: AppDependencies
-    @Environment(\.dismiss) private var dismiss
 
     @State private var text: String = ""
     @State private var error: String?
-    @State private var isDictating = false
+    @State private var isSaving = false
     @State private var client: Client?
     @State private var legalCase: LegalCase?
-    @State private var previousDictationHandler: ((DictationTarget, String) -> Void)?
+    @FocusState private var editorFocused: Bool
 
     var body: some View {
-        SheetScaffold(title: "Notatka z rozmowy", onClose: { close() }) {
+        SheetScaffold(title: "Notatka", onClose: { dependencies.dismissSheet() }) {
             Text(caption)
                 .font(EmmaTypography.caption())
                 .foregroundStyle(EmmaTheme.mutedSoft)
-                .padding(.bottom, 14)
+                .padding(.bottom, 12)
 
-            LabeledField("Ustalenia") {
+            ZStack(alignment: .topLeading) {
                 TextEditor(text: $text)
                     .font(EmmaTypography.ui(16))
                     .foregroundStyle(EmmaTheme.ink)
                     .scrollContentBackground(.hidden)
-                    .frame(minHeight: 140)
+                    .focused($editorFocused)
+                    .frame(minHeight: 180)
                     .padding(8)
-                    .background(EmmaTheme.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.field, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: EmmaRadii.field, style: .continuous)
-                            .strokeBorder(EmmaTheme.fieldBorder, lineWidth: 1)
-                    }
+                    .accessibilityLabel("Treść notatki")
+                    .accessibilityIdentifier("note-text")
+                if text.isEmpty {
+                    Text("Ustalenia z rozmowy, kolejne kroki…")
+                        .font(EmmaTypography.ui(16))
+                        .foregroundStyle(EmmaTheme.mutedSoft)
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 16)
+                        .allowsHitTesting(false)
+                }
             }
+            .background(EmmaTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
+                    .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
+            }
+            .padding(.bottom, 10)
 
-            SecondaryButton(
-                isDictating ? "Zakończ dyktowanie" : "Podyktuj notatkę",
-                systemImage: "mic"
-            ) {
-                Task { await toggleDictation() }
-            }
-            .padding(.bottom, 8)
-
-            if isDictating {
-                Text("Dyktowanie wpisuje tekst do pola. Nic nie zapisze się samo.")
-                    .font(EmmaTypography.caption())
-                    .foregroundStyle(EmmaTheme.mutedSoft)
-                    .padding(.bottom, 10)
-            }
+            DictationButton(text: $text, target: .caseNote(clientID: clientID, caseID: caseID))
+                .padding(.bottom, 14)
 
             if let error { InlineError(error) }
 
-            PrimaryButton("Zapisz notatkę", systemImage: "checkmark") {
+            PrimaryButton("Zapisz notatkę", systemImage: "checkmark", isEnabled: !isSaving) {
                 Task { await save() }
             }
+            .accessibilityIdentifier("note-save")
         }
         .task {
             client = try? await dependencies.repository.client(id: clientID)
             if let caseID { legalCase = try? await dependencies.repository.legalCase(id: caseID) }
-            previousDictationHandler = dependencies.voice.onDictationResult
-            dependencies.voice.onDictationResult = { _, dictated in
-                text = dictated
-                isDictating = false
-            }
-        }
-        .onDisappear {
-            dependencies.voice.onDictationResult = previousDictationHandler
-            Task { await dependencies.voice.cancelDictation() }
         }
     }
 
@@ -192,45 +83,52 @@ struct NoteSheet: View {
         return name
     }
 
-    private func toggleDictation() async {
-        if isDictating {
-            await dependencies.voice.finishDictation()
-            isDictating = false
-            return
-        }
-        isDictating = true
-        await dependencies.voice.startDictation(
-            target: .caseNote(clientID: clientID, caseID: caseID),
-            language: client?.language ?? .pl,
-            service: dependencies.makeDictationService()
-        )
-    }
-
     private func save() async {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
             error = "Wpisz lub podyktuj treść notatki."
             return
         }
+        guard !isSaving else { return }
         error = nil
-        let saved = await dependencies.perform {
+        isSaving = true
+        defer { isSaving = false }
+        let outcome = await dependencies.submit(fallback: "Nie udało się zapisać notatki.") {
             try await dependencies.repository.addNote(
                 NewNoteDraft(
                     clientID: clientID,
                     caseID: caseID,
-                    text: text.trimmingCharacters(in: .whitespacesAndNewlines),
+                    text: trimmed,
                     authorID: dependencies.currentUser.id,
                     createdAt: dependencies.today
                 )
             )
         }
-        guard saved != nil else { return }
-        close()
-        dependencies.showToast("Notatka zapisana w karcie klienta.")
+        switch outcome {
+        case .failed(let message):
+            error = NoteSheet.friendly(message)
+        case .saved:
+            EmmaHaptics.success()
+            dependencies.dismissSheet()
+            dependencies.showToast("Notatka zapisana.")
+            // Notatka to ślad kontaktu — zgłoszenie „do obsługi” przechodzi do „W kontakcie”.
+            if let client, client.stage == .new {
+                await LeadActions.markInContact(
+                    client,
+                    dependencies: dependencies,
+                    message: "Notatka zapisana · \(client.displayName) jest teraz „W kontakcie”"
+                )
+            }
+        }
     }
 
-    private func close() {
-        Task { await dependencies.voice.cancelDictation() }
-        dependencies.dismissSheet()
+    /// Starszy backend przyjmuje notatkę tylko do kartoteki (`client-N`).
+    static func friendly(_ message: String) -> String {
+        if message.contains("client_id") {
+            return "Serwer kancelarii nie przyjmuje jeszcze notatek do zgłoszeń bez kartoteki. "
+                + "Zaktualizuj serwer albo najpierw przyjmij sprawę."
+        }
+        return message
     }
 }
 
@@ -247,7 +145,6 @@ struct TaskFormSheet: View {
     @State private var title = ""
     @State private var selectedClient: ClientID?
     @State private var dueDate = LocalDate(year: 2026, month: 9, day: 11)
-    @State private var dueDateValid = true
     @State private var priority: TaskPriority = .normal
     @State private var error: String?
     @State private var clients: [Client] = []
@@ -290,7 +187,30 @@ struct TaskFormSheet: View {
                 .accessibilityLabel("Powiązany klient")
             }
 
-            DateField(label: "Termin", day: $dueDate, isValid: $dueDateValid)
+            LabeledField("Termin") {
+                HStack(spacing: 10) {
+                    DatePicker(
+                        "Termin",
+                        selection: Binding(
+                            get: { FirmDateTime.date(day: dueDate, time: TimeOfDay(minutes: 12 * 60)!) },
+                            set: { dueDate = FirmDateTime.day(of: $0) }
+                        ),
+                        displayedComponents: .date
+                    )
+                    .labelsHidden()
+                    .environment(\.timeZone, FirmDateTime.timeZone)
+                    .environment(\.locale, Locale(identifier: "pl_PL"))
+                    Spacer(minLength: 0)
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach([("Dziś", 0), ("Jutro", 1), ("Za tydzień", 7)], id: \.1) { label, offset in
+                            let target = dependencies.today.adding(days: offset)
+                            QuickChip(title: label, isSelected: dueDate == target) { dueDate = target }
+                        }
+                    }
+                }
+            }
 
             LabeledField("Priorytet") {
                 HStack(spacing: 6) {
@@ -358,27 +278,23 @@ struct TaskFormSheet: View {
         }
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            error = "Uzupełnij nazwę i prawidłową datę."
-            return
-        }
-        guard dueDateValid else {
-            error = "Popraw termin: data musi być w zapisie RRRR-MM-DD."
+            error = "Wpisz, co trzeba zrobić."
             return
         }
         error = nil
 
-        let result: TaskItem?
+        let outcome: SubmitOutcome<TaskItem>
         if let original {
             var updated = original
             updated.title = trimmed
             updated.clientID = selectedClient
             updated.dueDate = dueDate
             updated.priority = priority
-            result = await dependencies.perform {
+            outcome = await dependencies.submit(fallback: "Nie udało się zapisać zadania.") {
                 try await dependencies.repository.updateTask(updated, expectedVersion: original.version)
             }
         } else {
-            result = await dependencies.perform {
+            outcome = await dependencies.submit(fallback: "Nie udało się dodać zadania.") {
                 try await dependencies.repository.createTask(
                     NewTaskDraft(
                         title: trimmed,
@@ -390,201 +306,11 @@ struct TaskFormSheet: View {
                 )
             }
         }
-        guard result != nil else { return }
-        dependencies.dismissSheet()
-    }
-}
-
-// MARK: Termin
-
-struct EventFormSheet: View {
-
-    let eventID: EventID?
-    let clientID: ClientID?
-    let caseID: CaseID?
-    /// Dzień, na który otwarto formularz (np. wybrany w pasku tygodnia). `nil`
-    /// znaczy „weź dzień bieżący aplikacji”; widoczna data jest zawsze tą zapisywaną.
-    let initialDay: LocalDate?
-
-    @EnvironmentObject private var dependencies: AppDependencies
-
-    @State private var selectedClient: ClientID?
-    @State private var title = "Konsultacja"
-    @State private var kind: EventKind = .consultation
-    @State private var day = LocalDate(year: 2026, month: 9, day: 11)
-    @State private var dateValid = true
-    @State private var time = TimeOfDay(hhmm: "15:00") ?? TimeOfDay(minutes: 900)!
-    @State private var timeValid = true
-    @State private var duration = 30
-    @State private var status: EventStatus = .toConfirm
-    @State private var place = ""
-    @State private var error: String?
-    @State private var clients: [Client] = []
-    @State private var original: ScheduledEvent?
-    @State private var loaded = false
-
-    var body: some View {
-        SheetScaffold(title: eventID == nil ? "Nowy termin" : "Edytuj termin", onClose: { dependencies.dismissSheet() }) {
-            LabeledField("Klient") {
-                Menu {
-                    ForEach(clients) { client in
-                        Button(client.displayName) { selectedClient = client.id }
-                    }
-                } label: {
-                    HStack {
-                        Text(clients.first { $0.id == selectedClient }?.displayName ?? "Wybierz klienta")
-                            .font(EmmaTypography.fieldValue)
-                            .foregroundStyle(EmmaTheme.ink)
-                        Spacer()
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 12))
-                            .foregroundStyle(EmmaTheme.mutedSoft)
-                    }
-                    .padding(.horizontal, 12)
-                    .frame(minHeight: EmmaMetrics.fieldMinHeight)
-                    .background(EmmaTheme.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.field, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: EmmaRadii.field, style: .continuous)
-                            .strokeBorder(EmmaTheme.fieldBorder, lineWidth: 1)
-                    }
-                }
-                .accessibilityLabel("Klient")
-            }
-
-            LabeledField("Nazwa wydarzenia") {
-                TextField("Konsultacja", text: $title)
-                    .emmaFieldStyle()
-                    .accessibilityLabel("Nazwa wydarzenia")
-            }
-
-            LabeledField("Rodzaj") {
-                Picker("Rodzaj", selection: $kind) {
-                    ForEach(EventKind.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-            }
-
-            DateField(label: "Data", day: $day, isValid: $dateValid)
-            TimeField(label: "Godzina", time: $time, isValid: $timeValid)
-
-            LabeledField("Czas trwania") {
-                Picker("Czas trwania", selection: $duration) {
-                    ForEach([30, 60, 90, 120], id: \.self) { Text("\($0) minut").tag($0) }
-                }
-                .pickerStyle(.segmented)
-            }
-
-            LabeledField("Status") {
-                Picker("Status", selection: $status) {
-                    ForEach(EventStatus.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-            }
-
-            LabeledField("Miejsce") {
-                TextField("Online albo adres", text: $place)
-                    .emmaFieldStyle()
-                    .accessibilityLabel("Miejsce")
-            }
-
-            if let error { InlineError(error) }
-
-            PrimaryButton(eventID == nil ? "Dodaj termin" : "Zapisz termin", systemImage: "checkmark") {
-                Task { await save() }
-            }
-        }
-        .task { await prepare() }
-    }
-
-    private func prepare() async {
-        guard !loaded else { return }
-        loaded = true
-        clients = (try? await dependencies.repository.clients(matching: "", stage: nil)) ?? []
-        selectedClient = clientID ?? clients.first?.id
-        // Dzień z trasy (np. wybrany w kalendarzu) ma pierwszeństwo nad dniem bieżącym.
-        day = initialDay ?? dependencies.today
-        // Nowe spotkanie z głosu: pola rozpoznane w wypowiedzi wypełniają formularz
-        // (F14). Nowe wydarzenie nigdy nie nadpisuje istniejącego.
-        if eventID == nil, let seed = dependencies.pendingEventDraft {
-            dependencies.pendingEventDraft = nil
-            if let title = seed.title, !title.isEmpty { self.title = title }
-            if let day = seed.day { self.day = day }
-            if let time = seed.time { self.time = time }
-        }
-        guard let eventID else { return }
-        // Jak w zadaniu: nieudany odczyt nie może zamienić edycji w nowy termin.
-        do {
-            guard let existing = try await dependencies.repository.event(id: eventID) else {
-                error = "Nie znaleziono tego terminu. Mógł zostać usunięty."
-                return
-            }
-            original = existing
-            selectedClient = existing.clientID
-            title = existing.title
-            kind = existing.kind
-            day = existing.day
-            time = existing.time
-            duration = existing.durationMinutes
-            status = existing.status
-            place = existing.place
-        } catch {
-            self.error = ScreenLoad.message(for: error, fallback: "Nie udało się wczytać terminu.")
-        }
-    }
-
-    private func save() async {
-        guard eventID == nil || original != nil else {
-            error = "Nie udało się wczytać terminu — zamknij formularz i spróbuj ponownie."
+        if let message = outcome.errorMessage {
+            error = message
             return
         }
-        guard let client = selectedClient else {
-            error = "Uzupełnij klienta, nazwę, miejsce i prawidłowy termin."
-            return
-        }
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedPlace = place.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedTitle.isEmpty, !trimmedPlace.isEmpty else {
-            error = "Uzupełnij klienta, nazwę, miejsce i prawidłowy termin."
-            return
-        }
-        guard dateValid, timeValid else {
-            error = "Popraw termin: data w zapisie RRRR-MM-DD, godzina w zapisie GG:MM."
-            return
-        }
-        error = nil
-
-        if let original {
-            var updated = original
-            updated.title = trimmedTitle
-            updated.kind = kind
-            updated.day = day
-            updated.time = time
-            updated.durationMinutes = duration
-            updated.status = status
-            updated.place = trimmedPlace
-            let saved = await dependencies.perform {
-                try await dependencies.repository.updateEvent(updated, expectedVersion: original.version)
-            }
-            guard saved != nil else { return }
-        } else {
-            let saved = await dependencies.perform {
-                try await dependencies.repository.createEvent(
-                    NewEventDraft(
-                        clientID: client,
-                        caseID: caseID,
-                        title: trimmedTitle,
-                        day: day,
-                        time: time,
-                        durationMinutes: duration,
-                        kind: kind,
-                        status: status,
-                        place: trimmedPlace
-                    )
-                )
-            }
-            guard saved != nil else { return }
-        }
+        EmmaHaptics.success()
         dependencies.dismissSheet()
     }
 }
@@ -675,128 +401,6 @@ struct TaskDetailSheet: View {
             phase = .loaded(updated)
         } else {
             error = "Nie udało się zmienić stanu zadania."
-        }
-    }
-}
-
-// MARK: Szczegóły terminu
-
-struct EventDetailSheet: View {
-
-    let eventID: EventID
-
-    @EnvironmentObject private var dependencies: AppDependencies
-    @State private var phase: LoadPhase<ScheduledEvent> = .idle
-    @State private var client: Client?
-    @State private var error: String?
-
-    var body: some View {
-        SheetScaffold(title: sheetTitle, onClose: { dependencies.dismissSheet() }) {
-            switch phase {
-            case .idle, .loading:
-                LoadingState("Wczytuję termin…")
-            case .failed(let failure):
-                LoadFailureView(failure) {
-                    Task { await load() }
-                }
-            case .loaded(let event):
-                content(event)
-            }
-        }
-        .task { await load() }
-    }
-
-    private var sheetTitle: String {
-        if case .loaded(let event) = phase { return event.kind.rawValue }
-        return "Termin"
-    }
-
-    @ViewBuilder
-    private func content(_ event: ScheduledEvent) -> some View {
-        if let client {
-            PersonRow(client: client, subtitle: event.title, showsChevron: false, onOpen: nil)
-                .padding(.bottom, 14)
-        }
-
-        InfoList([
-            .init("Kiedy", "\(dependencies.dateText.dayLabel(event.day)), \(event.time.hhmm)"),
-            .init("Czas", "\(event.durationMinutes) min"),
-            .init("Miejsce", event.place),
-            .init("Status", event.status.rawValue)
-        ])
-        .padding(.bottom, 16)
-
-        if let error { InlineError(error) }
-
-        actions(event)
-    }
-
-    private func load() async {
-        if !phase.hasLoaded { phase = .loading }
-        let result = await RecordLoading.phase(
-            missingMessage: "Nie znaleziono tego terminu. Mógł zostać usunięty.",
-            fallback: "Nie udało się wczytać terminu."
-        ) {
-            try await dependencies.repository.event(id: eventID)
-        }
-        phase = result
-        if case .loaded(let event) = result {
-            client = try? await dependencies.repository.client(id: event.clientID)
-        }
-    }
-
-    @ViewBuilder
-    private func actions(_ event: ScheduledEvent) -> some View {
-        switch event.status {
-        case .finished:
-            PrimaryButton("Dodaj notatkę po spotkaniu", systemImage: "square.and.pencil") {
-                dependencies.present(.note(clientID: event.clientID, caseID: event.caseID))
-            }
-            .padding(.bottom, 10)
-            Button {
-                dependencies.dismissSheet()
-                dependencies.openEmma(clientID: event.clientID, action: .prepareCase)
-            } label: {
-                Text("Przygotuj mnie z Emmą")
-                    .font(EmmaTypography.button)
-                    .foregroundStyle(EmmaTheme.secondaryButtonText)
-                    .frame(maxWidth: .infinity, minHeight: EmmaMetrics.primaryButtonMinHeight)
-                    .background(EmmaTheme.secondaryButton)
-                    .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous))
-            }
-            .buttonStyle(.plain)
-        case .toConfirm:
-            PrimaryButton("Potwierdź termin", systemImage: "checkmark") {
-                Task { await update(event, status: .confirmed) }
-            }
-            .padding(.bottom, 10)
-            SecondaryButton("Edytuj termin") {
-                dependencies.present(.eventForm(editing: event.id, clientID: event.clientID, caseID: event.caseID, initialDay: nil))
-            }
-        case .confirmed:
-            PrimaryButton("Zakończ spotkanie", systemImage: "checkmark") {
-                Task { await update(event, status: .finished) }
-            }
-            .padding(.bottom, 10)
-            SecondaryButton("Edytuj termin") {
-                dependencies.present(.eventForm(editing: event.id, clientID: event.clientID, caseID: event.caseID, initialDay: nil))
-            }
-        }
-    }
-
-    /// Potwierdzenie i zakończenie przechodzą przez repozytorium, dzięki czemu
-    /// reguła kolizji w kalendarzu jest sprawdzana w jednym miejscu.
-    private func update(_ event: ScheduledEvent, status: EventStatus) async {
-        error = nil
-        var updated = event
-        updated.status = status
-        let saved = await dependencies.perform {
-            try await dependencies.repository.updateEvent(updated, expectedVersion: event.version)
-        }
-        if let saved {
-            phase = .loaded(saved)
-        } else {
-            error = "Nie udało się zmienić statusu terminu."
         }
     }
 }

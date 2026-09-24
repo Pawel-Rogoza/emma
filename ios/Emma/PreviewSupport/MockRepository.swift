@@ -189,8 +189,9 @@ public actor MockRepository:
         await pause()
         let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let summary = draft.summary.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty, !summary.isEmpty else {
-            throw DomainError.validationFailed("Uzupełnij nazwę i zakres sprawy.")
+        // Jak backend: nazwa co najmniej 3 znaki, zakres opcjonalny.
+        guard title.count >= 3 else {
+            throw DomainError.validationFailed("Nazwij sprawę — co najmniej 3 znaki.")
         }
         // Konwersja nie tworzy duplikatu (§etap 03 gate).
         if let existing = dataset.cases.first(where: { $0.clientID == draft.clientID && $0.status.isActive }) {
@@ -375,12 +376,9 @@ public actor MockRepository:
             status: draft.status,
             place: draft.place.trimmingCharacters(in: .whitespacesAndNewlines)
         )
-        if let conflict = dataset.events.first(where: { $0.overlaps(with: candidate) }) {
-            throw DomainError.validationFailed(
-                "W kalendarzu jest już wydarzenie o \(conflict.time.hhmm): \(conflict.title). "
-                + "Wybierz inną godzinę."
-            )
-        }
+        // Kolizji nie blokujemy: backend jej nie sprawdza, a w kancelarii dwa
+        // terminy o tej samej godzinie (rozprawa i telefon) są normalne. Demo
+        // odrzucające taki termin wyglądało jak „dodawanie terminów nie działa”.
         dataset.events.append(candidate)
         appendActivity(
             "Dodano termin: \(candidate.title), \(candidate.day.isoString) \(candidate.time.hhmm)",
@@ -400,12 +398,6 @@ public actor MockRepository:
             throw DomainError.versionConflict(expected: expectedVersion, current: current.version)
         }
         try validateEventFields(title: event.title, place: event.place, durationMinutes: event.durationMinutes)
-        if let conflict = dataset.events.first(where: { $0.overlaps(with: event) }) {
-            throw DomainError.validationFailed(
-                "W kalendarzu jest już wydarzenie o \(conflict.time.hhmm): \(conflict.title). "
-                + "Wybierz inną godzinę."
-            )
-        }
         var updated = event
         updated.version = current.version.next()
         dataset.events[index] = updated
@@ -434,12 +426,12 @@ public actor MockRepository:
         )
     }
 
+    /// Te same reguły co backend (`createMobileEvent`): nazwa co najmniej
+    /// 3 znaki, miejsce opcjonalne. Demo nie może przepuszczać tego, co serwer
+    /// odrzuci — ani odrzucać tego, co serwer przyjmie (dawniej wymagało miejsca).
     private func validateEventFields(title: String, place: String, durationMinutes: Int) throws {
-        guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw DomainError.validationFailed("Uzupełnij nazwę wydarzenia.")
-        }
-        guard !place.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw DomainError.validationFailed("Uzupełnij miejsce lub formę.")
+        guard title.trimmingCharacters(in: .whitespacesAndNewlines).count >= 3 else {
+            throw DomainError.validationFailed("Nazwa terminu musi mieć co najmniej 3 znaki.")
         }
         guard durationMinutes > 0, durationMinutes <= 8 * 60 else {
             throw DomainError.validationFailed("Czas trwania musi być dodatni.")

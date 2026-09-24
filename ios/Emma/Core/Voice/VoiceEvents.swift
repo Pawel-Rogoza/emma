@@ -470,7 +470,7 @@ public struct DictationRequest: Hashable, Codable, Sendable {
     public var language: LanguageCode
     public var maxDuration: TimeInterval
 
-    public init(target: DictationTarget, language: LanguageCode, maxDuration: TimeInterval = 45) {
+    public init(target: DictationTarget, language: LanguageCode, maxDuration: TimeInterval = 90) {
         self.target = target
         self.language = language
         self.maxDuration = maxDuration

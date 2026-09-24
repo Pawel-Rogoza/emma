@@ -79,7 +79,9 @@ final class ThreadStore: ObservableObject {
                 )
             )
         } catch {
-            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać rozmowy."))
+            if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać rozmowy.") {
+                dependencies.showToast(message)
+            }
         }
     }
 

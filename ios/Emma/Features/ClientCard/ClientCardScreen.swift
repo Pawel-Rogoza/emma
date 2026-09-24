@@ -3,8 +3,12 @@ import SwiftUI
 // MARK: - Karta klienta
 //
 // Port `personPage()` z referencji: nagłówek szczegółu, hero z pigułkami,
-// cztery szybkie akcje, lista informacji, powiązana sprawa (albo jej brak),
-// zgłoszenie, terminy i notatki.
+// szybkie akcje, ścieżka zgłoszenia, powiązana sprawa, zgłoszenie, terminy,
+// notatki i dane kontaktowe.
+//
+// Review 24.09.2026: karta prowadzi przez zgłoszenie jedną ścieżką
+// (Nowe → W kontakcie → Klient) z jedną główną czynnością na każdym etapie
+// — szczegóły w `LeadActions`. Treść zgłoszenia nie jest już ucinana.
 
 struct ClientCardScreen: View {
 
@@ -15,8 +19,10 @@ struct ClientCardScreen: View {
     @Environment(\.openURL) private var openURL
 
     @StateObject private var store = ClientCardStore()
-    /// Zgłoszenie czekające na potwierdzenie konwersji w kartotekę.
-    @State private var pendingConversion: Client?
+    /// Zgłoszenie czekające na potwierdzenie usunięcia.
+    @State private var pendingDelete: Client?
+    /// Czy długa treść zgłoszenia jest rozwinięta.
+    @State private var showsFullReport = false
 
     var body: some View {
         ScrollView {
@@ -37,21 +43,21 @@ struct ClientCardScreen: View {
             await store.load(dependencies, clientID: clientID)
         }
         .confirmationDialog(
-            "Konwertować na klienta?",
+            "Usunąć zgłoszenie?",
             isPresented: Binding(
-                get: { pendingConversion != nil },
-                set: { if !$0 { pendingConversion = nil } }
+                get: { pendingDelete != nil },
+                set: { if !$0 { pendingDelete = nil } }
             ),
             titleVisibility: .visible,
-            presenting: pendingConversion
+            presenting: pendingDelete
         ) { client in
-            Button("Konwertuj na klienta") {
-                pendingConversion = nil
-                Task { await LeadActions.convertToClient(client, dependencies: dependencies) }
+            Button("Usuń zgłoszenie", role: .destructive) {
+                pendingDelete = nil
+                Task { await deleteLead(client) }
             }
-            Button("Anuluj", role: .cancel) { pendingConversion = nil }
+            Button("Anuluj", role: .cancel) { pendingDelete = nil }
         } message: { client in
-            Text("Dla „\(client.displayName)” powstanie kartoteka klienta. Tego nie cofa się z aplikacji.")
+            Text("„\(client.displayName)” zniknie z listy zgłoszeń. Tego nie da się cofnąć.")
         }
     }
 
@@ -85,11 +91,16 @@ struct ClientCardScreen: View {
             quickActions(model)
                 .padding(.bottom, 16)
 
-            if client.stage != .client {
-                leadPanel(client)
+            if client.stage != .client || model.legalCase == nil {
+                LeadPathPanel(
+                    client: client,
+                    hasCase: model.legalCase != nil,
+                    onContact: { url, channel in
+                        LeadActions.contact(client, url: url, channel: channel, dependencies: dependencies, openURL: openURL)
+                    }
+                )
+                .padding(.bottom, 4)
             }
-
-            infoSection(client)
 
             linkedCaseSection(model)
 
@@ -98,6 +109,20 @@ struct ClientCardScreen: View {
             consultationsSection(model)
 
             notesBlock(model)
+
+            infoSection(client)
+
+            if client.stage != .client {
+                Button(role: .destructive) {
+                    pendingDelete = client
+                } label: {
+                    Text("Usuń zgłoszenie")
+                        .font(EmmaTypography.ui(14, .medium))
+                        .foregroundStyle(EmmaTheme.danger)
+                        .frame(maxWidth: .infinity, minHeight: EmmaSpacing.hitTarget)
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
@@ -150,7 +175,6 @@ struct ClientCardScreen: View {
                 .font(EmmaTypography.body(for: topicText, size: 13))
                 .foregroundStyle(EmmaTheme.mutedSoft)
                 .multilineTextAlignment(.center)
-                .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 5)
             if let booking = topic.booking {
@@ -185,74 +209,6 @@ struct ClientCardScreen: View {
         }
     }
 
-    // MARK: Obsługa zgłoszenia
-
-    /// Panel zgłoszenia: gdzie jest w kolejce i co dalej. Te same czynności co
-    /// na liście (obsłużone z „Cofnij”, konwersja po potwierdzeniu).
-    private func leadPanel(_ client: Client) -> some View {
-        let status = LeadWorkflow.status(of: client, now: dependencies.now)
-        return SurfaceCard {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
-                    Image(systemName: status.needsAction ? "tray.full" : "checkmark.circle.fill")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(LeadStatusStyle.tone(status))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(leadPanelTitle(status))
-                            .font(EmmaTypography.ui(14, .semibold))
-                            .foregroundStyle(EmmaTheme.ink)
-                        Text(leadPanelMessage(client, status: status))
-                            .font(EmmaTypography.caption())
-                            .foregroundStyle(EmmaTheme.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                if status.needsAction {
-                    PrimaryButton("Oznacz jako obsłużone", systemImage: "checkmark") {
-                        Task { await LeadActions.markHandled(client, dependencies: dependencies) }
-                    }
-                    SecondaryButton("Konwertuj na klienta", systemImage: "person.crop.circle.badge.checkmark") {
-                        pendingConversion = client
-                    }
-                } else {
-                    PrimaryButton("Konwertuj na klienta", systemImage: "person.crop.circle.badge.checkmark") {
-                        pendingConversion = client
-                    }
-                    SecondaryButton("Przywróć do obsługi", systemImage: "arrow.uturn.backward") {
-                        Task { await LeadActions.reopen(client, dependencies: dependencies) }
-                    }
-                }
-            }
-        }
-        .padding(.bottom, 4)
-    }
-
-    private func leadPanelTitle(_ status: LeadStatus) -> String {
-        switch status {
-        case .fresh: return "Nowe zgłoszenie"
-        case .waiting: return "Zgłoszenie czeka na kontakt"
-        case .inContact: return "W kontakcie"
-        case .client: return "Klient kancelarii"
-        }
-    }
-
-    private func leadPanelMessage(_ client: Client, status: LeadStatus) -> String {
-        let now = dependencies.now
-        let today = dependencies.today
-        switch status {
-        case .fresh:
-            return "Wpłynęło \(LeadWorkflow.receivedAgoText(of: client, now: now, today: today)). Po pierwszym kontakcie oznacz je jako obsłużone."
-        case .waiting:
-            return "Bez kontaktu od \(LeadWorkflow.waitingText(of: client, now: now, today: today)). Oddzwoń albo napisz i oznacz jako obsłużone."
-        case .inContact:
-            return "Kontakt nawiązany. Gdy klient się zdecyduje, załóż mu kartotekę."
-        case .client:
-            return "Zgłoszenie ma już kartotekę klienta."
-        }
-    }
-
     // MARK: Szybkie akcje
 
     private func quickActions(_ model: ClientCardModel) -> some View {
@@ -277,7 +233,7 @@ struct ClientCardScreen: View {
     private func contactAction(_ model: ClientCardModel) -> QuickActions.Action {
         if let phone = model.client.phone, let url = ContactLinks.phoneURL(phone) {
             return QuickActions.Action(systemImage: "phone", title: "Zadzwoń") {
-                openURL(url)
+                LeadActions.contact(model.client, url: url, channel: "Połączenie", dependencies: dependencies, openURL: openURL)
             }
         }
         return QuickActions.Action(systemImage: "message", title: "WhatsApp") {
@@ -302,7 +258,8 @@ struct ClientCardScreen: View {
             InfoList(infoRows(client))
             contactLinks(client)
         }
-        .padding(.vertical, 20)
+        .padding(.top, 22)
+        .padding(.bottom, 12)
     }
 
     private func infoRows(_ client: Client) -> [InfoList.Row] {
@@ -334,12 +291,12 @@ struct ClientCardScreen: View {
             HStack(spacing: 10) {
                 if let whatsApp {
                     SecondaryButton("WhatsApp", systemImage: "message") {
-                        openURL(whatsApp)
+                        LeadActions.contact(client, url: whatsApp, channel: "WhatsApp", dependencies: dependencies, openURL: openURL)
                     }
                 }
                 if let mail {
                     SecondaryButton("E-mail", systemImage: "envelope") {
-                        openURL(mail)
+                        LeadActions.contact(client, url: mail, channel: "E-mail", dependencies: dependencies, openURL: openURL)
                     }
                 }
             }
@@ -350,13 +307,10 @@ struct ClientCardScreen: View {
 
     @ViewBuilder
     private func linkedCaseSection(_ model: ClientCardModel) -> some View {
+        // Bez sprawy czynność „Przyjmij sprawę” jest w panelu ścieżki zgłoszenia.
         if let legalCase = model.legalCase {
             linkedCaseButton(legalCase)
                 .padding(.vertical, 18)
-        } else {
-            PrimaryButton("Rozpocznij prowadzenie sprawy", systemImage: "folder") {
-                dependencies.present(.startCase(model.client.id))
-            }
         }
     }
 
@@ -405,13 +359,28 @@ struct ClientCardScreen: View {
     private func proseCard(_ client: Client) -> some View {
         // Treść zgłoszenia z rezerwacji zaczyna się od „Termin: …” — termin jest
         // już wyżej, w nagłówku karty, więc tu zostaje sama wiadomość klienta.
+        // Review 24.09.2026: dłuższe zgłoszenia były ucinane. Pokazujemy całość;
+        // bardzo długą treść zwijamy do kilkunastu linii z „Pokaż całość”.
         let briefing = LeadTopic.parse(client.briefing).text
+        let isLong = briefing.count > 600
         return SurfaceCard {
-            Text(briefing.isEmpty ? "Brak treści zgłoszenia." : briefing)
-                .font(EmmaTypography.body(for: briefing, size: 14))
-                .foregroundStyle(EmmaTheme.muted)
-                .lineSpacing(7)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 10) {
+                Text(briefing.isEmpty ? "Brak treści zgłoszenia." : briefing)
+                    .font(EmmaTypography.body(for: briefing, size: 14))
+                    .foregroundStyle(EmmaTheme.muted)
+                    .lineSpacing(6)
+                    .lineLimit(isLong && !showsFullReport ? 14 : nil)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                if isLong {
+                    Button(showsFullReport ? "Zwiń" : "Pokaż całość") {
+                        withAnimation(.easeInOut(duration: 0.2)) { showsFullReport.toggle() }
+                    }
+                    .font(EmmaTypography.caption(.semibold))
+                    .foregroundStyle(EmmaTheme.accent)
+                    .frame(minHeight: 32)
+                }
+            }
         }
     }
 
@@ -466,4 +435,188 @@ struct ClientCardScreen: View {
     /// Referencja: `p.urgent && p.needsReply`. Model domeny nie ma pola `urgent`,
     /// dlatego znacznikiem pilności jest `needsReply` (klient czeka na odpowiedź).
     private func showsUrgentContact(_ client: Client) -> Bool { client.needsReply }
+
+    private func deleteLead(_ client: Client) async {
+        let deleted = await dependencies.perform { () async throws -> Bool in
+            try await dependencies.repository.deleteClient(client, expectedVersion: client.version)
+            return true
+        }
+        guard deleted == true else { return }
+        dependencies.back()
+        dependencies.showToast("Usunięto zgłoszenie: \(client.displayName)")
+    }
+}
+
+// MARK: - Ścieżka zgłoszenia
+
+/// Panel „co dalej” na karcie: trzy etapy (Nowe → W kontakcie → Klient)
+/// i jedna główna czynność na każdym z nich. Kolejność czynności odpowiada
+/// temu, jak naprawdę pracuje kancelaria: najpierw kontakt, potem konsultacja,
+/// na końcu przyjęcie sprawy.
+struct LeadPathPanel: View {
+
+    @EnvironmentObject private var dependencies: AppDependencies
+
+    let client: Client
+    let hasCase: Bool
+    let onContact: (URL, String) -> Void
+
+    var body: some View {
+        let status = LeadWorkflow.status(of: client, now: dependencies.now)
+        SurfaceCard {
+            VStack(alignment: .leading, spacing: 14) {
+                LeadPathStepper(step: step(for: status))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title(status))
+                        .font(EmmaTypography.ui(15, .semibold))
+                        .foregroundStyle(EmmaTheme.ink)
+                    Text(message(status))
+                        .font(EmmaTypography.caption())
+                        .foregroundStyle(status == .waiting ? EmmaTheme.pillAmberText : EmmaTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                actions(status)
+            }
+        }
+    }
+
+    private func step(for status: LeadStatus) -> Int {
+        switch status {
+        case .fresh, .waiting: return 0
+        case .inContact: return 1
+        case .client: return 2
+        }
+    }
+
+    @ViewBuilder
+    private func actions(_ status: LeadStatus) -> some View {
+        switch status {
+        case .fresh, .waiting:
+            contactButtons
+            PrimaryButton("Umów konsultację", systemImage: "calendar.badge.plus") {
+                dependencies.present(.eventForm(editing: nil, clientID: client.id, caseID: nil, initialDay: nil))
+            }
+            .accessibilityIdentifier("lead-schedule")
+            textButton("Już rozmawialiśmy — oznacz „W kontakcie”") {
+                Task { await LeadActions.markInContact(client, dependencies: dependencies) }
+            }
+            .accessibilityIdentifier("lead-mark-contact")
+        case .inContact:
+            PrimaryButton("Przyjmij sprawę", systemImage: "folder.badge.plus") {
+                dependencies.present(.startCase(client.id))
+            }
+            .accessibilityIdentifier("lead-accept-case")
+            SecondaryButton("Umów konsultację", systemImage: "calendar.badge.plus") {
+                dependencies.present(.eventForm(editing: nil, clientID: client.id, caseID: nil, initialDay: nil))
+            }
+            textButton("Wróć do „Do obsługi”") {
+                Task { await LeadActions.reopen(client, dependencies: dependencies) }
+            }
+        case .client:
+            if !hasCase {
+                PrimaryButton("Przyjmij sprawę", systemImage: "folder.badge.plus") {
+                    dependencies.present(.startCase(client.id))
+                }
+            }
+        }
+    }
+
+    /// Kontakt jednym dotknięciem — i od razu „W kontakcie”.
+    @ViewBuilder
+    private var contactButtons: some View {
+        let phone = client.phone.flatMap(ContactLinks.phoneURL)
+        let whatsApp = client.phone.flatMap(ContactLinks.whatsAppURL)
+        let mail = client.email.flatMap(ContactLinks.mailURL)
+        if phone != nil || whatsApp != nil || mail != nil {
+            HStack(spacing: 8) {
+                if let phone {
+                    SecondaryButton("Zadzwoń", systemImage: "phone") { onContact(phone, "Połączenie") }
+                }
+                if let whatsApp {
+                    SecondaryButton("WhatsApp", systemImage: "message") { onContact(whatsApp, "WhatsApp") }
+                }
+                if let mail, phone == nil || whatsApp == nil {
+                    SecondaryButton("E-mail", systemImage: "envelope") { onContact(mail, "E-mail") }
+                }
+            }
+        }
+    }
+
+    private func textButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .font(EmmaTypography.caption(.semibold))
+            .foregroundStyle(EmmaTheme.accent)
+            .frame(maxWidth: .infinity, minHeight: EmmaSpacing.hitTarget)
+            .contentShape(Rectangle())
+    }
+
+    private func title(_ status: LeadStatus) -> String {
+        switch status {
+        case .fresh: return "Nowe zgłoszenie — skontaktuj się"
+        case .waiting: return "Czeka na kontakt"
+        case .inContact: return "W kontakcie — czy przyjmujesz sprawę?"
+        case .client: return "Klient bez sprawy"
+        }
+    }
+
+    private func message(_ status: LeadStatus) -> String {
+        let now = dependencies.now
+        let today = dependencies.today
+        switch status {
+        case .fresh:
+            return "Wpłynęło \(LeadWorkflow.receivedAgoText(of: client, now: now, today: today)). Telefon, wiadomość, konsultacja albo notatka same przeniosą je do „W kontakcie”."
+        case .waiting:
+            return "Bez kontaktu od \(LeadWorkflow.waitingText(of: client, now: now, today: today)). Oddzwoń albo umów konsultację."
+        case .inContact:
+            return "Gdy klient się zdecyduje, przyjmij sprawę — kartoteka i sprawa powstaną jednym krokiem."
+        case .client:
+            return "Kartoteka istnieje, ale nie ma prowadzonej sprawy."
+        }
+    }
+}
+
+/// Trzy etapy ścieżki z zaznaczonym bieżącym.
+struct LeadPathStepper: View {
+    let step: Int
+
+    private let titles = ["Nowe", "W kontakcie", "Klient"]
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(titles.indices, id: \.self) { index in
+                VStack(spacing: 5) {
+                    ZStack {
+                        Circle()
+                            .fill(index <= step ? EmmaTheme.primaryButton : EmmaTheme.controlBackground)
+                            .frame(width: 22, height: 22)
+                        if index < step {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(EmmaTheme.primaryButtonText)
+                        } else {
+                            Text("\(index + 1)")
+                                .font(EmmaTypography.caption(.semibold))
+                                .foregroundStyle(index <= step ? EmmaTheme.primaryButtonText : EmmaTheme.mutedSoft)
+                        }
+                    }
+                    Text(titles[index])
+                        .font(EmmaTypography.caption(index == step ? .semibold : .regular))
+                        .foregroundStyle(index == step ? EmmaTheme.ink : EmmaTheme.mutedSoft)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity)
+                if index < titles.count - 1 {
+                    Rectangle()
+                        .fill(index < step ? EmmaTheme.primaryButton : EmmaTheme.controlBackground)
+                        .frame(height: 2)
+                        .frame(maxWidth: 40)
+                        .offset(y: -9)
+                }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Etap zgłoszenia: \(titles[min(step, titles.count - 1)]), \(step + 1) z 3")
+    }
 }

@@ -63,7 +63,7 @@ final class Stage4ScreenshotUITests: XCTestCase {
         capture("29-mini-panel-klawiatura", description: "Arkusz z klawiaturą — sterowanie sesją widoczne nad klawiaturą") {
             guard self.startSessionIfNeeded() else { return "sesja nie wystartowała" }
             self.openTab("today")
-            let entry = self.application.buttons["Wszystkie zadania"]
+            let entry = self.application.buttons["pulse-tasks"]
             guard entry.waitForExistence(timeout: 10) else { return "brak wejścia do zadań" }
             entry.tap()
             let add = self.application.buttons["Dodaj zadanie"]

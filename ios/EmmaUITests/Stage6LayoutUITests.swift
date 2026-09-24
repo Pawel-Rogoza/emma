@@ -111,7 +111,7 @@ final class Stage6LayoutUITests: XCTestCase {
 
     /// Decyzje karty: każda widoczna musi dać się osiągnąć (karta jest przewijana).
     private func assertDecisionsReachable() -> String? {
-        let decisions = ["Dodaj", "Zadzwoń", "Napisz", "Rozpocznij prowadzenie sprawy"]
+        let decisions = ["Dodaj", "Zadzwoń", "Napisz", "Przyjmij sprawę", "Umów konsultację"]
         var unreachable: [String] = []
         var disabled: [String] = []
         for label in decisions {

@@ -286,6 +286,21 @@ public struct LocalDate: Hashable, Codable, Sendable, Comparable, CustomStringCo
         adding(days: -weekdayIndexMondayFirst)
     }
 
+    /// Pierwszy dzień miesiąca tej daty.
+    public var firstOfMonth: LocalDate {
+        LocalDate(year: year, month: month, day: 1)
+    }
+
+    /// Ten sam dzień miesiąca `months` miesięcy dalej (przycięty do końca
+    /// krótszego miesiąca: 31 stycznia + 1 → 28/29 lutego).
+    public func addingMonths(_ months: Int) -> LocalDate {
+        let index = year * 12 + (month - 1) + months
+        let newYear = index >= 0 ? index / 12 : (index - 11) / 12
+        let newMonth = index - newYear * 12 + 1
+        let first = LocalDate(year: newYear, month: newMonth, day: 1)
+        return LocalDate(year: newYear, month: newMonth, day: min(day, first.daysInMonth))
+    }
+
     public var daysInMonth: Int {
         switch month {
         case 1, 3, 5, 7, 8, 10, 12: return 31

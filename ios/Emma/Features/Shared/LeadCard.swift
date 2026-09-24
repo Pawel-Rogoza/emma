@@ -11,7 +11,7 @@ import SwiftUI
 //      „Termin: 2026-09-15 20:00”, który z formularza trafiał na początek tematu,
 //   3. **Kiedy chce rozmawiać?** — termin z rezerwacji jako osobna linia.
 //
-// Po prawej jest okrągły przycisk „obsłużone” — ten sam gest co odhaczenie
+// Po prawej jest okrągły przycisk „W kontakcie” — ten sam gest co odhaczenie
 // zadania. Karta sama jest przyciskiem otwierającym kartę klienta; przycisk
 // obsłużenia leży obok niej (nie w środku), żeby dotknięcia się nie myliły.
 
@@ -105,7 +105,7 @@ struct LeadCheckButton: View {
         }
         .buttonStyle(.plain)
         .disabled(isBusy)
-        .accessibilityLabel(isDone ? "Przywróć do obsługi" : "Oznacz jako obsłużone")
+        .accessibilityLabel(isDone ? "Przywróć do obsługi" : "Oznacz jako w kontakcie")
         .accessibilityIdentifier("lead-check")
     }
 }
@@ -120,7 +120,6 @@ struct LeadCard: View {
     private let onOpen: () -> Void
     private let onMarkHandled: (() async -> Void)?
     private let onReopen: (() async -> Void)?
-    private let onConvert: (() -> Void)?
     private let onRename: (() -> Void)?
     private let onDelete: (() -> Void)?
 
@@ -134,7 +133,6 @@ struct LeadCard: View {
         onOpen: @escaping () -> Void,
         onMarkHandled: (() async -> Void)? = nil,
         onReopen: (() async -> Void)? = nil,
-        onConvert: (() -> Void)? = nil,
         onRename: (() -> Void)? = nil,
         onDelete: (() -> Void)? = nil
     ) {
@@ -143,7 +141,6 @@ struct LeadCard: View {
         self.onOpen = onOpen
         self.onMarkHandled = onMarkHandled
         self.onReopen = onReopen
-        self.onConvert = onConvert
         self.onRename = onRename
         self.onDelete = onDelete
     }
@@ -289,7 +286,21 @@ struct LeadCard: View {
             Button {
                 toggleHandled(status)
             } label: {
-                Label("Oznacz jako obsłużone", systemImage: "checkmark.circle")
+                Label("Oznacz „W kontakcie”", systemImage: "checkmark.circle")
+            }
+        }
+        if status != .client {
+            Button {
+                dependencies.present(.eventForm(editing: nil, clientID: client.id, caseID: nil, initialDay: nil))
+            } label: {
+                Label("Umów konsultację", systemImage: "calendar.badge.plus")
+            }
+        }
+        if status == .inContact {
+            Button {
+                dependencies.present(.startCase(client.id))
+            } label: {
+                Label("Przyjmij sprawę", systemImage: "folder.badge.plus")
             }
         }
         if status == .inContact, onReopen != nil {
@@ -301,16 +312,9 @@ struct LeadCard: View {
         }
         if let phoneURL = client.phone.flatMap(ContactLinks.phoneURL) {
             Button {
-                openURL(phoneURL)
+                LeadActions.contact(client, url: phoneURL, channel: "Połączenie", dependencies: dependencies, openURL: openURL)
             } label: {
                 Label("Zadzwoń", systemImage: "phone")
-            }
-        }
-        if let onConvert, status != .client {
-            Button {
-                onConvert()
-            } label: {
-                Label("Konwertuj na klienta", systemImage: "person.crop.circle.badge.checkmark")
             }
         }
         if let onRename {

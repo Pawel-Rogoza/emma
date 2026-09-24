@@ -1528,27 +1528,46 @@ final class MockRepositoryTests: XCTestCase {
         }
     }
 
-    func testEventOverlapIsRejected() async throws {
+    /// Review 24.09.2026: demo odrzucało termin nakładający się na inny, a backend
+    /// go przyjmuje — w kancelarii rozprawa i telefon o tej samej godzinie to norma.
+    /// Demo nie może być surowsze niż serwer, bo wygląda wtedy jak „dodawanie nie działa”.
+    func testOverlappingEventIsAcceptedLikeBackend() async throws {
         let repository = makeRepository()
-        do {
-            _ = try await repository.createEvent(
-                NewEventDraft(
-                    clientID: DemoFixtures.mariaID,
-                    caseID: nil,
-                    title: "Konsultacja kolidująca",
-                    day: DemoFixtures.referenceDay,
-                    time: TimeOfDay(hhmm: "10:45")!,
-                    durationMinutes: 30,
-                    kind: .consultation,
-                    status: .toConfirm,
-                    place: "Online"
-                )
+        let event = try await repository.createEvent(
+            NewEventDraft(
+                clientID: DemoFixtures.mariaID,
+                caseID: nil,
+                title: "Konsultacja w tym samym czasie",
+                day: DemoFixtures.referenceDay,
+                time: TimeOfDay(hhmm: "10:45")!,
+                durationMinutes: 30,
+                kind: .consultation,
+                status: .toConfirm,
+                place: ""
             )
-            XCTFail("Oczekiwano kolizji w kalendarzu")
-        } catch let error as DomainError {
-            guard case .validationFailed(let reason) = error else { return XCTFail("Zły błąd") }
-            XCTAssertTrue(reason.contains("10:30"), "Komunikat wskazuje kolidujące wydarzenie")
-        }
+        )
+        XCTAssertEqual(event.time.hhmm, "10:45")
+        XCTAssertEqual(event.place, "", "Miejsce jest opcjonalne")
+    }
+
+    func testEventWithoutClientIsSaved() async throws {
+        let repository = makeRepository()
+        let event = try await repository.createEvent(
+            NewEventDraft(
+                clientID: nil,
+                caseID: nil,
+                title: "Rozprawa w SO Warszawa",
+                day: DemoFixtures.referenceDay.adding(days: 3),
+                time: TimeOfDay(hhmm: "09:00")!,
+                durationMinutes: 60,
+                kind: .caseDeadline,
+                status: .toConfirm,
+                place: ""
+            )
+        )
+        XCTAssertNil(event.clientID)
+        let week = try await repository.events(in: .day(event.day))
+        XCTAssertTrue(week.contains { $0.id == event.id })
     }
 
     func testBackToBackEventsDoNotOverlap() async throws {

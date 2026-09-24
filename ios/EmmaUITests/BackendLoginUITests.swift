@@ -326,7 +326,7 @@ final class BackendLoginUITests: XCTestCase {
         XCTAssertTrue(details.waitForExistence(timeout: 15), "Brak najbliższego terminu \(eventTitle)")
         details.tap()
         XCTAssertTrue(
-            application.buttons["Potwierdź termin"].waitForExistence(timeout: 20),
+            application.buttons["Edytuj termin"].waitForExistence(timeout: 20),
             "Szczegół terminu się nie wczytał"
         )
         attachScreenshot("AUDYT-04-szczegol-terminu")
@@ -373,7 +373,7 @@ final class BackendLoginUITests: XCTestCase {
         place.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count + 2))
         place.typeText("Sala E2E")
         application.staticTexts["Edytuj termin"].tap()
-        let save = application.buttons["Zapisz termin"]
+        let save = application.buttons["event-save"]
         for _ in 0..<4 where !save.isHittable { application.swipeUp() }
         save.tap()
         XCTAssertTrue(
@@ -392,11 +392,15 @@ final class BackendLoginUITests: XCTestCase {
         let lead = application.buttons.matching(NSPredicate(format: "label CONTAINS %@", caseLead)).firstMatch
         XCTAssertTrue(lead.waitForExistence(timeout: 20), "Brak zgłoszenia \(caseLead)")
         lead.tap()
-        let start = application.buttons["Rozpocznij prowadzenie sprawy"]
+        // Ścieżka zgłoszenia (0.3.0): „Przyjmij sprawę” jest w panelu karty,
+        // gdy zgłoszenie jest „W kontakcie”; nowe najpierw tam przechodzi.
+        let markContact = application.buttons["lead-mark-contact"]
+        if markContact.waitForExistence(timeout: 5) { markContact.tap() }
+        let start = application.buttons["lead-accept-case"]
         for _ in 0..<4 where !(start.exists && start.isHittable) { application.swipeUp() }
-        XCTAssertTrue(start.waitForExistence(timeout: 15), "Brak przycisku rozpoczęcia sprawy")
+        XCTAssertTrue(start.waitForExistence(timeout: 15), "Brak przycisku „Przyjmij sprawę”")
         start.tap()
-        let create = application.buttons["Utwórz sprawę"]
+        let create = application.buttons["case-accept-save"]
         XCTAssertTrue(create.waitForExistence(timeout: 20), "Formularz sprawy się nie otworzył")
         create.tap()
         XCTAssertTrue(

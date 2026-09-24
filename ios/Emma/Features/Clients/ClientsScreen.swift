@@ -9,8 +9,11 @@ import SwiftUI
 // Przebudowa z review 23.09.2026:
 //   • leady są kolejką pracy: domyślny widok „Do obsługi” pokazuje najpierw te,
 //     które **czekają** (≥ 24 h), potem **nowe** — reguła w `LeadWorkflow`,
-//   • zgłoszenie odhacza się przyciskiem na karcie albo przesunięciem w prawo;
-//     w lewo są konwersja i usunięcie — z „Cofnij” w komunikacie, bez pytań,
+//   • review 24.09.2026: „Nowe” i „Oczekujące” to jedna kolejka „Do obsługi”
+//     (oczekujące wyróżnia bursztynowa plakietka), obok „W kontakcie” i „Wszystkie”,
+//   • zgłoszenie przenosi się do „W kontakcie” przyciskiem na karcie albo
+//     przesunięciem w prawo; w lewo jest usunięcie. Osobnej „konwersji na
+//     klienta” już nie ma — kartoteka powstaje przy „Przyjmij sprawę”,
 //   • lista stoi na `List`, bo tylko ona daje systemowe przesunięcia z obsługą
 //     VoiceOver; wygląd kart pozostaje własny (tło i separatory wyłączone),
 //   • pociągnięcie w dół odświeża listę (nowe zgłoszenia ze strony).
@@ -33,8 +36,6 @@ struct ClientsScreen: View {
     @State private var renameText = ""
     /// Zgłoszenie czekające na potwierdzenie usunięcia.
     @State private var pendingDelete: Client?
-    /// Zgłoszenie czekające na potwierdzenie konwersji w kartotekę.
-    @State private var pendingConversion: Client?
 
     var body: some View {
         List {
@@ -68,17 +69,6 @@ struct ClientsScreen: View {
             Button("Usuń", role: .destructive) { commitDelete() }
         } message: { client in
             Text("„\(client.displayName)” zniknie z listy zgłoszeń. Zgłoszenie z rezerwacji zwolni też okienko na stronie.")
-        }
-        .confirmationDialog(
-            "Konwertować na klienta?",
-            isPresented: conversionBinding,
-            titleVisibility: .visible,
-            presenting: pendingConversion
-        ) { client in
-            Button("Konwertuj na klienta") { commitConversion(client) }
-            Button("Anuluj", role: .cancel) { pendingConversion = nil }
-        } message: { client in
-            Text("Dla „\(client.displayName)” powstanie kartoteka klienta. Tego nie cofa się z aplikacji.")
         }
     }
 
@@ -156,7 +146,7 @@ struct ClientsScreen: View {
             selection: $leadFilter,
             title: { $0.rawValue },
             count: { filter in filter.count(in: inbox) },
-            attention: { filter in filter == .waiting && !inbox.waiting.isEmpty }
+            attention: { filter in filter == .needsAction && !inbox.waiting.isEmpty }
         )
     }
 
@@ -210,9 +200,8 @@ struct ClientsScreen: View {
             client: client,
             nextEvent: model.nextLeadEvents[client.id],
             onOpen: { dependencies.openPerson(client.id) },
-            onMarkHandled: { await LeadActions.markHandled(client, dependencies: dependencies) },
+            onMarkHandled: { await LeadActions.markInContact(client, dependencies: dependencies) },
             onReopen: { await LeadActions.reopen(client, dependencies: dependencies) },
-            onConvert: { pendingConversion = client },
             onRename: { beginRename(client) },
             onDelete: { pendingDelete = client }
         )
@@ -220,9 +209,9 @@ struct ClientsScreen: View {
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             if client.stage == .new {
                 Button {
-                    Task { await LeadActions.markHandled(client, dependencies: dependencies) }
+                    Task { await LeadActions.markInContact(client, dependencies: dependencies) }
                 } label: {
-                    Label("Obsłużone", systemImage: "checkmark")
+                    Label("W kontakcie", systemImage: "checkmark")
                 }
                 .tint(EmmaTheme.pillGreenText)
             } else if client.stage == .inContact {
@@ -235,19 +224,13 @@ struct ClientsScreen: View {
             }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            // Kartoteki nie usuwa się ani nie „konwertuje” ponownie.
+            // Kartoteki nie usuwa się z aplikacji.
             if client.stage != .client {
                 Button(role: .destructive) {
                     pendingDelete = client
                 } label: {
                     Label("Usuń", systemImage: "trash")
                 }
-                Button {
-                    pendingConversion = client
-                } label: {
-                    Label("Klient", systemImage: "person.crop.circle.badge.checkmark")
-                }
-                .tint(EmmaTheme.primaryButton)
             }
         }
     }
@@ -258,7 +241,7 @@ struct ClientsScreen: View {
             EmptyState(
                 systemImage: "checkmark.seal",
                 title: "Wszystko obsłużone",
-                message: "Nowe zgłoszenia ze strony pojawią się tutaj. Obsłużone znajdziesz w „W kontakcie”."
+                message: "Nowe zgłoszenia ze strony pojawią się tutaj. Te, z którymi już rozmawiasz, są w „W kontakcie”."
             )
         } else {
             EmptyState(
@@ -315,17 +298,12 @@ struct ClientsScreen: View {
         let filter: LeadListFilter = trimmedQuery.isEmpty ? leadFilter : .all
         switch filter {
         case .needsAction:
-            sections.append(LeadSection(id: "waiting", title: "Czekają na kontakt", status: .waiting, clients: inbox.waiting))
-            sections.append(LeadSection(id: "fresh", title: "Nowe · ostatnie 24 h", status: .fresh, clients: inbox.fresh))
-        case .fresh:
-            sections.append(LeadSection(id: "fresh", title: nil, status: .fresh, clients: inbox.fresh))
-        case .waiting:
-            sections.append(LeadSection(id: "waiting", title: nil, status: .waiting, clients: inbox.waiting))
+            // Jedna kolejka: najpierw te, które czekają najdłużej, potem nowe.
+            sections.append(LeadSection(id: "queue", title: nil, status: .fresh, clients: inbox.needsAction))
         case .inContact:
             sections.append(LeadSection(id: "contact", title: nil, status: .inContact, clients: inbox.inContact))
         case .all:
-            sections.append(LeadSection(id: "waiting", title: "Czekają na kontakt", status: .waiting, clients: inbox.waiting))
-            sections.append(LeadSection(id: "fresh", title: "Nowe", status: .fresh, clients: inbox.fresh))
+            sections.append(LeadSection(id: "queue", title: "Do obsługi", status: .fresh, clients: inbox.needsAction))
             sections.append(LeadSection(id: "contact", title: "W kontakcie", status: .inContact, clients: inbox.inContact))
         }
         if !trimmedQuery.isEmpty {
@@ -366,13 +344,6 @@ struct ClientsScreen: View {
         Binding(
             get: { pendingDelete != nil },
             set: { if !$0 { pendingDelete = nil } }
-        )
-    }
-
-    private var conversionBinding: Binding<Bool> {
-        Binding(
-            get: { pendingConversion != nil },
-            set: { if !$0 { pendingConversion = nil } }
         )
     }
 
@@ -423,13 +394,6 @@ struct ClientsScreen: View {
             }
         }
     }
-
-    /// Wejście na etap `client` jest w backendzie **konwersją zgłoszenia
-    /// w klienta** — dlatego pytamy o to wprost, zamiast po cichu zakładać kartotekę.
-    private func commitConversion(_ client: Client) {
-        pendingConversion = nil
-        Task { await LeadActions.convertToClient(client, dependencies: dependencies) }
-    }
 }
 
 // MARK: - Grupy listy leadów
@@ -478,19 +442,15 @@ private extension View {
 
 // MARK: - Filtry listy
 
-/// Filtr listy leadów. Domyślny jest „Do obsługi” (nowe i oczekujące).
+/// Filtr listy leadów. Domyślny jest „Do obsługi” (nowe i oczekujące razem).
 enum LeadListFilter: String, Hashable, CaseIterable {
     case needsAction = "Do obsługi"
-    case fresh = "Nowe"
-    case waiting = "Oczekujące"
     case inContact = "W kontakcie"
     case all = "Wszystkie"
 
     func count(in inbox: LeadInbox) -> Int {
         switch self {
         case .needsAction: return inbox.needsAction.count
-        case .fresh: return inbox.fresh.count
-        case .waiting: return inbox.waiting.count
         case .inContact: return inbox.inContact.count
         case .all: return inbox.needsAction.count + inbox.inContact.count
         }

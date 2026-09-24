@@ -347,6 +347,7 @@ paths:
           schema: { $ref: "#/components/schemas/LocalDate" }
         - name: client_id
           in: query
+          description: "`client-N` albo `lead-N` (terminy zgłoszenia bez kartoteki, od 0.3.0)."
           schema: { type: string }
         - name: case_id
           in: query
@@ -1264,16 +1265,22 @@ components:
       type: object
       required: [client_id, text, author_id]
       properties:
-        client_id: { type: string }
+        client_id:
+          type: string
+          description: "`client-N` albo `lead-N` — notatka do zgłoszenia bez kartoteki (od 0.3.0)."
         case_id: { type: [string, "null"] }
         text: { type: string, minLength: 1 }
         author_id: { type: string }
 
     NewEvent:
       type: object
-      required: [client_id, title, day, time, duration_minutes, kind]
+      # Od 0.3.0: klient opcjonalny (termin kancelarii), `lead-N` dozwolone,
+      # `duration_minutes` opcjonalne (domyślnie 60).
+      required: [title, day, time, kind]
       properties:
-        client_id: { type: string }
+        client_id:
+          type: [string, "null"]
+          description: "`client-N`, `lead-N` albo brak — termin kancelarii bez klienta."
         case_id: { type: [string, "null"] }
         title: { type: string, minLength: 3 }
         day: { $ref: "#/components/schemas/LocalDate" }
@@ -1364,7 +1371,9 @@ components:
       required: [id, client_id, title, day, all_day, duration_minutes, kind, status, version]
       properties:
         id: { type: string }
-        client_id: { type: string }
+        client_id:
+          type: [string, "null"]
+          description: "`client-N`, `lead-N` (zgłoszenie bez kartoteki) albo `null` (termin kancelarii)."
         case_id: { type: [string, "null"] }
         title: { type: string }
         day: { $ref: "#/components/schemas/LocalDate" }

@@ -28,19 +28,42 @@ final class Stage1ReliabilityTests: XCTestCase {
         XCTAssertEqual(store.selectedDay, saturday, "Odświeżenie nie może resetować wybranego dnia")
     }
 
-    func testCalendarKeepsWeekOffsetAcrossReload() async {
+    func testCalendarKeepsMonthOffsetAcrossReload() async {
         let dependencies = AppDependencies.demo()
         let store = CalendarStore()
 
         await store.load(dependencies)
-        await store.shiftWeek(by: 7, dependencies: dependencies)
-        let shiftedWeek = store.weekStart
+        await store.shift(by: 1, dependencies: dependencies)
+        let shiftedMonth = store.visibleMonth
         let shiftedDay = store.selectedDay
+        XCTAssertEqual(shiftedMonth, dependencies.today.firstOfMonth.addingMonths(1))
 
         await store.load(dependencies)
 
-        XCTAssertEqual(store.weekStart, shiftedWeek, "Przesunięcie tygodnia nie może wrócić do bieżącego")
+        XCTAssertEqual(store.visibleMonth, shiftedMonth, "Przesunięcie miesiąca nie może wrócić do bieżącego")
         XCTAssertEqual(store.selectedDay, shiftedDay)
+    }
+
+    func testCalendarWeekModeShiftsByWeek() async {
+        let dependencies = AppDependencies.demo()
+        let store = CalendarStore()
+
+        await store.load(dependencies)
+        await store.setMode(.week, dependencies: dependencies)
+        await store.shift(by: 1, dependencies: dependencies)
+        XCTAssertEqual(store.selectedDay, dependencies.today.adding(days: 7))
+        XCTAssertEqual(store.phase.value?.days.first, dependencies.today.adding(days: 7).startOfWeekMonday)
+    }
+
+    func testCalendarMonthGridHasSixWeeksStartingMonday() async {
+        let dependencies = AppDependencies.demo()
+        let store = CalendarStore()
+
+        await store.load(dependencies)
+        let days = store.phase.value?.days ?? []
+        XCTAssertEqual(days.count, 42)
+        XCTAssertEqual(days.first?.weekdayIndexMondayFirst, 0)
+        XCTAssertTrue(days.contains(dependencies.today))
     }
 
     func testCalendarBackToTodayResetsSelection() async {
@@ -52,7 +75,7 @@ final class Stage1ReliabilityTests: XCTestCase {
         await store.backToToday(dependencies)
 
         XCTAssertEqual(store.selectedDay, dependencies.today)
-        XCTAssertEqual(store.weekStart, dependencies.today.startOfWeekMonday)
+        XCTAssertEqual(store.visibleMonth, dependencies.today.firstOfMonth)
     }
 
     // MARK: F11 — wyczyszczenie wyszukiwania przywraca całą listę

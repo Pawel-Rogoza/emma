@@ -70,13 +70,16 @@ struct PersonRow: View {
 
 // MARK: Termin
 
-/// Karta konsultacji: status, godzina z czasem trwania, osoba, miejsce i prowadzący.
+/// Karta terminu w kalendarzu: godzina, rodzaj, nazwa, klient i miejsce.
+/// Bez stanu i czasu trwania — CRM ich nie prowadzi, a „Do potwierdzenia”
+/// przy każdym terminie było szumem (review 24.09.2026).
 struct MeetingCard: View {
     let event: ScheduledEvent
-    let clientName: String
+    /// `nil` — termin kancelarii bez klienta.
+    let clientName: String?
     let onOpen: () -> Void
 
-    init(event: ScheduledEvent, clientName: String, onOpen: @escaping () -> Void) {
+    init(event: ScheduledEvent, clientName: String?, onOpen: @escaping () -> Void) {
         self.event = event
         self.clientName = clientName
         self.onOpen = onOpen
@@ -84,45 +87,43 @@ struct MeetingCard: View {
 
     var body: some View {
         Button(action: onOpen) {
-            VStack(alignment: .leading, spacing: 11) {
-                HStack(spacing: 8) {
-                    StatusPill(event.status.rawValue, kind: Self.pillKind(for: event.status))
-                    Text("\(event.time.hhmm) · \(event.durationMinutes) min")
-                        .font(EmmaTypography.meetingMeta)
-                        .foregroundStyle(EmmaTheme.muted)
-                    Spacer(minLength: 0)
+            HStack(alignment: .top, spacing: 14) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(event.isAllDay ? "Cały" : event.time.hhmm)
+                        .font(EmmaTypography.ui(16, .semibold))
+                        .foregroundStyle(EmmaTheme.ink)
+                    if event.isAllDay {
+                        Text("dzień")
+                            .font(EmmaTypography.caption())
+                            .foregroundStyle(EmmaTheme.mutedSoft)
+                    }
                 }
+                .frame(width: 50, alignment: .leading)
 
-                HStack(spacing: 11) {
-                    PersonAvatar(initials: ClientInitials.make(from: clientName), style: .person)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(clientName)
-                            .font(EmmaTypography.personName)
-                            .foregroundStyle(EmmaTheme.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(event.title)
-                            .font(EmmaTypography.body(for: event.title, size: 12))
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(event.kind == .caseDeadline ? EmmaTheme.pillAmberText : EmmaTheme.accent)
+                    .frame(width: 3)
+                    .frame(maxHeight: .infinity)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Label(event.kind.displayTitle, systemImage: event.kind.systemImage)
+                        .font(EmmaTypography.caption(.medium))
+                        .foregroundStyle(event.kind == .caseDeadline ? EmmaTheme.pillAmberText : EmmaTheme.accent)
+                    Text(event.title)
+                        .font(EmmaTypography.body(for: event.title, size: 14, weight: .semibold))
+                        .foregroundStyle(EmmaTheme.ink)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let meta = metaText {
+                        Text(meta)
+                            .font(EmmaTypography.meetingMeta)
                             .foregroundStyle(EmmaTheme.muted)
                             .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-
-                HStack(spacing: 14) {
-                    Label {
-                        Text(event.place)
-                            .font(EmmaTypography.meetingMeta)
-                    } icon: {
-                        Image(systemName: event.place.lowercased().contains("online") ? "video" : "mappin.and.ellipse")
-                            .font(.system(size: 12))
-                    }
-                    .foregroundStyle(EmmaTheme.muted)
-
-                    Spacer(minLength: 0)
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(EdgeInsets(top: 16, leading: 17, bottom: 16, trailing: 17))
+            .padding(EdgeInsets(top: 14, leading: 15, bottom: 14, trailing: 15))
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(EmmaTheme.surface)
             .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
@@ -136,17 +137,19 @@ struct MeetingCard: View {
         .buttonStyle(EmmaCardButtonStyle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "\(event.title), \(clientName), \(event.time.hhmm), \(event.durationMinutes) minut, \(event.status.rawValue), \(event.place)"
+            [event.isAllDay ? "cały dzień" : event.time.hhmm, event.kind.displayTitle, event.title, metaText]
+                .compactMap { $0 }
+                .joined(separator: ", ")
         )
         .accessibilityAddTraits(.isButton)
     }
 
-    static func pillKind(for status: EventStatus) -> StatusPill.Kind {
-        switch status {
-        case .confirmed: return .green
-        case .toConfirm: return .amber
-        case .finished: return .neutral
-        }
+    /// „Maria Kowalska · Kancelaria”.
+    private var metaText: String? {
+        // Nazwa „Konsultacja — Maria Kowalska” już mówi, z kim — bez powtórzenia.
+        let client = clientName.flatMap { event.title.contains($0) ? nil : $0 }
+        let parts = [client, event.place.isEmpty ? nil : event.place].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 

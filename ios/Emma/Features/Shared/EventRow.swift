@@ -45,8 +45,7 @@ struct EventActionsMenu: View {
 private func eventBarColor(past: Bool, happening: Bool, status: EventStatus) -> Color {
     if past { return EmmaTheme.mutedSoft.opacity(0.45) }
     if happening { return EmmaTheme.accent }
-    if status == .toConfirm { return EmmaTheme.pillAmberText.opacity(0.7) }
-    return EmmaTheme.accent.opacity(0.35)
+    return EmmaTheme.accent.opacity(0.45)
 }
 
 // MARK: - Wiersz osi dnia („Dzisiaj”)
@@ -76,11 +75,6 @@ struct TodayEventRow: View {
                         Text(event.time.hhmm)
                             .font(EmmaTypography.ui(15, .semibold))
                             .foregroundStyle(isPast ? EmmaTheme.muted : EmmaTheme.ink)
-                        if event.durationMinutes > 0 {
-                            Text("· \(event.durationMinutes) min")
-                                .font(EmmaTypography.caption())
-                                .foregroundStyle(EmmaTheme.mutedSoft)
-                        }
                     }
 
                     Text(event.title)
@@ -97,7 +91,7 @@ struct TodayEventRow: View {
                                 .font(EmmaTypography.caption())
                                 .foregroundStyle(EmmaTheme.mutedSoft)
                         } else {
-                            Text(event.status.rawValue)
+                            Text(event.kind.displayTitle)
                                 .font(EmmaTypography.caption())
                                 .foregroundStyle(EmmaTheme.muted)
                         }
@@ -129,7 +123,7 @@ struct TodayEventRow: View {
         var parts = [event.time.hhmm, event.title]
         if isHappening { parts.append("trwa teraz") }
         else if isPast { parts.append("minęło") }
-        else { parts.append(event.status.rawValue) }
+        else { parts.append(event.kind.displayTitle) }
         return parts.joined(separator: ", ")
     }
 }
@@ -179,7 +173,7 @@ struct EventRow: View {
                                 .foregroundStyle(hasPassed ? EmmaTheme.muted : EmmaTheme.ink)
                                 .multilineTextAlignment(.leading)
                                 .fixedSize(horizontal: false, vertical: true)
-                            Text(hasPassed ? "Minęło · \(event.status.rawValue)" : event.status.rawValue)
+                            Text(subtitle)
                                 .font(EmmaTypography.caption())
                                 .foregroundStyle(EmmaTheme.mutedSoft)
                                 .multilineTextAlignment(.leading)
@@ -211,8 +205,16 @@ struct EventRow: View {
             event.time.hhmm,
             dependencies.dateText.dayLabel(event.day),
             event.title,
-            hasPassed ? "minęło" : event.status.rawValue
+            hasPassed ? "minęło" : event.kind.displayTitle
         ]
         .joined(separator: ", ")
+    }
+
+    /// „Konsultacja · Kancelaria”, a po czasie „Minęło · Konsultacja”.
+    private var subtitle: String {
+        var parts = [event.kind.displayTitle]
+        if !event.place.isEmpty { parts.append(event.place) }
+        if hasPassed { parts.insert("Minęło", at: 0) }
+        return parts.joined(separator: " · ")
     }
 }

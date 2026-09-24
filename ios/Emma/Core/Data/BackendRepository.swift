@@ -400,10 +400,8 @@ public struct BackendRepository: EmmaRepository, Sendable {
 
     public func events(in range: DateIntervalFilter) async throws -> [ScheduledEvent] {
         let rows = try await api.events(in: range)
-        // Termin bez klienta jest pomijany, a nie zamieniany na cokolwiek:
-        // aplikacja przypina terminy do klientów i spraw, więc nie ma go do
-        // czego przypiąć. Wcześniej taki rekord przewracał całą odpowiedź
-        // i ekran „Klienci” pokazywał „Nie udało się wczytać bazy kancelarii”.
+        // Termin bez klienta jest pełnoprawnym terminem kancelarii (rozprawa,
+        // spotkanie wewnętrzne) — kalendarz i przypomnienia muszą go widzieć.
         return try rows.compactMap(Self.mapEvent)
     }
 
@@ -453,7 +451,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
                 time: draft.time.hhmm,
                 durationMinutes: draft.durationMinutes,
                 kind: Self.eventKindToken(draft.kind),
-                clientID: draft.clientID.rawValue,
+                clientID: draft.clientID?.rawValue,
                 caseID: draft.caseID?.rawValue,
                 place: draft.place.isEmpty ? nil : draft.place
             ),
@@ -911,10 +909,10 @@ extension BackendRepository {
     /// kartoteki. Zwracamy wtedy `nil` zamiast rzucać, bo jeden taki termin nie
     /// jest powodem, by gasnąć cały ekran.
     static func mapEvent(_ dto: BackendEventDTO) throws -> ScheduledEvent? {
-        guard let clientID = dto.clientID, !clientID.isEmpty else { return nil }
+        let clientID = dto.clientID.flatMap { $0.isEmpty ? nil : ClientID($0) }
         return ScheduledEvent(
             id: EventID(dto.id),
-            clientID: ClientID(clientID),
+            clientID: clientID,
             caseID: dto.caseID.map { CaseID($0) },
             title: dto.title,
             day: dto.day,

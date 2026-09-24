@@ -94,8 +94,9 @@ final class Stage5DialogUITests: XCTestCase {
             guard self.application.staticTexts["Nowy termin"].waitForExistence(timeout: 10) else {
                 return "nie otwarto formularza nowego terminu"
             }
-            let timeField = self.application.textFields.matching(
-                NSPredicate(format: "value CONTAINS %@", "11:00")
+            // Godzina ma systemowy wybór godziny (0.3.0), nie pole tekstowe.
+            let timeField = self.application.descendants(matching: .any).matching(
+                NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", "11:00", "11:00")
             ).firstMatch
             guard timeField.exists else {
                 return "godzina z wypowiedzi nie trafiła do formularza"

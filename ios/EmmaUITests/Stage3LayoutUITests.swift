@@ -37,8 +37,9 @@ final class Stage3LayoutUITests: XCTestCase {
             "Brak godziny najbliższego terminu"
         )
 
-        let entry = application.buttons["Wszystkie zadania"]
-        XCTAssertTrue(entry.exists, "Brak wejścia „Wszystkie zadania”")
+        // Od 0.3.0 wejściem do zadań w pierwszym widoku jest kafelek pulsu dnia.
+        let entry = application.buttons["pulse-tasks"]
+        XCTAssertTrue(entry.exists, "Brak kafelka zadań")
         XCTAssertTrue(entry.isHittable, "Wejście do zadań jest poza pierwszym widokiem")
 
         XCTAssertTrue(
@@ -51,7 +52,7 @@ final class Stage3LayoutUITests: XCTestCase {
 
     /// Jedno dotknięcie z „Dzisiaj” otwiera listę zadań.
     func testTaskEntryOpensTaskListInOneTap() {
-        let entry = application.buttons["Wszystkie zadania"]
+        let entry = application.buttons["pulse-tasks"]
         XCTAssertTrue(entry.waitForExistence(timeout: 10), "Brak wejścia do zadań")
         entry.tap()
 
@@ -64,7 +65,7 @@ final class Stage3LayoutUITests: XCTestCase {
 
     /// Zadania otwarte są pogrupowane, a nie płaskie.
     func testOpenTasksAreGrouped() {
-        application.buttons["Wszystkie zadania"].tap()
+        application.buttons["pulse-tasks"].tap()
         XCTAssertTrue(application.staticTexts["Zadania"].waitForExistence(timeout: 10))
 
         // Dane demo mają zadania na dzień referencyjny, więc widoczna jest grupa

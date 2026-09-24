@@ -271,7 +271,8 @@ public struct NewTaskDraft: Hashable, Sendable {
 }
 
 public struct NewEventDraft: Hashable, Sendable {
-    public var clientID: ClientID
+    /// `nil` — termin kancelarii bez klienta.
+    public var clientID: ClientID?
     public var caseID: CaseID?
     public var title: String
     public var day: LocalDate
@@ -282,7 +283,7 @@ public struct NewEventDraft: Hashable, Sendable {
     public var place: String
 
     public init(
-        clientID: ClientID,
+        clientID: ClientID?,
         caseID: CaseID?,
         title: String,
         day: LocalDate,

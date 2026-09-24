@@ -40,8 +40,18 @@ final class ClientCardStore: ObservableObject {
 
             let legalCase = try await legalCaseTask
             let events = try await eventsTask
-            let notes = try await notesTask
+            var notes = try await notesTask
             let threads = try await threadsTask
+
+            // Notatka dodana z karty klienta, który ma sprawę, trafia do sprawy.
+            // Karta czytała wyłącznie notatki kartoteki, więc zapisana notatka
+            // „znikała” — review 24.09.2026: „zapisywanie notatek nie działa”.
+            // Karta pokazuje teraz notatki klienta i jego sprawy razem.
+            if let legalCase {
+                let caseNotes = (try? await repository.notes(clientID: clientID, caseID: legalCase.id)) ?? []
+                let known = Set(notes.map(\.id))
+                notes += caseNotes.filter { !known.contains($0.id) }
+            }
 
             phase = .loaded(
                 ClientCardModel(
@@ -53,12 +63,16 @@ final class ClientCardStore: ObservableObject {
                             if lhs.time != rhs.time { return lhs.time < rhs.time }
                             return lhs.id.rawValue < rhs.id.rawValue
                         },
-                    notes: notes,
+                    notes: notes.sorted { lhs, rhs in
+                        lhs.createdAt != rhs.createdAt ? lhs.createdAt > rhs.createdAt : lhs.id.rawValue > rhs.id.rawValue
+                    },
                     threadID: threads.first { $0.clientID == clientID }?.id
                 )
             )
         } catch {
-            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać karty klienta."))
+            if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać karty klienta.") {
+                dependencies.showToast(message)
+            }
         }
     }
 }

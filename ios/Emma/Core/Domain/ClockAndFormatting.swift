@@ -183,6 +183,16 @@ public struct DateTextFormatter: Sendable {
         "\(Self.nominativeMonths[date.month - 1]) \(date.year)"
     }
 
+    /// „Dzisiaj, 24 września”, „Jutro, 25 września”, „Poniedziałek, 28 września”.
+    public func dayTitle(_ date: LocalDate) -> String {
+        let dayMonth = "\(date.day) \(Self.fullMonths[date.month - 1])"
+        if date == today { return "Dzisiaj, \(dayMonth)" }
+        if date == today.adding(days: 1) { return "Jutro, \(dayMonth)" }
+        if date == today.adding(days: -1) { return "Wczoraj, \(dayMonth)" }
+        let weekday = Self.weekdayFull[date.weekdayIndexMondayFirst].lowercased()
+        return "\(weekday.prefix(1).uppercased())\(weekday.dropFirst()), \(dayMonth)"
+    }
+
     public func weekdayShort(for date: LocalDate) -> String {
         Self.weekdayShort[date.weekdayIndexMondayFirst]
     }

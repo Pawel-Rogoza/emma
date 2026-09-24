@@ -192,7 +192,10 @@ public enum EventStatus: String, Codable, Sendable, CaseIterable, Identifiable {
 
 public struct ScheduledEvent: Identifiable, Hashable, Codable, Sendable {
     public let id: EventID
-    public var clientID: ClientID
+    /// Klient terminu. `nil` to termin kancelarii bez klienta (rozprawa
+    /// z kalendarza sądu, spotkanie wewnętrzne) — review 24.09.2026: termin
+    /// ma służyć pamiętaniu o nim, a wymóg klienta blokował jego dodanie.
+    public var clientID: ClientID?
     public var caseID: CaseID?
     public var title: String
     public var day: LocalDate
@@ -209,7 +212,7 @@ public struct ScheduledEvent: Identifiable, Hashable, Codable, Sendable {
 
     public init(
         id: EventID,
-        clientID: ClientID,
+        clientID: ClientID?,
         caseID: CaseID?,
         title: String,
         day: LocalDate,
@@ -233,22 +236,6 @@ public struct ScheduledEvent: Identifiable, Hashable, Codable, Sendable {
         self.place = place
         self.isAllDay = isAllDay
         self.version = version
-    }
-
-    /// Chwila rozpoczęcia w UTC. Używana tylko do prezentacji i porządkowania;
-    /// kolizje liczymy w minutach lokalnych, aby uniknąć wpływu zmiany czasu.
-    /// Kolizja w kalendarzu kancelarii. Zakończone wydarzenia nie kolidują.
-    public func overlaps(with other: ScheduledEvent) -> Bool {
-        guard id != other.id,
-              day == other.day,
-              status != .finished,
-              other.status != .finished
-        else { return false }
-        let selfStart = time.minutes
-        let selfEnd = selfStart + durationMinutes
-        let otherStart = other.time.minutes
-        let otherEnd = otherStart + other.durationMinutes
-        return otherStart < selfEnd && selfStart < otherEnd
     }
 }
 

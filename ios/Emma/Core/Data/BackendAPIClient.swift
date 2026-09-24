@@ -665,13 +665,48 @@ public struct BackendAPIClient: Sendable {
     private func perform(_ request: URLRequest) async throws -> (Data, URLResponse) {
         do {
             return try await session.data(for: request)
+        } catch let error as URLError where Self.isRetryableRead(request, error: error) {
+            // Po powrocie z tła iOS często próbuje najpierw starego połączenia
+            // (HTTP/2), które serwer już zamknął — pierwszy odczyt kończy się
+            // „The network connection was lost”, drugi przechodzi. Odczyt jest
+            // bezpieczny do powtórzenia, więc ponawiamy go raz, po krótkiej
+            // przerwie, zamiast pokazywać błąd, który znika po drugim „odśwież”.
+            try await Task.sleep(nanoseconds: 350_000_000)
+            return try await performOnce(request)
         } catch let error as URLError {
-            // Anulowanie to nasza decyzja, nie awaria sieci — nie zamieniamy jej
-            // na błąd transportu, bo zadanie i tak jest już porzucone.
-            if error.code == .cancelled { throw CancellationError() }
-            throw BackendRepositoryError.transport(error.localizedDescription)
+            throw Self.mapTransport(error)
         } catch {
             throw BackendRepositoryError.transport(error.localizedDescription)
+        }
+    }
+
+    private func performOnce(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        do {
+            return try await session.data(for: request)
+        } catch let error as URLError {
+            throw Self.mapTransport(error)
+        } catch {
+            throw BackendRepositoryError.transport(error.localizedDescription)
+        }
+    }
+
+    /// Anulowanie to nasza decyzja, nie awaria sieci — nie zamieniamy jej
+    /// na błąd transportu, bo zadanie i tak jest już porzucone.
+    private static func mapTransport(_ error: URLError) -> Error {
+        if error.code == .cancelled { return CancellationError() }
+        return BackendRepositoryError.transport(error.localizedDescription)
+    }
+
+    /// Czy żądanie wolno powtórzyć po chwilowym błędzie sieci. Tylko odczyt:
+    /// zapis ma własny klucz idempotencji i ponawia go użytkownik, świadomie.
+    static func isRetryableRead(_ request: URLRequest, error: URLError) -> Bool {
+        guard (request.httpMethod ?? "GET").uppercased() == "GET" else { return false }
+        switch error.code {
+        case .networkConnectionLost, .cannotConnectToHost,
+             .notConnectedToInternet, .dnsLookupFailed, .secureConnectionFailed:
+            return true
+        default:
+            return false
         }
     }
 
@@ -989,7 +1024,8 @@ struct BackendEventCreateBody: Encodable {
     let time: String
     let durationMinutes: Int
     let kind: String
-    let clientID: String
+    /// `nil` — termin bez klienta (pole pomijane w JSON-ie).
+    let clientID: String?
     let caseID: String?
     let place: String?
 

@@ -146,8 +146,8 @@ final class ScreenshotCaptureUITests: XCTestCase {
 
         capture("12-termin-formularz", description: "Formularz terminu otwarty z wybranego dnia kalendarza") {
             selectTab("calendar")
-            let add = application.buttons["Dodaj termin na ten dzień"]
-            guard add.waitForExistence(timeout: 10) else { return "brak przycisku „Dodaj termin na ten dzień”" }
+            let add = application.buttons["Dodaj termin"]
+            guard add.waitForExistence(timeout: 10) else { return "brak przycisku „Dodaj termin”" }
             add.tap()
             guard application.staticTexts["Nowy termin"].waitForExistence(timeout: 10) else {
                 return "formularz terminu się nie otworzył"

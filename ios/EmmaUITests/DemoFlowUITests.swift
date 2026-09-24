@@ -119,7 +119,9 @@ final class DemoFlowUITests: XCTestCase {
     func testCalendarHasNoHourColumn() {
         openTab("calendar")
         XCTAssertTrue(application.staticTexts["Kalendarz"].waitForExistence(timeout: 10))
-        for hour in ["00:00", "06:00", "12:00", "18:00"] {
+        // Godziny terminów dnia (np. 12:00) są treścią kart, nie kolumną —
+        // kolumnę zdradzają pełne godziny, których żaden termin demo nie ma.
+        for hour in ["00:00", "01:00", "06:00", "23:00"] {
             XCTAssertFalse(
                 application.staticTexts[hour].exists,
                 "W kalendarzu pojawiła się kolumna godzin (\(hour))"

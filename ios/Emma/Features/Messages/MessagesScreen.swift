@@ -91,7 +91,9 @@ final class MessagesStore: ObservableObject {
                 Model(rows: filterAndSort(allRows), allRows: allRows, searchQuery: searchText, filter: filter)
             )
         } catch {
-            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać rozmów."))
+            if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać rozmów.") {
+                dependencies.showToast(message)
+            }
         }
     }
 

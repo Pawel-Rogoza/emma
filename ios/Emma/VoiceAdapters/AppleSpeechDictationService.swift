@@ -27,6 +27,10 @@ public final class AppleSpeechDictationService: DictationService {
     /// raz (albo bez wcześniejszego `installTap`) kończy się wyjątkiem ObjC i
     /// zamknięciem procesu, więc stan tapu musimy znać, a nie zakładać.
     private var tapInstalled = false
+    /// Ostatni tekst częściowy. Gdy rozpoznawanie nie odda wyniku końcowego
+    /// (np. „brak mowy” po zakończeniu nagrania), to on trafia do pola —
+    /// użytkownik widział go już na ekranie, więc nie może przepaść.
+    private var lastPartial = ""
 
     public init(audioSession: AudioSessionController) {
         self.audioSession = audioSession
@@ -55,6 +59,7 @@ public final class AppleSpeechDictationService: DictationService {
         }
 
         self.recognizer = recognizer
+        lastPartial = ""
         let recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
         recognitionRequest.shouldReportPartialResults = true
         // Na urządzeniu wynik zostaje na urządzeniu, jeśli system to obsługuje.
@@ -100,6 +105,8 @@ public final class AppleSpeechDictationService: DictationService {
         task = recognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
             Task { @MainActor in
                 guard let self else { return }
+                // Po zwolnieniu zasobów spóźnione wywołania nie mają dokąd trafić.
+                guard self.continuation != nil else { return }
                 if let result {
                     let text = result.bestTranscription.formattedString
                     if result.isFinal {
@@ -107,12 +114,21 @@ public final class AppleSpeechDictationService: DictationService {
                         // do celu. Nic nie jest zapisywane ani wysyłane samo.
                         self.continuation?.yield(.finalText(text))
                         await self.stopResources()
+                        return
                     } else {
+                        self.lastPartial = text
                         self.continuation?.yield(.partialText(text))
                     }
                 }
                 if error != nil {
-                    self.continuation?.yield(.failed(.noSpeechDetected))
+                    // Rozpoznawanie potrafi zakończyć się błędem już po tym, jak
+                    // pokazało tekst (np. po zakończeniu nagrania). Wtedy oddajemy
+                    // to, co było widać, zamiast komunikatu „nie usłyszałam”.
+                    if self.lastPartial.isEmpty {
+                        self.continuation?.yield(.failed(.noSpeechDetected))
+                    } else {
+                        self.continuation?.yield(.finalText(self.lastPartial))
+                    }
                     await self.stopResources()
                 }
             }
@@ -123,8 +139,9 @@ public final class AppleSpeechDictationService: DictationService {
         timeoutTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(request.maxDuration * 1_000_000_000))
             guard !Task.isCancelled else { return }
-            await MainActor.run { self?.continuation?.yield(.failed(.timedOut)) }
-            await self?.stopResources()
+            // Limit czasu kończy nagranie jak „Zakończ” — z tekstem, który już
+            // był widoczny, a nie z samym komunikatem o przekroczeniu czasu.
+            await self?.finish()
         }
     }
 
@@ -134,10 +151,39 @@ public final class AppleSpeechDictationService: DictationService {
         return stream.stream
     }
 
+    /// Zakończenie nagrania **z wynikiem**.
+    ///
+    /// Review 24.09.2026: po „Zakończ dyktowanie” tekst nie trafiał do pola.
+    /// Zasoby (razem ze strumieniem zdarzeń) były zwalniane zaraz po `endAudio()`,
+    /// zanim rozpoznawanie zdążyło oddać wynik końcowy — więc wynik nie miał już
+    /// dokąd trafić. Teraz zatrzymujemy mikrofon, a na wynik czekamy do 2 s;
+    /// gdy nie przyjdzie, do pola trafia ostatni tekst częściowy.
     public func finish() async {
+        stopCapture()
         request?.endAudio()
-        task?.finish()
+        let deadline = Date().addingTimeInterval(2)
+        while continuation != nil, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        guard continuation != nil else { return }
+        if !lastPartial.isEmpty {
+            continuation?.yield(.finalText(lastPartial))
+        } else {
+            continuation?.yield(.failed(.noSpeechDetected))
+        }
+        task?.cancel()
         await stopResources()
+    }
+
+    /// Zatrzymanie mikrofonu bez zamykania rozpoznawania.
+    private func stopCapture() {
+        if engine.isRunning {
+            engine.stop()
+        }
+        if tapInstalled {
+            engine.inputNode.removeTap(onBus: 0)
+            tapInstalled = false
+        }
     }
 
     public func cancel() async {
@@ -156,15 +202,9 @@ public final class AppleSpeechDictationService: DictationService {
     private func stopResources() async {
         timeoutTask?.cancel()
         timeoutTask = nil
-        if engine.isRunning {
-            engine.stop()
-        }
         // Zdejmujemy tap tylko wtedy, gdy naprawdę wisi. Drugie `removeTap`
         // (np. po już zakończonym rozpoznaniu) to wyjątek ObjC, nie no-op.
-        if tapInstalled {
-            engine.inputNode.removeTap(onBus: 0)
-            tapInstalled = false
-        }
+        stopCapture()
         request = nil
         task = nil
         currentRequest = nil

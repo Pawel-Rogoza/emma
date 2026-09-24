@@ -482,6 +482,9 @@ public final class VoiceSessionCoordinator {
 
     public func finishDictation() async {
         await dictationService?.finish()
+        // Wynik końcowy mógł właśnie trafić do strumienia — chwila na jego odbiór,
+        // zanim odetniemy odbiorcę. Wcześniej „Zakończ dyktowanie” gubiło tekst.
+        try? await Task.sleep(nanoseconds: 150_000_000)
         dictationTask?.cancel()
         dictationTask = nil
         dictationService = nil

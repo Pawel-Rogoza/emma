@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 // MARK: - Wejście aplikacji
 //
@@ -14,6 +15,9 @@ struct EmmaApp: App {
     @StateObject private var dependencies: AppDependencies
     @StateObject private var auth: AuthStore
     @Environment(\.scenePhase) private var scenePhase
+    /// Delegat centrum powiadomień musi żyć tak długo jak aplikacja
+    /// (`UNUserNotificationCenter` trzyma go słabo).
+    private static let notificationRouter = EventNotificationRouter()
 
     init() {
         let configuration = AppConfiguration.resolve()
@@ -59,6 +63,9 @@ struct EmmaApp: App {
         }
         _auth = StateObject(wrappedValue: authStore)
         _dependencies = StateObject(wrappedValue: dependencies)
+        // Dotknięcie przypomnienia o terminie otwiera jego szczegóły.
+        Self.notificationRouter.dependencies = dependencies
+        UNUserNotificationCenter.current().delegate = Self.notificationRouter
         EmmaFontRegistration.verifyRegisteredFonts()
     }
 

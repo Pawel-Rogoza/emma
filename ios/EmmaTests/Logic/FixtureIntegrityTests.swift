@@ -53,7 +53,7 @@ final class FixtureIntegrityTests: XCTestCase {
         let caseIDs = Set(dataset.cases.map(\.id))
         for event in dataset.events {
             XCTAssertTrue(
-                clientIDs.contains(event.clientID),
+                event.clientID.map(clientIDs.contains) ?? true,
                 "Termin \(event.id.rawValue) wskazuje nieistniejącego klienta"
             )
             if let caseID = event.caseID {

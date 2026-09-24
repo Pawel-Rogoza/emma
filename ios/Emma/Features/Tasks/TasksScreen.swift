@@ -51,7 +51,9 @@ final class TasksStore: ObservableObject {
                 )
             )
         } catch {
-            phase = .failed(ScreenLoad.failure(for: error, fallback: "Nie udało się wczytać zadań."))
+            if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać zadań.") {
+                dependencies.showToast(message)
+            }
         }
     }
 }

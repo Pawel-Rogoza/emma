@@ -66,15 +66,16 @@ final class Stage6BoundaryUITests: XCTestCase {
             guard calendarTab.waitForExistence(timeout: 15) else { return "brak zakładki kalendarza" }
             calendarTab.tap()
 
-            let nextWeek = self.application.buttons["Następny tydzień"]
-            guard nextWeek.waitForExistence(timeout: 10) else { return "brak paska tygodnia" }
-            nextWeek.tap()
-            // Po przesunięciu tygodnia wybrany dzień to 2026-09-18 (piątek +7).
-            // Etykieta dnia w interfejsie to „18 wrz” (skrót miesiąca z `dayLabel`).
-            guard self.application.descendants(matching: .any).matching(
-                NSPredicate(format: "label CONTAINS %@", "18 wrz")
+            // Widok miesiąca (0.3.0): dzień wybiera się w siatce.
+            let day = self.application.buttons.matching(
+                NSPredicate(format: "label BEGINSWITH %@", "Piątek, 18 września")
+            ).firstMatch
+            guard day.waitForExistence(timeout: 10) else { return "brak dnia 18 września w siatce miesiąca" }
+            day.tap()
+            guard self.application.staticTexts.matching(
+                NSPredicate(format: "label BEGINSWITH %@", "Piątek, 18 września")
             ).firstMatch.waitForExistence(timeout: 10) else {
-                return "brak wybranego dnia 18 wrz po przesunięciu tygodnia"
+                return "brak wybranego dnia 18 września pod siatką"
             }
 
             let add = self.application.buttons["Dodaj termin"]

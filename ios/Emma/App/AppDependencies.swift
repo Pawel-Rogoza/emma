@@ -9,6 +9,22 @@ import SwiftUI
 // dostawców — dzięki temu jeden `VoiceSessionCoordinator` obsługuje rozmowę,
 // dyktowanie i odsłuch (§5.3), a UI i głos korzystają z jednego silnika akcji (§8).
 
+/// Wynik zapisu z formularza (`AppDependencies.submit`).
+public enum SubmitOutcome<T> {
+    case saved(T)
+    case failed(String)
+
+    public var value: T? {
+        if case .saved(let value) = self { return value }
+        return nil
+    }
+
+    public var errorMessage: String? {
+        if case .failed(let message) = self { return message }
+        return nil
+    }
+}
+
 /// Pola spotkania rozpoznane z wypowiedzi (F14). Wszystkie opcjonalne: brak pola
 /// znaczy „zostaw domyślną wartość formularza”, nie „zgaduj”.
 public struct EventDraftSeed: Equatable, Sendable {
@@ -103,6 +119,8 @@ public final class AppDependencies: ObservableObject {
     let todayStore: TodayStore
     let clientsStore: ClientsStore
     let calendarStore: CalendarStore
+    /// Przypomnienia o terminach (lokalne powiadomienia telefonu).
+    let reminders: EventReminderScheduler
 
     /// Kontekst Emmy wybrany na innym ekranie (odpowiada `emmaContext` z referencji).
     @Published public var emmaContext: ClientID?
@@ -159,6 +177,10 @@ public final class AppDependencies: ObservableObject {
         self.todayStore = TodayStore()
         self.clientsStore = ClientsStore()
         self.calendarStore = CalendarStore()
+        self.reminders = EventReminderScheduler(
+            isEnabled: !configuration.usesMockServices
+                && !ProcessInfo.processInfo.arguments.contains("--skip-auth")
+        )
         self.accessTokenProvider = accessTokenProvider
         self.sessionTokenProvider = sessionTokenProvider
         self.sessionTokenRefresher = sessionTokenRefresher
@@ -429,6 +451,12 @@ public final class AppDependencies: ObservableObject {
         go(to: .clients, resetStack: true)
     }
 
+    /// Kalendarz otwarty na wybranym dniu (np. z paska tygodnia na „Dzisiaj”).
+    func openCalendar(on day: LocalDate) {
+        go(to: .calendar, resetStack: true)
+        Task { await calendarStore.select(day, dependencies: self) }
+    }
+
     public func openTasks() {
         var state = navigation[.today] ?? TabNavigation()
         state.reset(to: .tasks)
@@ -538,11 +566,32 @@ public final class AppDependencies: ObservableObject {
         }
     }
 
+    /// Zapis z arkusza: błąd **wraca do arkusza**, a nie do komunikatu pod nim.
+    ///
+    /// Review 24.09.2026 („zapisywanie notatek nie działa”, „dodawanie terminów
+    /// nie działa”): `perform` pokazywał błąd w komunikacie powłoki, a ten rysuje
+    /// się **pod** arkuszem. Odrzucony zapis wyglądał więc jak przycisk, który nic
+    /// nie robi. Formularz dostaje teraz komunikat i pokazuje go przy przycisku.
+    public func submit<T>(
+        fallback: String = "Nie udało się zapisać.",
+        _ operation: () async throws -> T
+    ) async -> SubmitOutcome<T> {
+        do {
+            let result = try await operation()
+            dataChanged()
+            return .saved(result)
+        } catch {
+            EmmaHaptics.error()
+            return .failed(ScreenLoad.message(for: error, fallback: fallback))
+        }
+    }
+
     /// Wywoływane po każdej udanej operacji zapisu.
     public func dataChanged() {
         dataVersion &+= 1
         refreshUnreadTotal()
         refreshLeadCount()
+        reminders.scheduleRefresh(self)
     }
 
     /// Plakietka „Klienci”: zgłoszenia na etapie `new` (nowe i oczekujące).

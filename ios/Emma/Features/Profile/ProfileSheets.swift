@@ -32,6 +32,9 @@ struct ProfileSheet: View {
                 }
             }
 
+            ReminderDefaultPicker()
+                .padding(.top, 20)
+
             if !dependencies.configuration.usesMockServices {
                 VoiceDuplexToggle()
                     .padding(.top, 20)
@@ -85,6 +88,47 @@ private struct VoiceDuplexToggle: View {
             .tint(EmmaTheme.accent)
 
             Text("Włącza kasowanie echa: mikrofon zostaje otwarty, gdy Emma mówi, więc można jej przerwać w pół zdania, a odpowiedź przychodzi szybciej. Jeśli Emma słyszy samą siebie albo ucina Twoją mowę, wyłącz. Działa od następnej rozmowy.")
+                .font(EmmaTypography.caption())
+                .foregroundStyle(EmmaTheme.mutedSoft)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// Domyślne przypomnienie o terminach — obowiązuje każdy termin, któremu
+/// nie ustawiono własnego w formularzu (także terminy dodane w panelu).
+private struct ReminderDefaultPicker: View {
+
+    @EnvironmentObject private var dependencies: AppDependencies
+    @AppStorage(ReminderPreferences.defaultKey) private var rawDefault = ReminderOffset.standard.rawValue
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Przypomnienia o terminach")
+                    .font(EmmaTypography.ui(14))
+                    .foregroundStyle(EmmaTheme.ink)
+                Spacer(minLength: 8)
+                Picker("Przypomnienia o terminach", selection: Binding(
+                    get: { ReminderOffset(rawValue: rawDefault) ?? .standard },
+                    set: { value in
+                        rawDefault = value.rawValue
+                        Task {
+                            if value != .none {
+                                await dependencies.reminders.requestAuthorizationIfNeeded()
+                            }
+                            dependencies.reminders.scheduleRefresh(dependencies)
+                        }
+                    }
+                )) {
+                    ForEach(ReminderOffset.allCases) { option in
+                        Text(option.title).tag(option)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(EmmaTheme.accent)
+            }
+            Text("Telefon przypomni o każdym terminie z kalendarza kancelarii. Przy terminie możesz wybrać inne przypomnienie.")
                 .font(EmmaTypography.caption())
                 .foregroundStyle(EmmaTheme.mutedSoft)
                 .fixedSize(horizontal: false, vertical: true)
