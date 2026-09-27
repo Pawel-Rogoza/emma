@@ -4,21 +4,29 @@ import SwiftUI
 
 // MARK: - Magazyn ekranu „Klienci”
 //
-// Jedno wczytanie dla obu trybów listy (leady i sprawy): ekran nie składa
+// Jedno wczytanie dla trzech trybów listy (leady, klienci i sprawy): ekran nie składa
 // danych z wielu niezależnych tablic, a po każdym zapisie wraca tu przez
 // `dataVersion` (§ „STORE + VIEW”).
 
-/// Dane listy leadów i spraw wraz z policzonymi zależnościami.
+/// Dane list leadów, klientów i spraw wraz z policzonymi zależnościami.
 struct ClientsModel: Equatable {
     var clients: [Client]
     var cases: [LegalCase]
     /// Liczba otwartych zadań w sprawie — stopka karty sprawy.
     var openTaskCounts: [CaseID: Int]
+    /// Otwarte zadania z terminem przed dziś — sprawa trafia do „Wymaga uwagi”.
+    var overdueTaskCounts: [CaseID: Int]
+    /// Zaległe zadania klienta (jego własne i w jego sprawach) — kartoteka.
+    var clientOverdueTaskCounts: [ClientID: Int]
     /// Najbliższy przyszły, niezakończony termin sprawy.
     var nextCaseEvents: [CaseID: ScheduledEvent]
     /// Najbliższy niezakończony termin leada (referencja: pierwszy z posortowanych).
     var nextLeadEvents: [ClientID: ScheduledEvent]
-    var clientNames: [ClientID: String]
+    /// Najbliższy **przyszły** termin osoby — kartoteka i kafelek konsultacji.
+    var nextClientEvents: [ClientID: ScheduledEvent]
+    var clientsByID: [ClientID: Client]
+    /// Sprawy każdego klienta — kartoteka pokazuje, co u niego prowadzimy.
+    var casesByClient: [ClientID: [LegalCase]]
 }
 
 @MainActor
@@ -44,10 +52,19 @@ final class ClientsStore: ObservableObject {
             let openTasks = try await openTasksTask
             let events = try await eventsTask
 
+            let caseOwners = Dictionary(cases.map { ($0.id, $0.clientID) }, uniquingKeysWith: { first, _ in first })
             var openTaskCounts: [CaseID: Int] = [:]
+            var overdueTaskCounts: [CaseID: Int] = [:]
+            var clientOverdueTaskCounts: [ClientID: Int] = [:]
             for task in openTasks {
-                guard let caseID = task.caseID else { continue }
-                openTaskCounts[caseID, default: 0] += 1
+                let isOverdue = task.dueDate.map { $0 < today } ?? false
+                if let caseID = task.caseID {
+                    openTaskCounts[caseID, default: 0] += 1
+                    if isOverdue { overdueTaskCounts[caseID, default: 0] += 1 }
+                }
+                if isOverdue, let owner = task.clientID ?? task.caseID.flatMap({ caseOwners[$0] }) {
+                    clientOverdueTaskCounts[owner, default: 0] += 1
+                }
             }
 
             let activeEvents = events.filter { $0.status != .finished }
@@ -60,17 +77,24 @@ final class ClientsStore: ObservableObject {
             }
 
             var nextLeadEvents: [ClientID: ScheduledEvent] = [:]
+            var nextClientEvents: [ClientID: ScheduledEvent] = [:]
             for client in clients {
-                nextLeadEvents[client.id] = earliest(activeEvents.filter { $0.clientID == client.id })
+                let own = activeEvents.filter { $0.clientID == client.id }
+                nextLeadEvents[client.id] = earliest(own)
+                nextClientEvents[client.id] = earliest(own.filter { $0.day >= today })
             }
 
             let model = ClientsModel(
                 clients: clients,
                 cases: cases,
                 openTaskCounts: openTaskCounts,
+                overdueTaskCounts: overdueTaskCounts,
+                clientOverdueTaskCounts: clientOverdueTaskCounts,
                 nextCaseEvents: nextCaseEvents,
                 nextLeadEvents: nextLeadEvents,
-                clientNames: Dictionary(clients.map { ($0.id, $0.displayName) }, uniquingKeysWith: { first, _ in first })
+                nextClientEvents: nextClientEvents,
+                clientsByID: Dictionary(clients.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }),
+                casesByClient: Dictionary(grouping: cases, by: \.clientID)
             )
             // Odświeżenie po zapisie jest animowane: obsłużony lead wysuwa się
             // z listy, zamiast zniknąć skokiem. Pierwsze wczytanie — bez animacji.

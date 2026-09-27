@@ -305,7 +305,7 @@ struct ThreadScreen: View {
                 HStack(spacing: 10) {
                     PersonAvatar(
                         initials: model.client.initials,
-                        style: .person,
+                        style: .identity(model.client.id),
                         diameter: EmmaMetrics.threadHeaderAvatar
                     )
                     VStack(alignment: .leading, spacing: 2) {

@@ -170,7 +170,7 @@ struct CaseScreen: View {
                 dependencies.openPerson(model.client.id)
             } label: {
                 HStack(spacing: 11) {
-                    PersonAvatar(initials: model.client.initials, style: .person)
+                    PersonAvatar(initials: model.client.initials, style: .identity(model.client.id))
                     VStack(alignment: .leading, spacing: 3) {
                         Text(model.client.displayName)
                             .font(EmmaTypography.personName)

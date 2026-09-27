@@ -17,6 +17,17 @@ import SwiftUI
 //   • lista stoi na `List`, bo tylko ona daje systemowe przesunięcia z obsługą
 //     VoiceOver; wygląd kart pozostaje własny (tło i separatory wyłączone),
 //   • pociągnięcie w dół odświeża listę (nowe zgłoszenia ze strony).
+//
+// Review 27.09.2026 („wszystko się zlewa, nie odróżnisz jednego od drugiego”):
+//   • trzy tryby: Leady · Klienci · Sprawy — kartoteka klientów kancelarii
+//     wcześniej była osiągalna tylko przez wyszukiwanie,
+//   • nad listą trzy kafelki podsumowania (jak puls dnia na „Dzisiaj”);
+//     dotknięcie ustawia filtr albo przewija do grupy,
+//   • każda osoba ma stały kolor awatara i plakietkę języka (D-34),
+//   • sprawy w grupach „Wymaga uwagi” → „W toku” → „Czekamy na klienta”,
+//     z plakietką „dziś / jutro / za 5 dni” zamiast stałego „W toku”,
+//   • leady do obsługi rozdzielone na „Czekają ponad dobę” i „Nowe”,
+//   • wyszukiwanie obejmuje też numery i tytuły spraw.
 
 struct ClientsScreen: View {
 
@@ -30,6 +41,7 @@ struct ClientsScreen: View {
     @State private var search = ""
     /// Domyślnie kolejka „Do obsługi” — nowe i oczekujące zgłoszenia.
     @State private var leadFilter: LeadListFilter = .needsAction
+    @State private var clientFilter: ClientDirectoryFilter = .all
     @State private var caseFilter: CaseListFilter = .active
     /// Nazwa leada w trakcie zmiany — `nil` znaczy, że okno jest zamknięte.
     @State private var renaming: Client?
@@ -38,14 +50,16 @@ struct ClientsScreen: View {
     @State private var pendingDelete: Client?
 
     var body: some View {
-        List {
-            controls
-            listContent
+        ScrollViewReader { proxy in
+            List {
+                controls(proxy)
+                listContent
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .scrollDismissesKeyboard(.immediately)
+            .environment(\.defaultMinListRowHeight, 0)
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .scrollDismissesKeyboard(.immediately)
-        .environment(\.defaultMinListRowHeight, 0)
         .background(EmmaTheme.bg)
         .refreshable { await store.load(dependencies) }
         .task(id: dependencies.dataVersion) { await store.load(dependencies) }
@@ -55,6 +69,7 @@ struct ClientsScreen: View {
             // `setClientMode` w referencji czyści wyszukiwanie i wraca do pierwszego filtra.
             search = ""
             leadFilter = .needsAction
+            clientFilter = .all
             caseFilter = .active
         }
         .alert("Zmień nazwę", isPresented: renameBinding) {
@@ -75,8 +90,9 @@ struct ClientsScreen: View {
     // MARK: Nagłówek i sterowanie
 
     @ViewBuilder
-    private var controls: some View {
+    private func controls(_ proxy: ScrollViewProxy) -> some View {
         header
+            .id(Self.topID)
             .clientsListRow(top: EmmaSpacing.contentTop, bottom: 0, horizontal: layout.horizontalPadding)
 
         SegmentedFilter(
@@ -84,29 +100,156 @@ struct ClientsScreen: View {
             selection: $dependencies.clientMode,
             title: { $0.rawValue }
         )
-        .clientsListRow(top: 18, bottom: 0, horizontal: layout.horizontalPadding)
+        .clientsListRow(top: 14, bottom: 0, horizontal: layout.horizontalPadding)
 
-        SearchField(text: $search, placeholder: "Szukaj osoby lub tematu")
-            .clientsListRow(top: 15, bottom: 0, horizontal: layout.horizontalPadding)
+        if case .loaded(let model) = store.phase {
+            summaryTiles(model, proxy: proxy)
+                .clientsListRow(top: 14, bottom: 0, horizontal: layout.horizontalPadding)
+        }
+
+        SearchField(text: $search, placeholder: searchPlaceholder)
+            .clientsListRow(top: 14, bottom: 0, horizontal: layout.horizontalPadding)
 
         filterChips
-            .clientsListRow(top: 10, bottom: 8, horizontal: 0)
+            .clientsListRow(top: 8, bottom: 6, horizontal: 0)
     }
 
+    /// Sam tytuł, bez podpisu „BAZA KANCELARII” — kafelki pod spodem mówią więcej,
+    /// a pierwsza karta wchodzi wyżej.
     private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            ScreenHeader(
-                kicker: "BAZA KANCELARII",
-                title: "Klienci"
-            )
+        HStack(alignment: .center, spacing: 10) {
+            Text("Klienci")
+                .font(EmmaTypography.welcome)
+                .tracking(-0.9)
+                .foregroundStyle(EmmaTheme.ink)
+                .accessibilityAddTraits(.isHeader)
+                .frame(maxWidth: .infinity, alignment: .leading)
             IconButton(systemName: "plus", accessibilityLabel: "Dodaj leada") {
                 dependencies.present(.newLead)
             }
         }
     }
 
-    /// Chipy filtra w poziomym przewijaniu: pięć filtrów leadów nie mieści się
-    /// w jednej linii na 375 pt, a zawijanie rozbijałoby pasek.
+    private var searchPlaceholder: String {
+        switch dependencies.clientMode {
+        case .leads: return "Szukaj osoby lub tematu"
+        case .clients: return "Szukaj klienta, sprawy lub numeru"
+        case .cases: return "Szukaj sprawy, numeru lub klienta"
+        }
+    }
+
+    // MARK: Kafelki podsumowania
+
+    @ViewBuilder
+    private func summaryTiles(_ model: ClientsModel, proxy: ScrollViewProxy) -> some View {
+        switch dependencies.clientMode {
+        case .leads:
+            let inbox = LeadWorkflow.inbox(model.clients, now: dependencies.now)
+            let booked = (inbox.needsAction + inbox.inContact).filter { model.nextClientEvents[$0.id] != nil }.count
+            HStack(spacing: 8) {
+                PulseTile(
+                    value: inbox.needsAction.count,
+                    label: "do obsługi",
+                    systemImage: "tray.full",
+                    tone: EmmaTheme.accent
+                ) { selectLeadFilter(.needsAction) }
+                PulseTile(
+                    value: inbox.waiting.count,
+                    label: "czeka ponad dobę",
+                    systemImage: "clock",
+                    tone: inbox.waiting.isEmpty ? EmmaTheme.accent : EmmaTheme.pillAmberText
+                ) { selectLeadFilter(.needsAction) }
+                PulseTile(
+                    value: booked,
+                    label: EmmaPlural.form(booked, "umówiona konsultacja", "umówione konsultacje", "umówionych konsultacji"),
+                    systemImage: "calendar",
+                    tone: EmmaTheme.accent
+                ) { selectLeadFilter(.all) }
+            }
+        case .clients:
+            let firm = firmClients(model)
+            let withCase = firm.filter { hasActiveCase($0, model) }.count
+            let attention = firm.filter { needsAttention($0, model) }.count
+            HStack(spacing: 8) {
+                PulseTile(
+                    value: firm.count,
+                    label: EmmaPlural.form(firm.count, "klient", "klientów", "klientów"),
+                    systemImage: "person.2",
+                    tone: EmmaTheme.accent
+                ) { selectClientFilter(.all) }
+                PulseTile(
+                    value: withCase,
+                    label: "z aktywną sprawą",
+                    systemImage: "folder",
+                    tone: EmmaTheme.accent
+                ) { selectClientFilter(.withActiveCase) }
+                PulseTile(
+                    value: attention,
+                    label: "wymaga uwagi",
+                    systemImage: "exclamationmark.circle",
+                    tone: attention > 0 ? EmmaTheme.pillDangerText : EmmaTheme.accent
+                ) { selectClientFilter(.needsAttention) }
+            }
+        case .cases:
+            let board = caseBoard(model.cases, model: model)
+            let active = board.attention.count + board.inProgress.count + board.awaitingClient.count
+            HStack(spacing: 8) {
+                PulseTile(
+                    value: active,
+                    label: EmmaPlural.form(active, "aktywna sprawa", "aktywne sprawy", "aktywnych spraw"),
+                    systemImage: "folder",
+                    tone: EmmaTheme.accent
+                ) { showCaseGroup(nil, proxy: proxy) }
+                PulseTile(
+                    value: board.attention.count,
+                    label: "wymaga uwagi",
+                    systemImage: "exclamationmark.circle",
+                    tone: board.attention.isEmpty ? EmmaTheme.accent : EmmaTheme.pillDangerText
+                ) { showCaseGroup(.attention, proxy: proxy) }
+                PulseTile(
+                    value: board.awaitingClient.count,
+                    label: "czeka na klienta",
+                    systemImage: "hourglass",
+                    tone: EmmaTheme.accent
+                ) { showCaseGroup(.awaitingClient, proxy: proxy) }
+            }
+        }
+    }
+
+    private func selectLeadFilter(_ filter: LeadListFilter) {
+        search = ""
+        leadFilter = filter
+    }
+
+    private func selectClientFilter(_ filter: ClientDirectoryFilter) {
+        search = ""
+        clientFilter = filter
+    }
+
+    /// Kafelek spraw nie zmienia zawartości listy, tylko przewija do grupy —
+    /// wszystkie aktywne sprawy zostają widoczne.
+    private func showCaseGroup(_ group: CaseBoard.Group?, proxy: ScrollViewProxy) {
+        search = ""
+        caseFilter = .active
+        Task { @MainActor in
+            // Najpierw lista musi przebudować się po zmianie filtra.
+            await Task.yield()
+            withAnimation(.easeInOut(duration: 0.3)) {
+                proxy.scrollTo(group.map(Self.groupID) ?? Self.topID, anchor: .top)
+            }
+        }
+    }
+
+    private static let topID = "clients-top"
+
+    private static func groupID(_ group: CaseBoard.Group) -> String {
+        "case-group-\(group)"
+    }
+
+    // MARK: Filtry
+
+    /// Chipy filtra w poziomym przewijaniu: na 375 pt nie zawsze mieszczą się
+    /// w jednej linii, a zawijanie rozbijałoby pasek.
     private var filterChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             chipRow
@@ -119,6 +262,17 @@ struct ClientsScreen: View {
         switch (dependencies.clientMode, store.phase) {
         case (.leads, .loaded(let model)):
             leadChips(LeadWorkflow.inbox(model.clients, now: dependencies.now))
+        case (.clients, .loaded(let model)):
+            let firm = firmClients(model)
+            ListFilterChips(
+                items: ClientDirectoryFilter.allCases,
+                selection: $clientFilter,
+                title: { $0.rawValue },
+                count: { filter in firm.filter { matches(filter, $0, model) }.count },
+                attention: { filter in
+                    filter == .needsAttention && firm.contains { needsAttention($0, model) }
+                }
+            )
         case (.cases, .loaded(let model)):
             ListFilterChips(
                 items: CaseListFilter.allCases,
@@ -133,6 +287,8 @@ struct ClientsScreen: View {
             )
         case (.leads, _):
             ListFilterChips(items: LeadListFilter.allCases, selection: $leadFilter, title: { $0.rawValue })
+        case (.clients, _):
+            ListFilterChips(items: ClientDirectoryFilter.allCases, selection: $clientFilter, title: { $0.rawValue })
         case (.cases, _):
             ListFilterChips(items: CaseListFilter.allCases, selection: $caseFilter, title: { $0.rawValue })
         }
@@ -167,11 +323,21 @@ struct ClientsScreen: View {
             switch dependencies.clientMode {
             case .leads:
                 leadsList(model)
+            case .clients:
+                clientsList(model)
             case .cases:
                 casesList(model)
             }
         }
     }
+
+    private var bottomSpacer: some View {
+        Color.clear
+            .frame(height: EmmaSpacing.contentBottom)
+            .clientsListRow(top: 0, bottom: 0, horizontal: 0)
+    }
+
+    // MARK: Leady
 
     @ViewBuilder
     private func leadsList(_ model: ClientsModel) -> some View {
@@ -182,16 +348,19 @@ struct ClientsScreen: View {
         } else {
             ForEach(sections) { section in
                 if let title = section.title {
-                    LeadGroupHeader(title: title, count: section.clients.count, status: section.status)
-                        .clientsListRow(top: 12, bottom: 2, horizontal: layout.horizontalPadding)
+                    GroupHeader(
+                        title: title,
+                        count: section.clients.count,
+                        tone: LeadStatusStyle.tone(section.status),
+                        emphasized: section.status == .waiting
+                    )
+                    .clientsListRow(top: 12, bottom: 2, horizontal: layout.horizontalPadding)
                 }
                 ForEach(section.clients) { client in
                     leadRow(client, model: model)
                 }
             }
-            Color.clear
-                .frame(height: EmmaSpacing.contentBottom)
-                .clientsListRow(top: 0, bottom: 0, horizontal: 0)
+            bottomSpacer
         }
     }
 
@@ -237,7 +406,7 @@ struct ClientsScreen: View {
 
     @ViewBuilder
     private var leadsEmptyState: some View {
-        if leadFilter == .needsAction && normalizedQuery.isEmpty {
+        if leadFilter == .needsAction && search.isEmpty {
             EmptyState(
                 systemImage: "checkmark.seal",
                 title: "Wszystko obsłużone",
@@ -246,89 +415,214 @@ struct ClientsScreen: View {
         } else {
             EmptyState(
                 systemImage: "person.crop.circle.badge.plus",
-                title: normalizedQuery.isEmpty ? "Brak zgłoszeń w tym widoku" : "Nikogo nie znaleziono",
+                title: search.isEmpty ? "Brak zgłoszeń w tym widoku" : "Nikogo nie znaleziono",
                 message: "Wybierz inny filtr lub dodaj nowy kontakt."
             )
         }
     }
 
-    @ViewBuilder
-    private func casesList(_ model: ClientsModel) -> some View {
-        let rows = filteredCases(model)
-        if rows.isEmpty {
-            EmptyState(
-                systemImage: "folder",
-                title: "Brak pasujących spraw",
-                message: "Zmień filtr lub utwórz sprawę z karty klienta."
-            )
-            .clientsListRow(top: 0, bottom: 0, horizontal: layout.horizontalPadding)
-        } else {
-            ForEach(rows) { legalCase in
-                CaseCard(
-                    legalCase: legalCase,
-                    clientName: model.clientNames[legalCase.clientID] ?? "",
-                    openTaskCount: model.openTaskCounts[legalCase.id] ?? 0,
-                    nextEvent: model.nextCaseEvents[legalCase.id],
-                    onOpen: { dependencies.openCase(legalCase.id) }
-                )
-                .clientsListRow(top: 5.5, bottom: 5.5, horizontal: layout.horizontalPadding)
-            }
-            Color.clear
-                .frame(height: EmmaSpacing.contentBottom)
-                .clientsListRow(top: 0, bottom: 0, horizontal: 0)
-        }
-    }
-
-    // MARK: Filtrowanie i grupy
-
-    /// Grupy listy leadów. „Do obsługi” i „Wszystkie” mają nagłówki grup,
-    /// pojedyncze filtry — jedną listę bez nagłówka.
+    /// Grupy listy leadów. Kolejka „Do obsługi” dzieli się na zgłoszenia, które
+    /// czekają ponad dobę, i nowe — wcześniej jedna lista wyróżniała je tylko
+    /// kolorem plakietki. Wyszukiwanie przeszukuje wszystko, także kartotekę.
     private func leadSections(_ model: ClientsModel) -> [LeadSection] {
-        let query = normalizedQuery
+        let query = search
         let matching = model.clients.filter { client in
             client.stage != .client && SearchText.matches(query, in: [client.displayName, client.topic])
         }
         let inbox = LeadWorkflow.inbox(matching, now: dependencies.now)
 
+        let waiting = LeadSection(id: "waiting", title: "Czekają ponad dobę", status: .waiting, clients: inbox.waiting)
+        let fresh = LeadSection(id: "fresh", title: "Nowe", status: .fresh, clients: inbox.fresh)
+        let contact = LeadSection(id: "contact", title: "W kontakcie", status: .inContact, clients: inbox.inContact)
+
         var sections: [LeadSection] = []
-        // Wyszukiwanie ma znaleźć każdego — także obsłużone zgłoszenia i klientów
-        // kancelarii. Wcześniej szukało tylko w wybranym filtrze, a kartoteka
-        // (etap `client`) bez sprawy nie była osiągalna z aplikacji w ogóle.
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let filter: LeadListFilter = trimmedQuery.isEmpty ? leadFilter : .all
         switch filter {
         case .needsAction:
-            // Jedna kolejka: najpierw te, które czekają najdłużej, potem nowe.
-            sections.append(LeadSection(id: "queue", title: nil, status: .fresh, clients: inbox.needsAction))
+            sections = [waiting, fresh]
         case .inContact:
-            sections.append(LeadSection(id: "contact", title: nil, status: .inContact, clients: inbox.inContact))
+            sections = [LeadSection(id: "contact", title: nil, status: .inContact, clients: inbox.inContact)]
         case .all:
-            sections.append(LeadSection(id: "queue", title: "Do obsługi", status: .fresh, clients: inbox.needsAction))
-            sections.append(LeadSection(id: "contact", title: "W kontakcie", status: .inContact, clients: inbox.inContact))
+            sections = [waiting, fresh, contact]
         }
         if !trimmedQuery.isEmpty {
-            let firmClients = model.clients
+            let firm = model.clients
                 .filter { $0.stage == .client && SearchText.matches(query, in: [$0.displayName, $0.topic]) }
                 .sorted { $0.displayName.localizedCompare($1.displayName) == .orderedAscending }
-            sections.append(LeadSection(id: "clients", title: "Klienci kancelarii", status: .client, clients: firmClients))
+            sections.append(LeadSection(id: "clients", title: "Klienci kancelarii", status: .client, clients: firm))
         }
         return sections.filter { !$0.clients.isEmpty }
     }
 
-    private func filteredCases(_ model: ClientsModel) -> [LegalCase] {
-        let query = normalizedQuery
-        return model.cases.filter { legalCase in
-            let matchesFilter = caseFilter == .closed
-                ? legalCase.status == .closed
-                : legalCase.status.isActive
-            guard matchesFilter else { return false }
-            let name = model.clientNames[legalCase.clientID] ?? ""
-            return SearchText.matches(query, in: [legalCase.title, legalCase.number, name])
+    // MARK: Klienci
+
+    @ViewBuilder
+    private func clientsList(_ model: ClientsModel) -> some View {
+        let rows = firmClients(model).filter { client in
+            matches(clientFilter, client, model) && matchesSearch(client, model)
+        }
+        let recent = recentClients(model)
+        if search.isEmpty && clientFilter == .all && !recent.isEmpty {
+            RecentClientsStrip(clients: recent, horizontalPadding: layout.horizontalPadding) { client in
+                dependencies.openPerson(client.id)
+            }
+            .clientsListRow(top: 6, bottom: 4, horizontal: 0)
+        }
+        if rows.isEmpty {
+            EmptyState(
+                systemImage: "person.2",
+                title: search.isEmpty ? "Brak klientów w tym widoku" : "Nikogo nie znaleziono",
+                message: "Klient pojawia się tu po „Przyjmij sprawę” na karcie zgłoszenia."
+            )
+            .clientsListRow(top: 0, bottom: 0, horizontal: layout.horizontalPadding)
+        } else {
+            ForEach(ClientDirectory.sections(rows)) { section in
+                GroupHeader(title: section.letter, count: section.clients.count, tone: nil, emphasized: false)
+                    .clientsListRow(top: 12, bottom: 2, horizontal: layout.horizontalPadding)
+                ForEach(section.clients) { client in
+                    ClientDirectoryCard(
+                        client: client,
+                        cases: model.casesByClient[client.id] ?? [],
+                        nextEvent: model.nextClientEvents[client.id],
+                        overdueTaskCount: model.clientOverdueTaskCounts[client.id] ?? 0,
+                        onOpen: { dependencies.openPerson(client.id) }
+                    )
+                    .clientsListRow(top: 5, bottom: 5, horizontal: layout.horizontalPadding)
+                }
+            }
+            bottomSpacer
         }
     }
 
-    /// Zapytanie trafia do `SearchText`, które odpowiada za normalizację.
-    private var normalizedQuery: String { search }
+    private func firmClients(_ model: ClientsModel) -> [Client] {
+        model.clients.filter { $0.stage == .client }
+    }
+
+    private func hasActiveCase(_ client: Client, _ model: ClientsModel) -> Bool {
+        (model.casesByClient[client.id] ?? []).contains { $0.status.isActive }
+    }
+
+    /// Klient „wymaga uwagi”, gdy ma zaległe zadanie albo termin w ciągu tygodnia
+    /// — ta sama miara co przy sprawach (`CaseUrgency`).
+    private func needsAttention(_ client: Client, _ model: ClientsModel) -> Bool {
+        CaseUrgency(
+            nextEvent: model.nextClientEvents[client.id]?.day,
+            overdueTasks: model.clientOverdueTaskCounts[client.id] ?? 0,
+            today: dependencies.today
+        ).needsAttention
+    }
+
+    private func matches(_ filter: ClientDirectoryFilter, _ client: Client, _ model: ClientsModel) -> Bool {
+        switch filter {
+        case .all: return true
+        case .withActiveCase: return hasActiveCase(client, model)
+        case .needsAttention: return needsAttention(client, model)
+        }
+    }
+
+    /// Klienta można znaleźć po nazwisku, temacie, tytule i numerze jego sprawy.
+    private func matchesSearch(_ client: Client, _ model: ClientsModel) -> Bool {
+        let cases = model.casesByClient[client.id] ?? []
+        let parts = [client.displayName, client.topic] + cases.flatMap { [$0.title, $0.number] }
+        return SearchText.matches(search, in: parts)
+    }
+
+    /// Ostatnio otwierane osoby, o ile są klientami kancelarii (leady mają swoją kolejkę).
+    private func recentClients(_ model: ClientsModel) -> [Client] {
+        dependencies.recentClients.ids.compactMap { id in
+            model.clientsByID[id].flatMap { $0.stage == .client ? $0 : nil }
+        }
+    }
+
+    // MARK: Sprawy
+
+    @ViewBuilder
+    private func casesList(_ model: ClientsModel) -> some View {
+        let matching = model.cases.filter { matchesSearch($0, model) }
+        switch caseFilter {
+        case .active:
+            let board = caseBoard(matching, model: model)
+            if board.attention.isEmpty && board.inProgress.isEmpty && board.awaitingClient.isEmpty {
+                casesEmptyState
+            } else {
+                ForEach(CaseBoard.Group.allCases, id: \.self) { group in
+                    let cases = board.cases(in: group)
+                    if !cases.isEmpty {
+                        GroupHeader(
+                            title: group.rawValue,
+                            count: cases.count,
+                            tone: groupTone(group),
+                            emphasized: group == .attention
+                        )
+                        .id(Self.groupID(group))
+                        .clientsListRow(top: 12, bottom: 2, horizontal: layout.horizontalPadding)
+                        ForEach(cases) { legalCase in
+                            caseRow(legalCase, model: model)
+                        }
+                    }
+                }
+                bottomSpacer
+            }
+        case .closed:
+            let closed = matching
+                .filter { $0.status == .closed }
+                .sorted { $0.title.localizedCompare($1.title) == .orderedAscending }
+            if closed.isEmpty {
+                casesEmptyState
+            } else {
+                ForEach(closed) { legalCase in
+                    caseRow(legalCase, model: model)
+                }
+                bottomSpacer
+            }
+        }
+    }
+
+    private func caseRow(_ legalCase: LegalCase, model: ClientsModel) -> some View {
+        CaseCard(
+            legalCase: legalCase,
+            client: model.clientsByID[legalCase.clientID],
+            openTaskCount: model.openTaskCounts[legalCase.id] ?? 0,
+            overdueTaskCount: model.overdueTaskCounts[legalCase.id] ?? 0,
+            nextEvent: model.nextCaseEvents[legalCase.id],
+            onOpen: { dependencies.openCase(legalCase.id) }
+        )
+        .clientsListRow(top: 5, bottom: 5, horizontal: layout.horizontalPadding)
+    }
+
+    private var casesEmptyState: some View {
+        EmptyState(
+            systemImage: "folder",
+            title: search.isEmpty ? "Brak spraw w tym widoku" : "Brak pasujących spraw",
+            message: "Zmień filtr lub utwórz sprawę z karty klienta."
+        )
+        .clientsListRow(top: 0, bottom: 0, horizontal: layout.horizontalPadding)
+    }
+
+    private func caseBoard(_ cases: [LegalCase], model: ClientsModel) -> CaseBoard {
+        CaseBoard.make(
+            cases,
+            nextEvents: model.nextCaseEvents,
+            overdueTasks: model.overdueTaskCounts,
+            today: dependencies.today
+        )
+    }
+
+    private func groupTone(_ group: CaseBoard.Group) -> Color {
+        switch group {
+        case .attention: return EmmaTheme.pillDangerText
+        case .inProgress: return EmmaTheme.pillGreenText
+        case .awaitingClient: return EmmaTheme.mutedSoft
+        }
+    }
+
+    private func matchesSearch(_ legalCase: LegalCase, _ model: ClientsModel) -> Bool {
+        let name = model.clientsByID[legalCase.clientID]?.displayName ?? ""
+        return SearchText.matches(search, in: [legalCase.title, legalCase.number, name])
+    }
+
+    // MARK: Filtr z innego ekranu
 
     /// Filtr zamówiony z innego ekranu (np. „Wszystkie” na „Dzisiaj”).
     private func consumePendingFilter() {
@@ -377,7 +671,7 @@ struct ClientsScreen: View {
         }
     }
 
-    // MARK: Usuwanie i konwersja
+    // MARK: Usuwanie
 
     /// Usunięcie jest nieodwracalne, więc pytamy wprost i pokazujemy, kogo
     /// dotyczy — przy dwóch podobnych zgłoszeniach łatwo skasować nie to.
@@ -396,7 +690,7 @@ struct ClientsScreen: View {
     }
 }
 
-// MARK: - Grupy listy leadów
+// MARK: - Grupy listy
 
 private struct LeadSection: Identifiable {
     let id: String
@@ -405,21 +699,26 @@ private struct LeadSection: Identifiable {
     let clients: [Client]
 }
 
-/// Nagłówek grupy: „CZEKAJĄ NA KONTAKT · 2” z kropką w kolorze stanu.
-private struct LeadGroupHeader: View {
+/// Nagłówek grupy: „● CZEKAJĄ PONAD DOBĘ · 2”. Kropka w kolorze stanu;
+/// grupa wymagająca działania ma tytuł w tym samym kolorze.
+private struct GroupHeader: View {
     let title: String
     let count: Int
-    let status: LeadStatus
+    /// `nil` — nagłówek bez kropki (litera kartoteki).
+    let tone: Color?
+    let emphasized: Bool
 
     var body: some View {
         HStack(spacing: 7) {
-            Circle()
-                .fill(LeadStatusStyle.tone(status))
-                .frame(width: 7, height: 7)
+            if let tone {
+                Circle()
+                    .fill(tone)
+                    .frame(width: 7, height: 7)
+            }
             Text(title.uppercased())
                 .font(EmmaTypography.caption(.semibold))
                 .tracking(0.6)
-                .foregroundStyle(status == .waiting ? EmmaTheme.pillAmberText : EmmaTheme.mutedSoft)
+                .foregroundStyle(emphasized ? (tone ?? EmmaTheme.mutedSoft) : EmmaTheme.mutedSoft)
             Text("\(count)")
                 .font(EmmaTypography.caption(.medium))
                 .foregroundStyle(EmmaTheme.mutedSoft)
@@ -455,6 +754,14 @@ enum LeadListFilter: String, Hashable, CaseIterable {
         case .all: return inbox.needsAction.count + inbox.inContact.count
         }
     }
+}
+
+/// Filtr kartoteki klientów. „Wymaga uwagi” to zaległe zadanie albo termin
+/// w ciągu tygodnia (`CaseUrgency`).
+enum ClientDirectoryFilter: String, Hashable, CaseIterable {
+    case all = "Wszyscy"
+    case withActiveCase = "Z aktywną sprawą"
+    case needsAttention = "Wymaga uwagi"
 }
 
 /// Filtr listy spraw. Aktywne to wszystkie poza zamkniętymi (`CaseStatus.isActive`).

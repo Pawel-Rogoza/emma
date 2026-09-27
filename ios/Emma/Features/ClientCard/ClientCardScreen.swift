@@ -161,7 +161,7 @@ struct ClientCardScreen: View {
         return VStack(spacing: 0) {
             PersonAvatar(
                 initials: client.initials,
-                style: .person,
+                style: .identity(client.id),
                 diameter: EmmaMetrics.clientHeroAvatar
             )
             Text(client.displayName)

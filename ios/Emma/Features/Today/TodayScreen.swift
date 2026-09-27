@@ -686,54 +686,6 @@ struct TodayScreen: View {
 
 }
 
-/// Kafelek pulsu dnia: liczba, podpis i ikona; dotknięcie otwiera listę.
-private struct PulseTile: View {
-    let value: Int
-    let label: String
-    let systemImage: String
-    let tone: Color
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .center) {
-                    Text("\(value)")
-                        .font(EmmaTypography.heading(24))
-                        .foregroundStyle(EmmaTheme.ink)
-                        .contentTransition(.numericText())
-                    Spacer(minLength: 4)
-                    Image(systemName: systemImage)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(tone)
-                        .frame(width: 26, height: 26)
-                        .background(EmmaTheme.accentSoft, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-                Text(label)
-                    .font(EmmaTypography.caption())
-                    .foregroundStyle(EmmaTheme.muted)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, minHeight: 70, alignment: .topLeading)
-            .padding(12)
-            .background(EmmaTheme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
-                    .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
-            }
-            .emmaCardShadow()
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(EmmaCardButtonStyle())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(value) \(label)")
-        .accessibilityAddTraits(.isButton)
-    }
-}
-
 /// Wiersz zadania z informacją, do którego kubełka należy — potrzebne, żeby
 /// wstawić nagłówek grupy dokładnie raz, na jej początku.
 private struct TaskEntry: Identifiable {

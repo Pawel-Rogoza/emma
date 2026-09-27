@@ -32,7 +32,6 @@ final class MessagesStore: ObservableObject {
         /// rozstrzygane w jednym miejscu, bez powtarzania reguły w widoku.
         let sortKey: MessageOrdering.ConversationSortKey
         let hasDraft: Bool
-        let avatarTone: Client.AvatarTone
     }
 
     struct Model {
@@ -60,7 +59,7 @@ final class MessagesStore: ObservableObject {
             let clients = try await repository.clients(matching: "", stage: nil)
 
             var rows: [Row] = []
-            for (index, thread) in threads.enumerated() {
+            for thread in threads {
                 guard let client = clients.first(where: { $0.id == thread.clientID }) else { continue }
                 let messages = try await repository.latestMessages(threadID: thread.id, limit: 60)
                 let state = states.first { $0.threadID == thread.id }
@@ -78,9 +77,7 @@ final class MessagesStore: ObservableObject {
                             state: state,
                             threadID: thread.id
                         ),
-                        hasDraft: !(state.draft?.isEmpty ?? true),
-                        // Ton awatara zależy od stabilnej pozycji na liście, nie od identyfikatora.
-                        avatarTone: EmmaTheme.avatarTone(forPresentationIndex: index)
+                        hasDraft: !(state.draft?.isEmpty ?? true)
                     )
                 )
             }
@@ -186,7 +183,6 @@ struct MessagesScreen: View {
                                     preview: row.preview,
                                     unreadCount: row.unreadCount,
                                     isPinned: row.isPinned,
-                                    avatarTone: row.avatarTone,
                                     hasDraft: row.hasDraft
                                 ) {
                                     dependencies.openThread(row.thread.id)

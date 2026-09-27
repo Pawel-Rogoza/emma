@@ -642,6 +642,40 @@ istniejący token z przezroczystością.
 
 ---
 
+### D-34 · Ekran „Klienci”: stały kolor osoby, trzy tryby, pilność spraw — **review właściciela 27.09.2026**
+
+**Treść:**
+- Awatar osoby ma **stały ton** liczony z identyfikatora (`IdentityTone`, FNV-1a,
+  sześć stonowanych par w `EmmaTheme.identityAvatar`). Ta sama osoba wygląda tak
+  samo na liście leadów, w kartotece, na karcie sprawy, w rozmowach i na swojej
+  karcie. Zastępuje §4.3 („ton zależy od pozycji na liście rozmów”) — typ
+  `Client.AvatarTone` i ton pozycyjny zostały usunięte.
+- Obok nazwiska plakietka języka klienta („UA”, „RU”, „PL”).
+- „Klienci” ma trzy tryby: **Leady · Klienci · Sprawy**. Nowy tryb to kartoteka
+  (etap `client`) w sekcjach A–Ż z paskiem „Ostatnio otwierani” (zapamiętany
+  w `UserDefaults`) i filtrami Wszyscy / Z aktywną sprawą / Wymaga uwagi.
+- Nad listą trzy kafelki podsumowania (`PulseTile`, wspólny z „Dzisiaj”).
+  Zniknął podpis „BAZA KANCELARII” — zostaje sam tytuł.
+- Karta sprawy zaczyna się od klienta (awatar, nazwisko, język), plakietka mówi
+  „dziś / jutro / za N dni” (czerwona do 3 dni, bursztynowa do 7) zamiast stałego
+  „W toku”; numer sprawy zszedł do stopki. Aktywne sprawy w grupach
+  **Wymaga uwagi → W toku → Czekamy na klienta** (`CaseBoard`).
+- Kolejka leadów „Do obsługi” ma nagłówki „Czekają ponad dobę” i „Nowe”.
+- Nowy token `pillDanger*` (czerwony akcent pilnego terminu).
+
+**Powód:** „wszystko się zlewa, w sekcji sprawy/klienci nie odróżnisz jednego od
+drugiego”. Identyczne szare awatary i jednakowe karty zmuszały do czytania każdego
+nazwiska; pilna sprawa wyglądała jak ta, w której nic się nie dzieje, a klient bez
+otwartego leada był osiągalny tylko przez wyszukiwanie.
+
+**Czego nie ma (brak danych w backendzie):** rodzaju sprawy (kolor/ikona
+legalizacja–karna–deportacja) i daty zmiany statusu („czekamy od 9 dni”).
+
+**Cofnięcie:** `PersonAvatar(style: .person)` zamiast `.identity`, usunięcie trybu
+`.clients` z `ClientListMode` i powrót `CaseCard` do wersji z 0.3.0.
+
+---
+
 ## Czego ten rejestr nie zawiera
 
 Nie zawiera porównania zrzutów ekranu z referencją **piksel po pikselu**. Zrzuty są

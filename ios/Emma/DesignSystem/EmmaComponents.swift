@@ -177,10 +177,11 @@ public struct DetailHeader: View {
 public struct PersonAvatar: View {
 
     public enum Style: Sendable {
-        /// Lista rozmów — ton zależny od pozycji.
-        case conversation(Client.AvatarTone)
         /// Karty osób, klientów i spraw.
         case person
+        /// Stały kolor osoby liczony z jej identyfikatora (`IdentityTone`) —
+        /// ta sama osoba wygląda tak samo na każdej liście (D-34).
+        case identity(ClientID)
     }
 
     private let initials: String
@@ -204,15 +205,15 @@ public struct PersonAvatar: View {
 
     private var background: Color {
         switch style {
-        case .conversation(let tone): return EmmaTheme.conversationAvatar(tone).background
         case .person: return EmmaTheme.personAvatarBackground
+        case .identity(let id): return EmmaTheme.identityAvatar(IdentityTone.index(for: id)).background
         }
     }
 
     private var foreground: Color {
         switch style {
-        case .conversation(let tone): return EmmaTheme.conversationAvatar(tone).foreground
         case .person: return EmmaTheme.personAvatarText
+        case .identity(let id): return EmmaTheme.identityAvatar(IdentityTone.index(for: id)).foreground
         }
     }
 }
@@ -226,6 +227,8 @@ public struct StatusPill: View {
         case green
         case amber
         case urgent
+        /// Termin za 0–3 dni na liście spraw.
+        case danger
 
         var colors: (background: Color, text: Color) {
             switch self {
@@ -233,6 +236,7 @@ public struct StatusPill: View {
             case .green: return (EmmaTheme.pillGreenBackground, EmmaTheme.pillGreenText)
             case .amber: return (EmmaTheme.pillAmberBackground, EmmaTheme.pillAmberText)
             case .urgent: return (EmmaTheme.pillUrgentBackground, EmmaTheme.pillUrgentText)
+            case .danger: return (EmmaTheme.pillDangerBackground, EmmaTheme.pillDangerText)
             }
         }
     }
