@@ -193,3 +193,95 @@ public struct ReminderPreferences: @unchecked Sendable {
         defaults.set(stored, forKey: Self.perEventKey)
     }
 }
+
+// MARK: - Poranny skrót dnia
+
+/// Powiadomienie o 8:00: co dziś w kalendarzu i czy coś jest po terminie.
+/// Audyt 28.09.2026: adwokat ma wiedzieć, co go czeka, zanim otworzy aplikację.
+/// Dni bez terminów i bez zaległości nie dostają powiadomienia — cisza też
+/// jest informacją, a pusty skrót uczyłby go ignorować.
+public enum MorningBrief {
+
+    public struct Item: Equatable, Sendable {
+        public let identifier: String
+        public let day: LocalDate
+        public let fireAt: Date
+        public let title: String
+        public let body: String
+    }
+
+    public static let identifierPrefix = "emma.morning."
+    public static let hour = 8
+    /// Ile porannych skrótów planujemy naprzód (odświeżane przy każdym otwarciu).
+    public static let daysAhead = 3
+
+    /// - Parameters:
+    ///   - events: terminy od dziś (niezakończone liczą się do skrótu),
+    ///   - missedDeadlines: niezamknięte terminy w sprawach, które już minęły —
+    ///     doliczane do najbliższego skrótu,
+    public static func items(
+        events: [ScheduledEvent],
+        missedDeadlines: Int,
+        today: LocalDate,
+        now: Date,
+        timeZoneIdentifier: String = EmmaTime.referenceTimeZone
+    ) -> [Item] {
+        var result: [Item] = []
+        for offset in 0..<(daysAhead + 1) {
+            let day = today.adding(days: offset)
+            guard let fireAt = instant(day: day, timeZoneIdentifier: timeZoneIdentifier), fireAt > now else { continue }
+            let dayEvents = events
+                .filter { $0.day == day && $0.status != .finished }
+                .sorted { lhs, rhs in
+                    if lhs.isAllDay != rhs.isAllDay { return lhs.isAllDay }
+                    return lhs.time < rhs.time
+                }
+            let missed = result.isEmpty ? missedDeadlines : 0
+            guard let content = content(dayEvents, missed: missed) else { continue }
+            result.append(Item(
+                identifier: identifierPrefix + day.isoString,
+                day: day,
+                fireAt: fireAt,
+                title: content.title,
+                body: content.body
+            ))
+            if result.count == daysAhead { break }
+        }
+        return result
+    }
+
+    /// „Dziś 3 terminy” / „10:30 Konsultacja z Oleną, 12:00 … · 1 termin po terminie”.
+    static func content(_ events: [ScheduledEvent], missed: Int) -> (title: String, body: String)? {
+        guard !events.isEmpty || missed > 0 else { return nil }
+        let title: String
+        if events.isEmpty {
+            title = "Dziś bez terminów"
+        } else {
+            title = "Dziś " + EmmaPlural.label(events.count, "termin", "terminy", "terminów")
+        }
+        var parts: [String] = []
+        let listed = events.prefix(3).map { event in
+            event.isAllDay ? event.title : "\(event.time.hhmm) \(event.title)"
+        }
+        if !listed.isEmpty {
+            var line = listed.joined(separator: ", ")
+            if events.count > listed.count { line += " i \(events.count - listed.count) więcej" }
+            parts.append(line)
+        }
+        if missed > 0 {
+            parts.append("⚠︎ " + EmmaPlural.label(missed, "termin", "terminy", "terminów") + " po terminie")
+        }
+        return (title, parts.joined(separator: " · "))
+    }
+
+    static func instant(day: LocalDate, timeZoneIdentifier: String) -> Date? {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: timeZoneIdentifier) ?? TimeZone(identifier: "UTC")!
+        var components = DateComponents()
+        components.year = day.year
+        components.month = day.month
+        components.day = day.day
+        components.hour = hour
+        return calendar.date(from: components)
+    }
+}

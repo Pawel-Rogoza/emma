@@ -46,6 +46,19 @@ final class EventReminderScheduler {
         }
     }
 
+    static let promptDismissedKey = "emma.notifications.promptDismissed"
+
+    /// Czy pokazać na „Dzisiaj” kartę „Włącz poranny skrót”: tylko poza Demo,
+    /// gdy system jeszcze nie pytał i użytkownik jej nie zamknął.
+    func shouldOfferPermission() async -> Bool {
+        guard isEnabled, !UserDefaults.standard.bool(forKey: Self.promptDismissedKey) else { return false }
+        return await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .notDetermined
+    }
+
+    func dismissPermissionOffer() {
+        UserDefaults.standard.set(true, forKey: Self.promptDismissedKey)
+    }
+
     /// Czy użytkownik odmówił zgody (formularz mówi wtedy, gdzie ją włączyć).
     func isDenied() async -> Bool {
         guard isEnabled else { return false }
@@ -86,11 +99,34 @@ final class EventReminderScheduler {
             now: dependencies.now
         )
 
+        // Poranny skrót (8:00): terminy dnia i niezamknięte terminy po czasie.
+        let past = (try? await dependencies.repository.events(
+            in: DateIntervalFilter(from: today.adding(days: -CaseUrgency.missedLookbackDays), through: today.adding(days: -1))
+        )) ?? []
+        let missed = past.filter { $0.kind == .caseDeadline && $0.status != .finished }.count
+        let mornings = MorningBrief.items(events: events, missedDeadlines: missed, today: today, now: dependencies.now)
+
         let pending = await center.pendingNotificationRequests()
         let ours = pending
             .map(\.identifier)
-            .filter { $0.hasPrefix(EventReminderPlan.identifierPrefix) }
+            .filter { $0.hasPrefix(EventReminderPlan.identifierPrefix) || $0.hasPrefix(MorningBrief.identifierPrefix) }
         center.removePendingNotificationRequests(withIdentifiers: ours)
+
+        for morning in mornings {
+            let content = UNMutableNotificationContent()
+            content.title = morning.title
+            content.body = morning.body
+            content.sound = .default
+            let components = Calendar(identifier: .gregorian).dateComponents(
+                [.year, .month, .day, .hour, .minute, .second],
+                from: morning.fireAt
+            )
+            try? await center.add(UNNotificationRequest(
+                identifier: morning.identifier,
+                content: content,
+                trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+            ))
+        }
 
         for item in items {
             let content = UNMutableNotificationContent()
@@ -140,6 +176,10 @@ final class EventNotificationRouter: NSObject, UNUserNotificationCenterDelegate,
         didReceive response: UNNotificationResponse
     ) async {
         guard let raw = response.notification.request.content.userInfo[EventReminderScheduler.eventIDKey] as? String else {
+            // Poranny skrót nie wskazuje terminu — otwiera „Dzisiaj”.
+            if response.notification.request.identifier.hasPrefix(MorningBrief.identifierPrefix) {
+                await MainActor.run { dependencies?.go(to: .today, resetStack: true) }
+            }
             return
         }
         await MainActor.run {

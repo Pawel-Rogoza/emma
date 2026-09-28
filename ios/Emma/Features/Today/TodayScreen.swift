@@ -132,6 +132,8 @@ struct TodayScreen: View {
     @State private var eventPendingDeletion: ScheduledEvent?
     /// Minione terminy są domyślnie zwinięte: to zapis dnia, nie plan na teraz.
     @State private var showsPastEvents = false
+    /// Karta „Włącz poranny skrót” — gdy system jeszcze nie pytał o powiadomienia.
+    @State private var offersNotifications = false
 
     var body: some View {
         ScrollView {
@@ -155,6 +157,7 @@ struct TodayScreen: View {
         .scrollIndicators(.hidden)
         .refreshable { await store.load(dependencies) }
         .task(id: dependencies.dataVersion) { await store.load(dependencies) }
+        .task { offersNotifications = await dependencies.reminders.shouldOfferPermission() }
         .confirmationDialog(
             "Usunąć termin?",
             isPresented: Binding(
@@ -204,6 +207,12 @@ struct TodayScreen: View {
             missedDeadlinesCard(model)
                 .padding(.top, 12)
                 .transition(.move(edge: .top).combined(with: .opacity))
+        }
+
+        if offersNotifications {
+            notificationsOffer
+                .padding(.top, 12)
+                .transition(.opacity.combined(with: .move(edge: .top)))
         }
 
         leadsSection(inbox)
@@ -340,6 +349,47 @@ struct TodayScreen: View {
         }
         .accessibilityLabel("Porozmawiaj z Emmą")
         .accessibilityHint("Zaczyna rozmowę głosową. Przytrzymaj, aby napisać do Emmy.")
+    }
+
+    // MARK: Zgoda na powiadomienia
+
+    /// Jedno zdanie, dwa przyciski. Bez zgody nie ma porannego skrótu ani
+    /// przypomnień o rozprawach — a system pyta tylko raz, więc pytamy w porę.
+    private var notificationsOffer: some View {
+        SurfaceCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "bell.badge")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(EmmaTheme.accent)
+                        .frame(width: 34, height: 34)
+                        .background(EmmaTheme.accentSoft, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Poranny skrót i przypomnienia")
+                            .font(EmmaTypography.ui(15, .semibold))
+                            .foregroundStyle(EmmaTheme.ink)
+                        Text("O 8:00 powiem, co dziś w kalendarzu i co jest po terminie. Przypomnę też przed rozprawą.")
+                            .font(EmmaTypography.caption())
+                            .foregroundStyle(EmmaTheme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                HStack(spacing: 10) {
+                    PrimaryButton("Włącz", systemImage: "bell") {
+                        Task {
+                            _ = await dependencies.reminders.requestAuthorizationIfNeeded()
+                            dependencies.reminders.scheduleRefresh(dependencies)
+                            withAnimation(EmmaMotion.smooth) { offersNotifications = false }
+                        }
+                    }
+                    SecondaryButton("Nie teraz") {
+                        dependencies.reminders.dismissPermissionOffer()
+                        withAnimation(EmmaMotion.smooth) { offersNotifications = false }
+                    }
+                }
+            }
+        }
+        .accessibilityIdentifier("today-notifications-offer")
     }
 
     // MARK: Po terminie
