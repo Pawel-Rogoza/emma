@@ -135,7 +135,7 @@ public final class AppDependencies: ObservableObject {
     /// Przeżywa ponowne uruchomienie (`UserDefaults`), bo po to jest: wrócić
     /// jednym dotknięciem do klienta, nad którym pracowało się wczoraj.
     @Published public private(set) var recentClients = RecentClients(
-        ids: (UserDefaults.standard.stringArray(forKey: AppDependencies.recentClientsKey) ?? []).map(ClientID.init)
+        ids: (UserDefaults.standard.stringArray(forKey: AppDependencies.recentClientsKey) ?? []).map { ClientID(rawValue: $0) }
     )
     static let recentClientsKey = "emma.recentClientIDs"
     /// Licznik zmian danych. Każdy ekran obserwuje go w `.task(id:)` i po
@@ -448,7 +448,7 @@ public final class AppDependencies: ObservableObject {
 
     public func openPerson(_ clientID: ClientID) {
         recentClients.record(clientID)
-        UserDefaults.standard.set(recentClients.ids.map(\.rawValue), forKey: Self.recentClientsKey)
+        UserDefaults.standard.set(recentClients.ids.map { $0.rawValue }, forKey: Self.recentClientsKey)
         appendingToClients(.person(clientID))
     }
 

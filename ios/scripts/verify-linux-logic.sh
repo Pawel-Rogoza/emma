@@ -38,7 +38,9 @@ echo "== Emma · weryfikacja logiki bez Xcode =="
 echo
 
 echo "== 1/9 · Kompilacja i testy logiki (SwiftPM) =="
-if ! "$SWIFT" test 2>&1 | grep -vE 'no version information'; then
+# Swift 6.4 na Arch Linuksie: SWIFT_TEST_FLAGS="--build-system native" (patrz Package.swift).
+# shellcheck disable=SC2086
+if ! "$SWIFT" test ${SWIFT_TEST_FLAGS:-} 2>&1 | grep -vE 'no version information'; then
   echo "[BŁĄD] Testy logiki nie przeszły." >&2
   exit 1
 fi

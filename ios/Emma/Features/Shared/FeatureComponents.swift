@@ -373,8 +373,9 @@ struct LanguageBadge: View {
 
     var body: some View {
         Text(language.badgeCode)
-            .font(EmmaTypography.ui(10, .semibold))
-            .tracking(0.4)
+            // Kontrola czytelności (F09): nic poniżej 12 pt.
+            .font(EmmaTypography.caption(.semibold))
+            .tracking(0.3)
             .foregroundStyle(EmmaTheme.secondaryButtonText)
             .padding(.horizontal, 5)
             .padding(.vertical, 2)
