@@ -309,9 +309,10 @@ public struct SegmentedFilter<Item: Hashable>: View {
                 Button {
                     guard selection != item else { return }
                     EmmaHaptics.selection()
-                    // Biała pigułka przesuwa się do nowego segmentu, zamiast
-                    // przeskoczyć — widać, skąd i dokąd zmienił się widok.
-                    withAnimation(EmmaMotion.snappy) { selection = item }
+                    // Bez `withAnimation`: animowana byłaby też podmiana treści
+                    // pod przełącznikiem (dwie listy przenikały się na zrzutach
+                    // z CI). Rusza się tylko pigułka — patrz `.animation` niżej.
+                    selection = item
                 } label: {
                     Text(title(item))
                         .font(EmmaTypography.caption(isSelected ? .semibold : .regular))
@@ -344,6 +345,8 @@ public struct SegmentedFilter<Item: Hashable>: View {
         .background(EmmaTheme.controlBackground)
         .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.segmented, style: .continuous))
         .frame(minHeight: EmmaMetrics.segmentedMinHeight)
+        // Biała pigułka przesuwa się do nowego segmentu, zamiast przeskoczyć.
+        .animation(EmmaMotion.snappy, value: selection)
     }
 }
 

@@ -173,6 +173,22 @@ struct TodayScreen: View {
         }
     }
 
+    /// „Załatwione” z menu wiersza — ten sam zapis co w szczegółach terminu.
+    private func finishEvent(_ event: ScheduledEvent) async {
+        var finished = event
+        finished.status = .finished
+        let outcome = await dependencies.submit(fallback: "Nie udało się zamknąć terminu.") {
+            try await dependencies.repository.updateEvent(finished, expectedVersion: event.version)
+        }
+        if let message = outcome.errorMessage {
+            dependencies.showToast(message)
+            return
+        }
+        EmmaHaptics.success()
+        dependencies.reminders.removeReminder(for: event.id)
+        dependencies.showToast("Załatwione: \(event.title)")
+    }
+
     private func deleteEvent(_ event: ScheduledEvent) async {
         await dependencies.perform {
             try await dependencies.repository.deleteEvent(
@@ -351,6 +367,11 @@ struct TodayScreen: View {
                 }
                 .buttonStyle(EmmaCardButtonStyle())
                 .contextMenu {
+                    Button {
+                        Task { await finishEvent(event) }
+                    } label: {
+                        Label("Załatwione", systemImage: "checkmark.circle")
+                    }
                     if let caseID = event.caseID {
                         Button {
                             dependencies.openCase(caseID)
@@ -414,15 +435,17 @@ struct TodayScreen: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
             if let countdown = urgency.countdownText {
                 StatusPill(countdown, kind: .danger)
+                    .fixedSize()
             }
         }
         .padding(.horizontal, 15)
         .padding(.vertical, 10)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityHint("Otwiera termin. Przytrzymaj, aby przejść do sprawy.")
+        .accessibilityHint("Otwiera termin. Przytrzymaj, aby oznaczyć jako załatwiony albo przejść do sprawy.")
     }
 
     // MARK: Leady do obsługi
@@ -766,7 +789,8 @@ struct TodayScreen: View {
                         event: event,
                         now: now,
                         onOpen: { dependencies.present(.eventDetail(event.id)) },
-                        onDelete: { eventPendingDeletion = event }
+                        onDelete: { eventPendingDeletion = event },
+                        onFinish: { Task { await finishEvent(event) } }
                     )
                     if index < events.count - 1 {
                         Divider().overlay(EmmaTheme.rowSeparator).padding(.horizontal, 15)

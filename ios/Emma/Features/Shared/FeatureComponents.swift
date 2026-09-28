@@ -302,7 +302,7 @@ struct CaseCard: View {
     /// Po terminie stopka mówi, **który** termin minął — plakietka mówi kiedy.
     private var footerEventText: String? {
         if legalCase.status.isActive, let missedEvent {
-            return "\(missedEvent.title): \(dependencies.dateText.dayLabel(missedEvent.day))"
+            return "Minął: \(dependencies.dateText.dayLabel(missedEvent.day))"
         }
         return eventText
     }

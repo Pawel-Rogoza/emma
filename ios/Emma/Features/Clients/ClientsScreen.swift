@@ -896,6 +896,7 @@ struct ListFilterChips<Item: Hashable>: View {
                 chip(item)
             }
         }
+        .animation(EmmaMotion.snappy, value: selection)
     }
 
     private func chip(_ item: Item) -> some View {
@@ -904,7 +905,8 @@ struct ListFilterChips<Item: Hashable>: View {
         return Button {
             guard selection != item else { return }
             EmmaHaptics.selection()
-            withAnimation(EmmaMotion.snappy) { selection = item }
+            // Animacja tylko zaznaczenia (niżej) — lista pod chipami zmienia się od razu.
+            selection = item
         } label: {
             HStack(spacing: 5) {
                 Text(title(item))
