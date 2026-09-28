@@ -269,6 +269,8 @@ struct CaseCard: View {
                 Image(systemName: "calendar").font(.system(size: 11, weight: .semibold))
             }
             .foregroundStyle(eventColor(urgency))
+            // Termin ważniejszy niż numer sprawy — to numer ma się skrócić.
+            .layoutPriority(2)
 
             if overdueTaskCount > 0 {
                 Label {

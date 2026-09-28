@@ -427,19 +427,26 @@ struct TodayScreen: View {
                     .foregroundStyle(EmmaTheme.ink)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
-                if !meta.isEmpty {
-                    Text(meta)
-                        .font(EmmaTypography.caption())
-                        .foregroundStyle(EmmaTheme.muted)
-                        .lineLimit(1)
+                // Kiedy minął — pod tytułem, na czerwono; plakietka z boku
+                // zabierała tytułowi połowę szerokości.
+                HStack(spacing: 6) {
+                    if let countdown = urgency.countdownText {
+                        Text(countdown.prefix(1).uppercased() + countdown.dropFirst())
+                            .font(EmmaTypography.caption(.semibold))
+                            .foregroundStyle(EmmaTheme.pillDangerText)
+                    }
+                    if !meta.isEmpty {
+                        Text("· \(meta)")
+                            .font(EmmaTypography.caption())
+                            .foregroundStyle(EmmaTheme.muted)
+                            .lineLimit(1)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .layoutPriority(1)
-            if let countdown = urgency.countdownText {
-                StatusPill(countdown, kind: .danger)
-                    .fixedSize()
-            }
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(EmmaTheme.pillDangerText.opacity(0.6))
         }
         .padding(.horizontal, 15)
         .padding(.vertical, 10)
