@@ -1,4 +1,7 @@
 import XCTest
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 @testable import Emma
 
 // MARK: - Repozytorium backendu: mapowanie kontraktu na modele aplikacji

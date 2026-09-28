@@ -11,6 +11,12 @@
 //   swift build      # kompiluje logikę
 //   swift test       # uruchamia testy reguł z §12.2 planu
 //
+// Swift 6.4 na Linuksie (Arch, /usr/sbin → bin): domyślny system budowania
+// szuka `swift-autolink-extract` w /usr/sbin i nie linkuje testów — wtedy
+//   swift test --build-system native
+// Pliki sieciowe importują `FoundationNetworking` warunkowo (na Linuksie
+// URLSession mieszka w osobnym module; na iOS import znika).
+//
 // Na macOS można go zignorować i korzystać z ios/Emma.xcodeproj.
 
 import PackageDescription
