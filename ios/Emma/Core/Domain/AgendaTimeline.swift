@@ -41,3 +41,22 @@ public extension ScheduledEvent {
         return time.minutes <= now.minutes && now.minutes < end
     }
 }
+
+// MARK: - Odliczanie do terminu
+
+public extension ScheduledEvent {
+    /// „teraz”, „za 45 min”, „za 2 godz.”, „za 2 godz. 15 min” — tylko dla terminu
+    /// dzisiejszego, jeszcze niezakończonego i nie całodniowego. Audyt 28.09.2026:
+    /// sama godzina „10:30” każe liczyć w głowie, ile zostało do wyjścia.
+    func countdownText(now: TimeOfDay, today: LocalDate) -> String? {
+        guard day == today, !isAllDay, status != .finished else { return nil }
+        if isHappening(at: now) { return "teraz" }
+        let minutes = time.minutes - now.minutes
+        guard minutes > 0 else { return nil }
+        if minutes < 60 { return "za \(minutes) min" }
+        let hours = minutes / 60
+        let rest = minutes % 60
+        if hours >= 6 { return nil }
+        return rest == 0 || hours >= 3 ? "za \(hours) godz." : "za \(hours) godz. \(rest) min"
+    }
+}

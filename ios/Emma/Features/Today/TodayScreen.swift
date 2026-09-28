@@ -534,6 +534,16 @@ struct TodayScreen: View {
                                 .font(EmmaTypography.ui(14, .semibold))
                                 .foregroundStyle(EmmaTheme.accent)
                         }
+                        // „za 45 min” / „teraz” — odświeżane co minutę.
+                        TimelineView(.periodic(from: .now, by: 60)) { _ in
+                            if let countdown = event.countdownText(
+                                now: TimeOfDay.at(dependencies.clock.now()),
+                                today: model.today
+                            ) {
+                                StatusPill(countdown, kind: countdown == "teraz" ? .green : .neutral)
+                                    .transition(.scale.combined(with: .opacity))
+                            }
+                        }
                         Spacer(minLength: 8)
                         Label(event.kind.displayTitle, systemImage: event.kind.systemImage)
                             .font(EmmaTypography.caption(.medium))

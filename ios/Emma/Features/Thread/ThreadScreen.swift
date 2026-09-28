@@ -489,6 +489,35 @@ struct ThreadScreen: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
 
+            // Gotowe odpowiedzi w języku klienta — tylko przy pustym szkicu,
+            // żeby nie zasłaniały pisanej wiadomości (audyt 28.09.2026).
+            if model.draft.text.isEmpty && model.draft.quote == nil {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(QuickReplies.templates(for: model.client.language)) { reply in
+                            Button {
+                                EmmaHaptics.selection()
+                                Task { await store.updateDraft(reply.text, dependencies: dependencies) }
+                            } label: {
+                                Text(reply.label)
+                                    .font(EmmaTypography.caption(.medium))
+                                    .foregroundStyle(EmmaTheme.secondaryButtonText)
+                                    .padding(.horizontal, 12)
+                                    .frame(minHeight: 32)
+                                    .background(EmmaTheme.surface, in: Capsule())
+                                    .overlay { Capsule().strokeBorder(EmmaTheme.composerBorder, lineWidth: 1) }
+                                    .contentShape(Capsule())
+                            }
+                            .buttonStyle(EmmaCardButtonStyle())
+                            .frame(minHeight: EmmaSpacing.hitTarget)
+                            .accessibilityLabel("Wstaw odpowiedź: \(reply.label)")
+                            .accessibilityHint("Wstawia gotowy tekst w języku klienta. Nic nie wysyła.")
+                        }
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+
             HStack(alignment: .bottom, spacing: 8) {
                 // Pole jednoliniowe, które rośnie razem z treścią (1–6 linii).
                 // Wcześniej `TextEditor` startował od 40 pt i wyglądał jak pusty,

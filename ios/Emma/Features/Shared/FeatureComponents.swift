@@ -398,11 +398,18 @@ struct PulseTile: View {
     let tone: Color
     let action: () -> Void
 
+    /// Liczba „przewija się” od zera przy pierwszym pokazaniu kafelka —
+    /// mały, szybki akcent (audyt 28.09.2026). „Ogranicz ruch” — od razu wartość.
+    @State private var revealed = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var shownValue: Int { revealed || reduceMotion ? value : 0 }
+
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .center) {
-                    Text("\(value)")
+                    Text("\(shownValue)")
                         .font(EmmaTypography.heading(24))
                         .foregroundStyle(EmmaTheme.ink)
                         .contentTransition(.numericText())
@@ -432,6 +439,10 @@ struct PulseTile: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(EmmaCardButtonStyle())
+        .onAppear {
+            guard !revealed else { return }
+            withAnimation(.snappy(duration: 0.45).delay(0.05)) { revealed = true }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(value) \(label)")
         .accessibilityAddTraits(.isButton)
