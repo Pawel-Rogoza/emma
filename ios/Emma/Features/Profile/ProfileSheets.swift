@@ -50,7 +50,22 @@ struct ProfileSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 14)
             }
+
+            // Właściciel rozpoznaje wydanie z TestFlight po numerze wersji.
+            Text(versionText)
+                .font(EmmaTypography.caption())
+                .foregroundStyle(EmmaTheme.mutedSoft)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 24)
+                .accessibilityIdentifier("profile-version")
         }
+    }
+
+    private var versionText: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info["CFBundleVersion"] as? String ?? "?"
+        return "Emma \(version) (build \(build))"
     }
 
     /// Nota o środowisku. W Demo mówi o scenariuszach i wspólnej dacie; poza Demo
@@ -128,7 +143,7 @@ private struct ReminderDefaultPicker: View {
                 .pickerStyle(.menu)
                 .tint(EmmaTheme.accent)
             }
-            Text("Telefon przypomni o każdym terminie z kalendarza kancelarii. Przy terminie możesz wybrać inne przypomnienie.")
+            Text("Telefon przypomni o każdym terminie z kalendarza kancelarii, a o 8:00 poda skrót dnia. Przy terminie możesz wybrać inne przypomnienie.")
                 .font(EmmaTypography.caption())
                 .foregroundStyle(EmmaTheme.mutedSoft)
                 .fixedSize(horizontal: false, vertical: true)
