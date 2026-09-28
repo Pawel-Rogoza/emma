@@ -357,6 +357,9 @@ struct CalendarScreen: View {
                 MeetingCard(event: event, clientName: event.clientID.flatMap { model.clientNames[$0] }) {
                     dependencies.present(.eventDetail(event.id))
                 }
+                .eventContextMenu(event, dependencies: dependencies) {
+                    dependencies.present(.eventDetail(event.id))
+                }
                 .padding(.bottom, EmmaSpacing.cardGap)
             }
         }
@@ -430,6 +433,9 @@ struct CalendarScreen: View {
                     .accessibilityAddTraits(.isHeader)
                 ForEach(events, id: \.id) { event in
                     MeetingCard(event: event, clientName: event.clientID.flatMap { model.clientNames[$0] }) {
+                        dependencies.present(.eventDetail(event.id))
+                    }
+                    .eventContextMenu(event, dependencies: dependencies) {
                         dependencies.present(.eventDetail(event.id))
                     }
                     .padding(.bottom, EmmaSpacing.cardGap)

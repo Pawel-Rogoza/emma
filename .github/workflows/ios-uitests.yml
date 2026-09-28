@@ -15,9 +15,11 @@ on:
       - "ios/**"
       - ".github/workflows/ios-uitests.yml"
 
+# Grupa per commit: nowy push nie anuluje trwającego przebiegu — każdy commit
+# dostaje własny raport testów UI.
 concurrency:
-  group: ios-uitests-${{ github.ref }}
-  cancel-in-progress: true
+  group: ios-uitests-${{ github.sha }}
+  cancel-in-progress: false
 
 permissions:
   contents: read

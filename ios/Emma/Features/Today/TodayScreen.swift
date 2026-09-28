@@ -173,20 +173,11 @@ struct TodayScreen: View {
         }
     }
 
-    /// „Załatwione” z menu wiersza — ten sam zapis co w szczegółach terminu.
+    /// „Załatwione” z menu wiersza — wspólna czynność (`EventActions`), z „Cofnij”.
     private func finishEvent(_ event: ScheduledEvent) async {
-        var finished = event
-        finished.status = .finished
-        let outcome = await dependencies.submit(fallback: "Nie udało się zamknąć terminu.") {
-            try await dependencies.repository.updateEvent(finished, expectedVersion: event.version)
-        }
-        if let message = outcome.errorMessage {
+        if let message = await EventActions.finish(event, dependencies: dependencies) {
             dependencies.showToast(message)
-            return
         }
-        EmmaHaptics.success()
-        dependencies.reminders.removeReminder(for: event.id)
-        dependencies.showToast("Załatwione: \(event.title)")
     }
 
     private func deleteEvent(_ event: ScheduledEvent) async {
@@ -270,6 +261,21 @@ struct TodayScreen: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Szukanie klienta, sprawy albo numeru telefonu jednym dotknięciem
+            // (audyt 28.09.2026) — bez przechodzenia przez zakładkę i tryby.
+            Button {
+                EmmaHaptics.tap()
+                dependencies.openClientSearch()
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 19, weight: .medium))
+                    .foregroundStyle(EmmaTheme.mutedSoft)
+                    .frame(width: EmmaSpacing.hitTarget, height: EmmaSpacing.hitTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Szukaj klienta, sprawy lub telefonu")
 
             emmaHeaderButton
 
@@ -741,6 +747,9 @@ struct TodayScreen: View {
                         ) {
                             Task { await toggle(entry.task) }
                         } onOpen: {
+                            dependencies.present(.taskDetail(entry.task.id))
+                        }
+                        .taskContextMenu(entry.task, dependencies: dependencies) {
                             dependencies.present(.taskDetail(entry.task.id))
                         }
                         if index < entries.count - 1 {

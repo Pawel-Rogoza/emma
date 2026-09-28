@@ -354,10 +354,28 @@ public struct SegmentedFilter<Item: Hashable>: View {
 public struct SearchField: View {
     @Binding private var text: String
     private let placeholder: String
+    /// Ekran może ustawić fokus (np. lupa na „Dzisiaj” otwiera od razu klawiaturę).
+    private let isFocused: FocusState<Bool>.Binding?
 
-    public init(text: Binding<String>, placeholder: String = "Szukaj") {
+    public init(text: Binding<String>, placeholder: String = "Szukaj", isFocused: FocusState<Bool>.Binding? = nil) {
         self._text = text
         self.placeholder = placeholder
+        self.isFocused = isFocused
+    }
+
+    @ViewBuilder
+    private var field: some View {
+        let base = TextField(placeholder, text: $text)
+            .font(EmmaTypography.ui(16))
+            .foregroundStyle(EmmaTheme.ink)
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
+            .submitLabel(.search)
+        if let isFocused {
+            base.focused(isFocused)
+        } else {
+            base
+        }
     }
 
     public var body: some View {
@@ -365,11 +383,7 @@ public struct SearchField: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(EmmaTheme.muted)
-            TextField(placeholder, text: $text)
-                .font(EmmaTypography.ui(16))
-                .foregroundStyle(EmmaTheme.ink)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
+            field
             if !text.isEmpty {
                 Button {
                     text = ""

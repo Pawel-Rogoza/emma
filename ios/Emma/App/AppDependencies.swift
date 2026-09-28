@@ -109,6 +109,8 @@ public final class AppDependencies: ObservableObject {
     /// Filtr listy leadów, który ma się otworzyć po przejściu z innego ekranu
     /// (np. „Wszystkie” przy leadach na „Dzisiaj” otwiera „Do obsługi”).
     @Published var pendingLeadFilter: LeadListFilter?
+    /// Lupa na „Dzisiaj”: kartoteka ma otworzyć się z klawiaturą w polu szukania.
+    @Published var pendingClientSearch = false
 
     // MARK: Pamięć ekranów zakładek
     //
@@ -457,6 +459,13 @@ public final class AppDependencies: ObservableObject {
     }
 
     /// Lista leadów z wybranym filtrem — wejście z ekranu „Dzisiaj”.
+    /// Szukanie klienta, sprawy albo numeru telefonu jednym dotknięciem.
+    func openClientSearch() {
+        clientMode = .clients
+        pendingClientSearch = true
+        go(to: .clients, resetStack: true)
+    }
+
     func openLeads(filter: LeadListFilter) {
         clientMode = .leads
         pendingLeadFilter = filter

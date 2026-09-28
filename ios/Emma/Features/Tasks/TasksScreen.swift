@@ -174,6 +174,9 @@ struct TasksScreen: View {
             } onOpen: {
                 dependencies.present(.taskDetail(task.id))
             }
+            .taskContextMenu(task, dependencies: dependencies) {
+                dependencies.present(.taskDetail(task.id))
+            }
             if showsDivider {
                 Divider().overlay(EmmaTheme.rowSeparator).padding(.horizontal, 15)
             }

@@ -72,8 +72,8 @@ wyłączone do 1.10). Zmiany wymagają przejścia w Xcode przed TestFlight.
    na „Dzisiaj” i przytrzymanie na karcie „Po terminie”); Kalendarz jeszcze nie.
 2. **Zamknięcie sprawy z listy** (przesunięcie na karcie sprawy „Zamknij”
    z potwierdzeniem) — dziś tylko przez ⋯ na ekranie sprawy.
-3. **Szybkie akcje ikony aplikacji** (Home Screen Quick Actions): „Nowy
-   termin”, „Nowa notatka”, „Porozmawiaj z Emmą”. Trzy wejścia, zero menu.
+3. ~~Szybkie akcje ikony aplikacji~~ — **zrobione w 0.6.0** (nowy termin,
+   nowe zadanie, rozmowa z Emmą; wykonują się dopiero po Face ID).
 4. **Numer sygnatury sądowej** jako osobne pole sprawy (dziś jest tylko numer
    kancelarii `KAN/…`). Karnista szuka po sygnaturze („II K 123/26”).
    Wymaga backendu.
@@ -85,6 +85,9 @@ wyłączone do 1.10). Zmiany wymagają przejścia w Xcode przed TestFlight.
 6. **Tryb ciemny.** Wszystkie kolory są w `EmmaTheme`, więc to zmiana jednego
    pliku (pary jasne/ciemne przez `Color(light:dark:)`) + przegląd kontrastów.
    Adwokat czyta akta wieczorem — dziś aplikacja świeci na biało.
+   **Blokada:** bramka `design-token-diff.py` odrzuca każdy kolor spoza
+   referencji prototypu, a referencja nie ma palety ciemnej — potrzebna
+   decyzja właściciela (ciemna paleta w referencji albo wyjątek w bramce).
 7. **Wejście kart listy** (lekki fade + przesunięcie 6 pt przy pierwszym
    wczytaniu, kaskadowo po 20 ms) — tylko przy pierwszym pokazaniu, nie przy
    każdym odświeżeniu.
@@ -123,6 +126,7 @@ wyłączone do 1.10). Zmiany wymagają przejścia w Xcode przed TestFlight.
 | 0.5.1 | formularz zadania w stylu terminu, demo z przegapionym terminem, 4 nowe zrzuty | zielone |
 | 0.5.2 | animacja samej pigułki (listy się nie przenikają), „Załatwione” w menu | zielone |
 | 0.5.3 | „Po terminie”: czas pod tytułem; stopka sprawy | zielone, 18/18 zrzutów |
+| 0.6.0 | szybkie akcje z ikony (termin, zadanie, Emma), lupa na „Dzisiaj”, „Załatwione” z „Cofnij” wszędzie (Kalendarz, sprawa, karta), menu zadań: na jutro / o tydzień / pilne z „Cofnij”, pełne testy UI w CI | — |
 
 ## 6. Do sprawdzenia na telefonie
 

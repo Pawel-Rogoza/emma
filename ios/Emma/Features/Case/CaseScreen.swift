@@ -335,6 +335,9 @@ struct CaseScreen: View {
                 MeetingCard(event: event, clientName: model.client.displayName) {
                     dependencies.present(.eventDetail(event.id))
                 }
+                .eventContextMenu(event, dependencies: dependencies) {
+                    dependencies.present(.eventDetail(event.id))
+                }
                 .padding(.bottom, EmmaSpacing.cardGap)
             }
         }
@@ -436,6 +439,9 @@ struct CaseScreen: View {
                                 }
                             }
                         } onOpen: {
+                            dependencies.present(.taskDetail(task.id))
+                        }
+                        .taskContextMenu(task, dependencies: dependencies) {
                             dependencies.present(.taskDetail(task.id))
                         }
                         if index < tasks.count - 1 {

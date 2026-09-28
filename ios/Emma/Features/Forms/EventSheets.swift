@@ -657,7 +657,7 @@ struct EventDetailSheet: View {
         // Audyt 28.09.2026: termin, który już minął (albo trwa dziś), dało się
         // tylko edytować albo usunąć — a „załatwione” to jedno dotknięcie.
         // Bez tego przegapiony termin wisiał na czerwono na „Dzisiaj”.
-        if event.status != .finished && event.day <= dependencies.today {
+        if EventActions.canFinish(event, today: dependencies.today) {
             PrimaryButton("Załatwione", systemImage: "checkmark.circle") {
                 Task { await markFinished(event) }
             }
@@ -746,18 +746,10 @@ struct EventDetailSheet: View {
     }
 
     private func markFinished(_ event: ScheduledEvent) async {
-        var finished = event
-        finished.status = .finished
-        let outcome = await dependencies.submit(fallback: "Nie udało się zamknąć terminu.") {
-            try await dependencies.repository.updateEvent(finished, expectedVersion: event.version)
-        }
-        if let message = outcome.errorMessage {
+        if let message = await EventActions.finish(event, dependencies: dependencies) {
             error = message
             return
         }
-        EmmaHaptics.success()
-        dependencies.reminders.removeReminder(for: event.id)
         dependencies.dismissSheet()
-        dependencies.showToast("Załatwione: \(event.title)")
     }
 }

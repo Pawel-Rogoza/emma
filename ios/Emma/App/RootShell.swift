@@ -9,6 +9,7 @@ import SwiftUI
 public struct RootShell: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @EnvironmentObject private var auth: AuthStore
+    @ObservedObject private var quickActions = HomeScreenQuickActions.shared
 
     public init() {}
 
@@ -69,7 +70,11 @@ public struct RootShell: View {
                 dependencies.voice.viewDidDisappear()
             }
         }
+        // Skrót z ikony aplikacji — dopiero po odblokowaniu (Face ID).
+        .onChange(of: quickActions.pending) { _, _ in consumeQuickAction() }
+        .onChange(of: auth.state) { _, _ in consumeQuickAction() }
         .onAppear {
+            consumeQuickAction()
             dependencies.refreshUnreadTotal()
             dependencies.refreshLeadCount()
             dependencies.reminders.scheduleRefresh(dependencies)
@@ -80,6 +85,11 @@ public struct RootShell: View {
                 dependencies.showToast(notice)
             }
         }
+    }
+
+    private func consumeQuickAction() {
+        guard auth.state == .unlocked else { return }
+        quickActions.consume(dependencies)
     }
 
     @ViewBuilder

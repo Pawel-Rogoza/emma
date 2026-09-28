@@ -409,6 +409,9 @@ struct ClientCardScreen: View {
                     EventRow(event: event) {
                         dependencies.present(.eventDetail(event.id))
                     }
+                    .eventContextMenu(event, dependencies: dependencies) {
+                        dependencies.present(.eventDetail(event.id))
+                    }
                 }
             }
         }

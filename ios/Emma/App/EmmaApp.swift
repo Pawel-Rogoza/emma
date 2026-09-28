@@ -12,6 +12,8 @@ import UserNotifications
 
 @main
 struct EmmaApp: App {
+    /// Szybkie akcje z ikony aplikacji (`HomeScreenQuickActions`).
+    @UIApplicationDelegateAdaptor(EmmaAppDelegate.self) private var appDelegate
     @StateObject private var dependencies: AppDependencies
     @StateObject private var auth: AuthStore
     @Environment(\.scenePhase) private var scenePhase

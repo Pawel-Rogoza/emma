@@ -228,6 +228,20 @@ final class ScreenshotCaptureUITests: XCTestCase {
             }
             return nil
         }
+
+        closeSheet()
+
+        capture("19-szukaj", description: "Lupa na „Dzisiaj” — kartoteka z klawiaturą w polu szukania") {
+            selectTab("today")
+            let search = application.buttons["Szukaj klienta, sprawy lub telefonu"]
+            guard search.waitForExistence(timeout: 10) else { return "brak lupy na „Dzisiaj”" }
+            search.tap()
+            guard application.keyboards.firstMatch.waitForExistence(timeout: 5) else {
+                return "klawiatura się nie pojawiła"
+            }
+            application.typeText("Bond")
+            return nil
+        }
     }
 
     /// Zamknięcie arkusza przyciskiem „Zamknij”; brak arkusza nie jest błędem sceny.

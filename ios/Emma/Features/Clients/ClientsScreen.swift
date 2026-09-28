@@ -40,6 +40,7 @@ struct ClientsScreen: View {
     @ObservedObject var store: ClientsStore
 
     @State private var search = ""
+    @FocusState private var searchFocused: Bool
     /// Domyślnie kolejka „Do obsługi” — nowe i oczekujące zgłoszenia.
     @State private var leadFilter: LeadListFilter = .needsAction
     @State private var clientFilter: ClientDirectoryFilter = .all
@@ -64,8 +65,12 @@ struct ClientsScreen: View {
         .background(EmmaTheme.bg)
         .refreshable { await store.load(dependencies) }
         .task(id: dependencies.dataVersion) { await store.load(dependencies) }
-        .onAppear { consumePendingFilter() }
+        .onAppear {
+            consumePendingFilter()
+            consumePendingSearch()
+        }
         .onChange(of: dependencies.pendingLeadFilter) { _, _ in consumePendingFilter() }
+        .onChange(of: dependencies.pendingClientSearch) { _, _ in consumePendingSearch() }
         .onChange(of: dependencies.clientMode) { _, _ in
             // `setClientMode` w referencji czyści wyszukiwanie i wraca do pierwszego filtra.
             search = ""
@@ -108,7 +113,7 @@ struct ClientsScreen: View {
                 .clientsListRow(top: 14, bottom: 0, horizontal: layout.horizontalPadding)
         }
 
-        SearchField(text: $search, placeholder: searchPlaceholder)
+        SearchField(text: $search, placeholder: searchPlaceholder, isFocused: $searchFocused)
             .clientsListRow(top: 14, bottom: 0, horizontal: layout.horizontalPadding)
 
         filterChips
@@ -690,6 +695,17 @@ struct ClientsScreen: View {
         dependencies.pendingLeadFilter = nil
         search = ""
         leadFilter = filter
+    }
+
+    /// Lupa z „Dzisiaj”: pole szukania od razu z klawiaturą.
+    private func consumePendingSearch() {
+        guard dependencies.pendingClientSearch else { return }
+        dependencies.pendingClientSearch = false
+        Task { @MainActor in
+            // Najpierw przełączenie trybu (czyści wyszukiwanie), potem fokus.
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            searchFocused = true
+        }
     }
 
     // MARK: Okna potwierdzeń
