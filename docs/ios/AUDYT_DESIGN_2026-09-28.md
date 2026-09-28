@@ -126,7 +126,11 @@ wyłączone do 1.10). Zmiany wymagają przejścia w Xcode przed TestFlight.
 | 0.5.1 | formularz zadania w stylu terminu, demo z przegapionym terminem, 4 nowe zrzuty | zielone |
 | 0.5.2 | animacja samej pigułki (listy się nie przenikają), „Załatwione” w menu | zielone |
 | 0.5.3 | „Po terminie”: czas pod tytułem; stopka sprawy | zielone, 18/18 zrzutów |
-| 0.6.0 | szybkie akcje z ikony (termin, zadanie, Emma), lupa na „Dzisiaj”, „Załatwione” z „Cofnij” wszędzie (Kalendarz, sprawa, karta), menu zadań: na jutro / o tydzień / pilne z „Cofnij”, pełne testy UI w CI | — |
+| 0.6.0 | szybkie akcje z ikony (termin, zadanie, Emma), lupa na „Dzisiaj”, „Załatwione” z „Cofnij” wszędzie (Kalendarz, sprawa, karta), menu zadań: na jutro / o tydzień / pilne z „Cofnij”, pełne testy UI w CI | zielone |
+| 0.6.1 | gotowe odpowiedzi w języku klienta (PL/UA/RU) w wątku, „za 45 min” przy najbliższym terminie, płynne wejście blokady, liczby w kafelkach | zielone |
+| 0.6.2 | poranny skrót o 8:00 (terminy dnia + po terminie), karta zgody na powiadomienia, kolory kropek w kalendarzu (konsultacja / termin w sprawie / po terminie) | w toku |
+
+Testy UI (XCUITest, 42 scenariusze: przepływ demo, układ z długą cyrylicą, dialogi, blokada, menu leadów) biegną teraz w CI przy każdym pushu — pierwszy pełny przebieg: **42/42 zaliczone**.
 
 ## 6. Do sprawdzenia na telefonie
 
