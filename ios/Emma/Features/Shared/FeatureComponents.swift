@@ -172,6 +172,8 @@ struct CaseCard: View {
     let openTaskCount: Int
     let overdueTaskCount: Int
     let nextEvent: ScheduledEvent?
+    /// Niezakończony termin w sprawie, który już minął — plakietka „minął wczoraj”.
+    let missedEvent: ScheduledEvent?
     let onOpen: () -> Void
 
     init(
@@ -180,6 +182,7 @@ struct CaseCard: View {
         openTaskCount: Int,
         overdueTaskCount: Int = 0,
         nextEvent: ScheduledEvent?,
+        missedEvent: ScheduledEvent? = nil,
         onOpen: @escaping () -> Void
     ) {
         self.legalCase = legalCase
@@ -187,6 +190,7 @@ struct CaseCard: View {
         self.openTaskCount = openTaskCount
         self.overdueTaskCount = overdueTaskCount
         self.nextEvent = nextEvent
+        self.missedEvent = missedEvent
         self.onOpen = onOpen
     }
 
@@ -195,6 +199,7 @@ struct CaseCard: View {
     var body: some View {
         let urgency = CaseUrgency(
             nextEvent: nextEvent?.day,
+            missedEvent: legalCase.status.isActive ? missedEvent?.day : nil,
             overdueTasks: overdueTaskCount,
             today: dependencies.today
         )
@@ -258,7 +263,7 @@ struct CaseCard: View {
     private func footer(_ urgency: CaseUrgency) -> some View {
         HStack(spacing: 12) {
             Label {
-                Text(eventText ?? "Brak terminu")
+                Text(footerEventText ?? "Brak terminu")
                     .font(EmmaTypography.caption(urgency.level == .calm ? .regular : .medium))
             } icon: {
                 Image(systemName: "calendar").font(.system(size: 11, weight: .semibold))
@@ -294,6 +299,14 @@ struct CaseCard: View {
         .minimumScaleFactor(0.85)
     }
 
+    /// Po terminie stopka mówi, **który** termin minął — plakietka mówi kiedy.
+    private var footerEventText: String? {
+        if legalCase.status.isActive, let missedEvent {
+            return "\(missedEvent.title): \(dependencies.dateText.dayLabel(missedEvent.day))"
+        }
+        return eventText
+    }
+
     private var eventText: String? {
         guard let nextEvent else { return nil }
         let day = dependencies.dateText.dayLabel(nextEvent.day)
@@ -302,7 +315,7 @@ struct CaseCard: View {
 
     private func eventColor(_ urgency: CaseUrgency) -> Color {
         switch urgency.level {
-        case .urgent: return EmmaTheme.pillDangerText
+        case .missed, .urgent: return EmmaTheme.pillDangerText
         case .soon: return EmmaTheme.pillAmberText
         case .calm: return EmmaTheme.mutedSoft
         }
@@ -317,7 +330,7 @@ struct CaseCard: View {
             return (legalCase.status.displayName, .neutral)
         }
         if let countdown = urgency.countdownText {
-            return (countdown, urgency.level == .urgent ? .danger : .amber)
+            return (countdown, urgency.isCritical ? .danger : .amber)
         }
         if legalCase.status == .awaitingClient {
             return ("Czeka na klienta", .neutral)
@@ -328,7 +341,7 @@ struct CaseCard: View {
     private func stripeColor(_ urgency: CaseUrgency) -> Color? {
         guard legalCase.status.isActive else { return nil }
         switch urgency.level {
-        case .urgent: return EmmaTheme.pillDangerText
+        case .missed, .urgent: return EmmaTheme.pillDangerText
         case .soon: return EmmaTheme.pillAmberText
         case .calm: return urgency.overdueTasks > 0 ? EmmaTheme.pillAmberText : nil
         }
@@ -337,7 +350,7 @@ struct CaseCard: View {
     private func accessibilityText(_ urgency: CaseUrgency) -> String {
         var parts = [legalCase.title, clientName, legalCase.status.displayName]
         if let countdown = urgency.countdownText {
-            parts.append("termin \(countdown)")
+            parts.append(urgency.level == .missed ? "termin \(countdown), niezamknięty" : "termin \(countdown)")
         } else if let eventText {
             parts.append("termin \(eventText)")
         }

@@ -161,4 +161,123 @@ final class ClientsOverviewTests: XCTestCase {
         XCTAssertEqual(recent.ids.filter { $0 == ClientID("c5") }.count, 1)
         XCTAssertFalse(recent.ids.contains(ClientID("c1")))
     }
+
+    // MARK: Przegapione terminy (review 28.09.2026)
+
+    private func deadline(
+        _ id: String,
+        caseID: String?,
+        clientID: String?,
+        inDays days: Int,
+        kind: EventKind = .caseDeadline,
+        status: EventStatus = .confirmed
+    ) -> ScheduledEvent {
+        ScheduledEvent(
+            id: EventID(id),
+            clientID: clientID.map { ClientID($0) },
+            caseID: caseID.map { CaseID($0) },
+            title: "Termin \(id)",
+            day: today.adding(days: days),
+            time: TimeOfDay(hhmm: "10:00")!,
+            durationMinutes: 60,
+            kind: kind,
+            status: status,
+            place: "",
+            isAllDay: false
+        )
+    }
+
+    func testMissedDeadlineIsMostUrgent() {
+        let urgency = CaseUrgency(nextEvent: today.adding(days: 1), missedEvent: today.adding(days: -2), overdueTasks: 0, today: today)
+        XCTAssertEqual(urgency.level, .missed)
+        XCTAssertTrue(urgency.isCritical)
+        XCTAssertTrue(urgency.needsAttention)
+        XCTAssertEqual(urgency.countdownText, "minął 2 dni temu")
+        XCTAssertEqual(
+            CaseUrgency(nextEvent: nil, missedEvent: today.adding(days: -1), overdueTasks: 0, today: today).countdownText,
+            "minął wczoraj"
+        )
+    }
+
+    func testBoardPutsMissedBeforeTomorrow() {
+        let cases = [legalCase("1"), legalCase("2")]
+        let board = CaseBoard.make(
+            cases,
+            nextEvents: [CaseID("1"): event("1", inDays: 1)],
+            missedEvents: [CaseID("2"): deadline("m", caseID: "2", clientID: nil, inDays: -3)],
+            overdueTasks: [:],
+            today: today
+        )
+        XCTAssertEqual(board.attention.map(\.id.rawValue), ["2", "1"])
+    }
+
+    // MARK: Model ekranu
+
+    private func model(clients: [Client], cases: [LegalCase], events: [ScheduledEvent]) -> ClientsModel {
+        ClientsModel.make(clients: clients, cases: cases, openTasks: [], events: events, today: today)
+    }
+
+    func testCaseEventWithoutClientCountsForCaseOwner() {
+        // Rozprawa z kalendarza sądu: przypięta do sprawy, bez wpisanego klienta.
+        let hearing = deadline("h", caseID: "1", clientID: nil, inDays: 1)
+        let result = model(clients: [client("c-1", name: "Olena Kowal")], cases: [legalCase("1")], events: [hearing])
+        XCTAssertEqual(result.nextClientEvents[ClientID("c-1")]?.id, hearing.id)
+        XCTAssertTrue(result.clientsNeedingAttention.contains(ClientID("c-1")))
+        XCTAssertEqual(result.caseBoard.attention.map(\.id.rawValue), ["1"])
+    }
+
+    func testOnlyUnfinishedCaseDeadlinesCountAsMissed() {
+        let events = [
+            deadline("a", caseID: "1", clientID: nil, inDays: -2),
+            deadline("b", caseID: "2", clientID: nil, inDays: -2, status: .finished),
+            deadline("c", caseID: "3", clientID: nil, inDays: -2, kind: .consultation),
+            deadline("d", caseID: "4", clientID: nil, inDays: -45)
+        ]
+        let cases = ["1", "2", "3", "4"].map { legalCase($0) }
+        let result = model(clients: [], cases: cases, events: events)
+        XCTAssertEqual(Set(result.missedCaseEvents.keys), [CaseID("1")])
+    }
+
+    func testStaleClientHasOldActiveCaseAndNoEvents() {
+        let old = LegalCase(
+            id: CaseID("1"), number: "K/1", title: "Stara", clientID: ClientID("c-1"),
+            status: .inProgress, summary: "", createdAt: today.adding(days: -60)
+        )
+        let fresh = LegalCase(
+            id: CaseID("2"), number: "K/2", title: "Nowa", clientID: ClientID("c-2"),
+            status: .inProgress, summary: "", createdAt: today.adding(days: -5)
+        )
+        let seen = LegalCase(
+            id: CaseID("3"), number: "K/3", title: "Z terminem", clientID: ClientID("c-3"),
+            status: .inProgress, summary: "", createdAt: today.adding(days: -60)
+        )
+        let clients = [client("c-1", name: "A"), client("c-2", name: "B"), client("c-3", name: "C")]
+        let past = deadline("p", caseID: "3", clientID: nil, inDays: -10, status: .finished)
+        let result = model(clients: clients, cases: [old, fresh, seen], events: [past])
+        XCTAssertEqual(result.staleClients, [ClientID("c-1")])
+    }
+
+    func testClosedCasesNewestFirst() {
+        let older = LegalCase(
+            id: CaseID("1"), number: "K/1", title: "A", clientID: ClientID("c"),
+            status: .closed, summary: "", createdAt: today.adding(days: -100)
+        )
+        let newer = LegalCase(
+            id: CaseID("2"), number: "K/2", title: "B", clientID: ClientID("c"),
+            status: .closed, summary: "", createdAt: today.adding(days: -10)
+        )
+        XCTAssertEqual(model(clients: [], cases: [older, newer], events: []).closedCases.map(\.id.rawValue), ["2", "1"])
+    }
+
+    // MARK: Telefon
+
+    func testPhoneSearchIgnoresFormattingAndPrefix() {
+        XCTAssertTrue(SearchText.matchesPhone("600 100 200", phone: "+48 600-100-200"))
+        XCTAssertTrue(SearchText.matchesPhone("+48600100200", phone: "600100200"))
+        XCTAssertTrue(SearchText.matchesPhone("0048 600 100 200", phone: "600 100 200"))
+        XCTAssertTrue(SearchText.matchesPhone("100 2", phone: "600100200"))
+        XCTAssertFalse(SearchText.matchesPhone("60", phone: "600100200"))
+        XCTAssertFalse(SearchText.matchesPhone("Anna 600", phone: "600100200"))
+        XCTAssertFalse(SearchText.matchesPhone("600", phone: nil))
+    }
 }

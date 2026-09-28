@@ -8,26 +8,7 @@ import SwiftUI
 // danych z wielu niezależnych tablic, a po każdym zapisie wraca tu przez
 // `dataVersion` (§ „STORE + VIEW”).
 
-/// Dane list leadów, klientów i spraw wraz z policzonymi zależnościami.
-struct ClientsModel: Equatable {
-    var clients: [Client]
-    var cases: [LegalCase]
-    /// Liczba otwartych zadań w sprawie — stopka karty sprawy.
-    var openTaskCounts: [CaseID: Int]
-    /// Otwarte zadania z terminem przed dziś — sprawa trafia do „Wymaga uwagi”.
-    var overdueTaskCounts: [CaseID: Int]
-    /// Zaległe zadania klienta (jego własne i w jego sprawach) — kartoteka.
-    var clientOverdueTaskCounts: [ClientID: Int]
-    /// Najbliższy przyszły, niezakończony termin sprawy.
-    var nextCaseEvents: [CaseID: ScheduledEvent]
-    /// Najbliższy niezakończony termin leada (referencja: pierwszy z posortowanych).
-    var nextLeadEvents: [ClientID: ScheduledEvent]
-    /// Najbliższy **przyszły** termin osoby — kartoteka i kafelek konsultacji.
-    var nextClientEvents: [ClientID: ScheduledEvent]
-    var clientsByID: [ClientID: Client]
-    /// Sprawy każdego klienta — kartoteka pokazuje, co u niego prowadzimy.
-    var casesByClient: [ClientID: [LegalCase]]
-}
+// `ClientsModel` i reguły liczenia mieszkają w rdzeniu (`ClientsOverview.swift`).
 
 @MainActor
 final class ClientsStore: ObservableObject {
@@ -52,49 +33,12 @@ final class ClientsStore: ObservableObject {
             let openTasks = try await openTasksTask
             let events = try await eventsTask
 
-            let caseOwners = Dictionary(cases.map { ($0.id, $0.clientID) }, uniquingKeysWith: { first, _ in first })
-            var openTaskCounts: [CaseID: Int] = [:]
-            var overdueTaskCounts: [CaseID: Int] = [:]
-            var clientOverdueTaskCounts: [ClientID: Int] = [:]
-            for task in openTasks {
-                let isOverdue = task.dueDate.map { $0 < today } ?? false
-                if let caseID = task.caseID {
-                    openTaskCounts[caseID, default: 0] += 1
-                    if isOverdue { overdueTaskCounts[caseID, default: 0] += 1 }
-                }
-                if isOverdue, let owner = task.clientID ?? task.caseID.flatMap({ caseOwners[$0] }) {
-                    clientOverdueTaskCounts[owner, default: 0] += 1
-                }
-            }
-
-            let activeEvents = events.filter { $0.status != .finished }
-
-            var nextCaseEvents: [CaseID: ScheduledEvent] = [:]
-            for legalCase in cases {
-                nextCaseEvents[legalCase.id] = earliest(
-                    activeEvents.filter { $0.caseID == legalCase.id && $0.day >= today }
-                )
-            }
-
-            var nextLeadEvents: [ClientID: ScheduledEvent] = [:]
-            var nextClientEvents: [ClientID: ScheduledEvent] = [:]
-            for client in clients {
-                let own = activeEvents.filter { $0.clientID == client.id }
-                nextLeadEvents[client.id] = earliest(own)
-                nextClientEvents[client.id] = earliest(own.filter { $0.day >= today })
-            }
-
-            let model = ClientsModel(
+            let model = ClientsModel.make(
                 clients: clients,
                 cases: cases,
-                openTaskCounts: openTaskCounts,
-                overdueTaskCounts: overdueTaskCounts,
-                clientOverdueTaskCounts: clientOverdueTaskCounts,
-                nextCaseEvents: nextCaseEvents,
-                nextLeadEvents: nextLeadEvents,
-                nextClientEvents: nextClientEvents,
-                clientsByID: Dictionary(clients.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }),
-                casesByClient: Dictionary(grouping: cases, by: \.clientID)
+                openTasks: openTasks,
+                events: events,
+                today: today
             )
             // Odświeżenie po zapisie jest animowane: obsłużony lead wysuwa się
             // z listy, zamiast zniknąć skokiem. Pierwsze wczytanie — bez animacji.
@@ -109,16 +53,6 @@ final class ClientsStore: ObservableObject {
             if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać bazy kancelarii.") {
                 dependencies.showToast(message)
             }
-        }
-    }
-
-    /// Najwcześniejszy termin: data, potem godzina, na końcu identyfikator
-    /// (deterministyczne rozstrzygnięcie remisu, jak w repozytorium).
-    private func earliest(_ events: [ScheduledEvent]) -> ScheduledEvent? {
-        events.min { lhs, rhs in
-            if lhs.day != rhs.day { return lhs.day < rhs.day }
-            if lhs.time != rhs.time { return lhs.time < rhs.time }
-            return lhs.id.rawValue < rhs.id.rawValue
         }
     }
 }

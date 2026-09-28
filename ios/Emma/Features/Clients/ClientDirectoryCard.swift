@@ -17,7 +17,11 @@ struct ClientDirectoryCard: View {
     let client: Client
     let cases: [LegalCase]
     let nextEvent: ScheduledEvent?
+    /// Niezakończony termin w sprawie klienta, który już minął.
+    var missedEvent: ScheduledEvent? = nil
     let overdueTaskCount: Int
+    /// Aktywna sprawa, w której od miesiąca nic się nie dzieje.
+    var isStale = false
     let onOpen: () -> Void
 
     var body: some View {
@@ -63,7 +67,7 @@ struct ClientDirectoryCard: View {
         .accessibilityIdentifier("client-card")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
-        .accessibilityHint("Otwiera kartę klienta. Przytrzymaj, aby zobaczyć więcej czynności.")
+        .accessibilityHint("Otwiera kartę klienta. Przesuń, aby zadzwonić albo umówić termin.")
         .accessibilityAddTraits(.isButton)
     }
 
@@ -89,12 +93,20 @@ struct ClientDirectoryCard: View {
     }
 
     private var hasMeta: Bool {
-        nextEvent != nil || overdueTaskCount > 0
+        missedEvent != nil || nextEvent != nil || overdueTaskCount > 0 || isStale
     }
 
     private var metaLine: some View {
         HStack(spacing: 10) {
-            if let nextEvent {
+            if let missedEvent {
+                Label {
+                    Text("Minął: \(dependencies.dateText.dayLabel(missedEvent.day))")
+                        .font(EmmaTypography.caption(.semibold))
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11, weight: .semibold))
+                }
+                .foregroundStyle(EmmaTheme.pillDangerText)
+            } else if let nextEvent {
                 let isSoon = nextEvent.day <= dependencies.today.adding(days: 1)
                 Label {
                     Text(eventText(nextEvent))
@@ -112,6 +124,15 @@ struct ClientDirectoryCard: View {
                     Image(systemName: "exclamationmark.circle").font(.system(size: 11, weight: .semibold))
                 }
                 .foregroundStyle(EmmaTheme.pillDangerText)
+            }
+            if isStale {
+                Label {
+                    Text("Bez ruchu od miesiąca")
+                        .font(EmmaTypography.caption(.medium))
+                } icon: {
+                    Image(systemName: "moon.zzz").font(.system(size: 11, weight: .semibold))
+                }
+                .foregroundStyle(EmmaTheme.pillAmberText)
             }
         }
         .lineLimit(1)
@@ -153,11 +174,16 @@ struct ClientDirectoryCard: View {
 
     private var accessibilityText: String {
         var parts = [client.displayName, client.language.displayName, casesText]
-        if let nextEvent {
+        if let missedEvent {
+            parts.append("minął termin \(missedEvent.title), \(dependencies.dateText.dayLabel(missedEvent.day))")
+        } else if let nextEvent {
             parts.append("najbliższy termin \(eventText(nextEvent))")
         }
         if overdueTaskCount > 0 {
             parts.append(EmmaPlural.overdueTasks(overdueTaskCount))
+        }
+        if isStale {
+            parts.append("bez ruchu od miesiąca")
         }
         return parts.joined(separator: ", ")
     }

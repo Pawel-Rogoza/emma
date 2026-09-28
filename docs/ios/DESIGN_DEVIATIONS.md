@@ -676,6 +676,29 @@ legalizacja–karna–deportacja) i daty zmiany statusu („czekamy od 9 dni”)
 
 ---
 
+### D-35 · „Klienci”: terminy po czasie, przesunięcia, „bez ruchu” — **28.09.2026**
+
+**Treść:**
+- Niezakończony **termin w sprawie** z ostatnich 30 dni to najwyższy poziom pilności
+  (`CaseUrgency.Level.missed`): czerwona plakietka „minął wczoraj / minął 3 dni temu”,
+  pierwszy w „Wymaga uwagi”. Wcześniej sprawa po terminie lądowała w „W toku”.
+- Termin sprawy bez wpisanego klienta (np. rozprawa z kalendarza sądu) liczy się dla
+  właściciela sprawy — kartoteka pokazuje go i oznacza klienta jako „Wymaga uwagi”.
+- Kartoteka: przesunięcie w prawo — „Zadzwoń” / „WhatsApp”, w lewo — „Termin”.
+  Na kartach spraw w lewo — „Termin” w tej sprawie.
+- Chip „Bez ruchu” (aktywna sprawa starsza niż 30 dni, zero terminów od miesiąca
+  i przed nami) — widoczny tylko, gdy ktoś taki jest.
+- Wyszukiwanie po numerze telefonu (same cyfry, z +48 lub bez); w trybie Klienci
+  wyniki obejmują też zgłoszenia.
+- Kafelek „czeka ponad dobę” przewija do tej grupy zamiast dublować „do obsługi”.
+- Zamknięte sprawy od najnowszych.
+- Liczenie (pilność, filtry, liczniki) raz przy wczytaniu: `ClientsModel.make`.
+
+**Cofnięcie:** `missedEvents: [:]` w `CaseBoard.make`, usunięcie `.stale`
+z `ClientDirectoryFilter` i `swipeActions` z wierszy kartoteki.
+
+---
+
 ## Czego ten rejestr nie zawiera
 
 Nie zawiera porównania zrzutów ekranu z referencją **piksel po pikselu**. Zrzuty są
