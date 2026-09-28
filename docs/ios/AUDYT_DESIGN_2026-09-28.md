@@ -68,8 +68,8 @@ wyłączone do 1.10). Zmiany wymagają przejścia w Xcode przed TestFlight.
 
 **P1 — duża wartość, mały koszt**
 
-1. **Przesunięcie „Załatwione” na wierszach terminów** (Dzisiaj, Kalendarz) —
-   ten sam zapis co w szczegółach, bez otwierania arkusza.
+1. ~~„Załatwione” na wierszach terminów~~ — **zrobione w 0.5.2** (menu wiersza
+   na „Dzisiaj” i przytrzymanie na karcie „Po terminie”); Kalendarz jeszcze nie.
 2. **Zamknięcie sprawy z listy** (przesunięcie na karcie sprawy „Zamknij”
    z potwierdzeniem) — dziś tylko przez ⋯ na ekranie sprawy.
 3. **Szybkie akcje ikony aplikacji** (Home Screen Quick Actions): „Nowy
@@ -115,7 +115,16 @@ wyłączone do 1.10). Zmiany wymagają przejścia w Xcode przed TestFlight.
   mrugnięcie i zawsze odpowiadać na czynność użytkownika.
 - **Potwierdzeń tam, gdzie da się cofnąć.** Pytamy tylko przy usuwaniu.
 
-## 5. Do sprawdzenia w Xcode przed wydaniem
+## 5. Wydania po audycie (TestFlight, 28.09.2026)
+
+| Wersja | Co | CI |
+|---|---|---|
+| 0.5.0 | ruch, „Po terminie”, „Załatwione”, ekran sprawy, karta klienta | zielone (pierwsza kompilacja SwiftUI w CI) |
+| 0.5.1 | formularz zadania w stylu terminu, demo z przegapionym terminem, 4 nowe zrzuty | zielone |
+| 0.5.2 | animacja samej pigułki (listy się nie przenikają), „Załatwione” w menu | zielone |
+| 0.5.3 | „Po terminie”: czas pod tytułem; stopka sprawy | zielone, 18/18 zrzutów |
+
+## 6. Do sprawdzenia na telefonie
 
 - Kompilacja (zmiany pisane bez kompilatora) i `swift test` dla
   `ClientsOverviewTests`.
