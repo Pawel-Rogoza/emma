@@ -699,6 +699,22 @@ z `ClientDirectoryFilter` i `swipeActions` z wierszy kartoteki.
 
 ---
 
+### D-36 · Ruch, szkielet ładowania, „Po terminie” — **audyt 28.09.2026**
+
+**Treść:** przesuwana pigułka w segmentach i chipach, odbicie ikony wybranej
+zakładki i przenikanie zakładek, optymistyczne odhaczenie zadania, szkielet kart
+zamiast `ProgressView`, ikona ✓ / ! w komunikatach, karta „Po terminie” na
+„Dzisiaj”, „Załatwione” w szczegółach terminu, pilność i kontakt na ekranie
+sprawy, wszystkie sprawy na karcie klienta. Szczegóły:
+`docs/ios/AUDYT_DESIGN_2026-09-28.md`.
+
+**Powód:** aplikacja reagowała skokiem i nie pokazywała przegapionych terminów.
+
+**Cofnięcie:** `EmmaMotion` → `nil`-owe animacje; `LoadingState` do wersji
+z `ProgressView`; usunięcie `missedDeadlinesCard` i `markFinished`.
+
+---
+
 ## Czego ten rejestr nie zawiera
 
 Nie zawiera porównania zrzutów ekranu z referencją **piksel po pikselu**. Zrzuty są

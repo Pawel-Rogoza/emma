@@ -16,7 +16,11 @@ public struct RootShell: View {
         VStack(spacing: 0) {
             ZStack {
                 EmmaTheme.bg
+                // Zakładki przenikają się zamiast przeskakiwać (animację
+                // uruchamia pasek zakładek; `go(to:)` z kodu zostaje natychmiastowe).
                 content
+                    .id(dependencies.tab)
+                    .transition(.opacity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -117,11 +121,16 @@ struct ToastLayer: View {
                 )
                 .padding(.horizontal, EmmaSpacing.screenH)
                 .padding(.bottom, bottomPadding)
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                .transition(
+                    .asymmetric(
+                        insertion: .move(edge: .bottom).combined(with: .scale(scale: 0.92)).combined(with: .opacity),
+                        removal: .opacity
+                    )
+                )
                 .allowsHitTesting(dependencies.toastAction != nil)
             }
         }
-        .animation(.easeOut(duration: 0.22), value: dependencies.toast)
+        .animation(EmmaMotion.bouncy, value: dependencies.toast)
     }
 }
 

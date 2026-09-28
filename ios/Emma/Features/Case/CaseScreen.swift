@@ -33,6 +33,26 @@ final class CaseStore: ObservableObject {
                 .filter { $0.day >= today && $0.status != .finished }
                 .sorted { $0.day == $1.day ? $0.time < $1.time : $0.day < $1.day }
         }
+
+        /// Najświeższy niezakończony termin **tej sprawy**, który już minął.
+        var missedEvent: ScheduledEvent? {
+            let from = today.adding(days: -CaseUrgency.missedLookbackDays)
+            return events
+                .filter {
+                    $0.caseID == legalCase.id && $0.kind == .caseDeadline && $0.status != .finished
+                        && $0.day < today && $0.day >= from
+                }
+                .max { $0.day == $1.day ? $0.time < $1.time : $0.day < $1.day }
+        }
+
+        var urgency: CaseUrgency {
+            CaseUrgency(
+                nextEvent: upcomingEvents.first(where: { $0.caseID == legalCase.id })?.day,
+                missedEvent: legalCase.status.isActive ? missedEvent?.day : nil,
+                overdueTasks: openTasks.filter { $0.dueDate.map { $0 < today } ?? false }.count,
+                today: today
+            )
+        }
     }
 
     @Published private(set) var phase: LoadPhase<Model> = .idle
@@ -62,10 +82,19 @@ final class CaseStore: ObservableObject {
                 in: DateIntervalFilter(from: today.adding(days: -30), through: today.adding(days: 365 * 2)),
                 clientID: legalCase.clientID
             )
+            // Audyt 28.09.2026: termin sprawy bez wpisanego klienta (rozprawa
+            // z kalendarza sądu) nie przychodził z zapytania po kliencie, więc
+            // znikał z ekranu sprawy. Drugie, krótsze okno bez filtra klienta.
+            async let caseEventsTask = repository.events(
+                in: DateIntervalFilter(from: today.adding(days: -30), through: today.adding(days: 120))
+            )
             async let notesTask = repository.notes(clientID: legalCase.clientID, caseID: caseID)
             async let activityTask = repository.activity(caseID: caseID)
             let tasks = try await tasksTask
-            let events = try await eventsTask
+            let clientEvents = try await eventsTask
+            let caseEvents = ((try? await caseEventsTask) ?? []).filter { $0.caseID == caseID }
+            var seen = Set<EventID>()
+            let events = (clientEvents + caseEvents).filter { seen.insert($0.id).inserted }
             let notes = try await notesTask
             let activity = try await activityTask
 
@@ -94,6 +123,7 @@ struct CaseScreen: View {
 
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.emmaLayout) private var layout: EmmaLayoutMetrics
+    @Environment(\.openURL) private var openURL
     @StateObject private var store = CaseStore()
 
     var body: some View {
@@ -159,40 +189,82 @@ struct CaseScreen: View {
     @ViewBuilder
     private func caseTitle(_ model: CaseStore.Model) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            StatusPill(model.legalCase.status.rawValue, kind: model.legalCase.status == .inProgress ? .green : .neutral)
+            HStack(spacing: 6) {
+                StatusPill(model.legalCase.status.rawValue, kind: model.legalCase.status == .inProgress ? .green : .neutral)
+                // Pilność na samej górze: „minął 2 dni temu” / „jutro” — to
+                // pierwsze, co adwokat chce wiedzieć po otwarciu sprawy.
+                if model.legalCase.status.isActive, let countdown = model.urgency.countdownText {
+                    StatusPill("Termin \(countdown)", kind: model.urgency.isCritical ? .danger : .amber)
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
             Text(model.legalCase.title)
                 .font(EmmaTypography.caseTitle)
                 .tracking(-0.8)
                 .foregroundStyle(EmmaTheme.ink)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Button {
-                dependencies.openPerson(model.client.id)
-            } label: {
-                HStack(spacing: 11) {
-                    PersonAvatar(initials: model.client.initials, style: .identity(model.client.id))
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(model.client.displayName)
-                            .font(EmmaTypography.personName)
-                            .foregroundStyle(EmmaTheme.ink)
+            HStack(spacing: 8) {
+                Button {
+                    dependencies.openPerson(model.client.id)
+                } label: {
+                    HStack(spacing: 11) {
+                        PersonAvatar(initials: model.client.initials, style: .identity(model.client.id))
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(model.client.displayName)
+                                .font(EmmaTypography.personName)
+                                .foregroundStyle(EmmaTheme.ink)
+                                .lineLimit(1)
+                            LanguageBadge(language: model.client.language)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(EmmaTheme.mutedSoft)
                     }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(EmmaTheme.mutedSoft)
+                    .contentShape(Rectangle())
                 }
-                .padding(EdgeInsets(top: 13, leading: 14, bottom: 13, trailing: 14))
-                .background(EmmaTheme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 15, style: .continuous)
-                        .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
+                .buttonStyle(EmmaCardButtonStyle())
+                .accessibilityLabel(model.client.displayName)
+                .accessibilityHint("Otwiera kartę klienta")
+
+                // Telefon do klienta bez wchodzenia w jego kartę — najczęstsza
+                // czynność przy otwartej sprawie (audyt 28.09.2026).
+                if let phone = model.client.phone {
+                    if let url = ContactLinks.phoneURL(phone) {
+                        contactButton("phone.fill", label: "Zadzwoń do klienta", url: url)
+                    }
+                    if let url = ContactLinks.whatsAppURL(phone) {
+                        contactButton("message.fill", label: "Napisz na WhatsApp", url: url)
+                    }
                 }
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(model.client.displayName)
+            .padding(EdgeInsets(top: 11, leading: 14, bottom: 11, trailing: 10))
+            .background(EmmaTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
+            }
+            .emmaCardShadow()
         }
+    }
+
+    private func contactButton(_ systemImage: String, label: String, url: URL) -> some View {
+        Button {
+            EmmaHaptics.tap()
+            openURL(url)
+        } label: {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(EmmaTheme.accent)
+                .frame(width: 40, height: 40)
+                .background(EmmaTheme.accentSoft, in: Circle())
+                .frame(width: EmmaSpacing.hitTarget, height: EmmaSpacing.hitTarget)
+                .contentShape(Circle())
+        }
+        .buttonStyle(EmmaCardButtonStyle())
+        .accessibilityLabel(label)
     }
 
     @ViewBuilder

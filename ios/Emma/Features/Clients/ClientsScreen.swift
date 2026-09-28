@@ -874,6 +874,7 @@ struct ListFilterChips<Item: Hashable>: View {
     /// Filtr, który wymaga uwagi (np. „Oczekujące” z niezerową liczbą) —
     /// licznik jest wtedy bursztynowy także bez zaznaczenia.
     private let attention: ((Item) -> Bool)?
+    @Namespace private var selectionSpace
 
     init(
         items: [Item],
@@ -901,10 +902,9 @@ struct ListFilterChips<Item: Hashable>: View {
         let isSelected = item == selection
         let needsAttention = attention?(item) ?? false
         return Button {
-            if selection != item {
-                EmmaHaptics.selection()
-            }
-            selection = item
+            guard selection != item else { return }
+            EmmaHaptics.selection()
+            withAnimation(EmmaMotion.snappy) { selection = item }
         } label: {
             HStack(spacing: 5) {
                 Text(title(item))
@@ -914,17 +914,21 @@ struct ListFilterChips<Item: Hashable>: View {
                     Text("\(count(item))")
                         .font(EmmaTypography.caption(.semibold))
                         .foregroundStyle(needsAttention ? EmmaTheme.pillAmberText : EmmaTheme.mutedSoft)
+                        .contentTransition(.numericText())
                 }
             }
             .lineLimit(1)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
             .frame(minHeight: 36)
-            .background(isSelected ? EmmaTheme.surface : Color.clear)
-            .clipShape(Capsule())
-            .overlay {
-                Capsule()
-                    .strokeBorder(isSelected ? EmmaTheme.border : Color.clear, lineWidth: 1)
+            // Zaznaczenie przesuwa się między chipami (jak w segmentach).
+            .background {
+                if isSelected {
+                    Capsule()
+                        .fill(EmmaTheme.surface)
+                        .overlay { Capsule().strokeBorder(EmmaTheme.border, lineWidth: 1) }
+                        .matchedGeometryEffect(id: "chip-selection", in: selectionSpace)
+                }
             }
             .contentShape(Rectangle())
         }

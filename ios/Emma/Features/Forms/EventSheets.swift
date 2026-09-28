@@ -654,10 +654,24 @@ struct EventDetailSheet: View {
 
         if let error { InlineError(error) }
 
-        PrimaryButton("Edytuj termin", systemImage: "pencil") {
-            dependencies.present(.eventForm(editing: event.id, clientID: event.clientID, caseID: event.caseID, initialDay: nil))
+        // Audyt 28.09.2026: termin, który już minął (albo trwa dziś), dało się
+        // tylko edytować albo usunąć — a „załatwione” to jedno dotknięcie.
+        // Bez tego przegapiony termin wisiał na czerwono na „Dzisiaj”.
+        if event.status != .finished && event.day <= dependencies.today {
+            PrimaryButton("Załatwione", systemImage: "checkmark.circle") {
+                Task { await markFinished(event) }
+            }
+            .padding(.bottom, 10)
+            SecondaryButton("Edytuj termin", systemImage: "pencil") {
+                dependencies.present(.eventForm(editing: event.id, clientID: event.clientID, caseID: event.caseID, initialDay: nil))
+            }
+            .padding(.bottom, 10)
+        } else {
+            PrimaryButton("Edytuj termin", systemImage: "pencil") {
+                dependencies.present(.eventForm(editing: event.id, clientID: event.clientID, caseID: event.caseID, initialDay: nil))
+            }
+            .padding(.bottom, 10)
         }
-        .padding(.bottom, 10)
 
         if let clientID = event.clientID {
             HStack(spacing: 10) {
@@ -729,5 +743,21 @@ struct EventDetailSheet: View {
         dependencies.reminders.removeReminder(for: event.id)
         dependencies.dismissSheet()
         dependencies.showToast("Usunięto termin: \(event.title)")
+    }
+
+    private func markFinished(_ event: ScheduledEvent) async {
+        var finished = event
+        finished.status = .finished
+        let outcome = await dependencies.submit(fallback: "Nie udało się zamknąć terminu.") {
+            try await dependencies.repository.updateEvent(finished, expectedVersion: event.version)
+        }
+        if let message = outcome.errorMessage {
+            error = message
+            return
+        }
+        EmmaHaptics.success()
+        dependencies.reminders.removeReminder(for: event.id)
+        dependencies.dismissSheet()
+        dependencies.showToast("Załatwione: \(event.title)")
     }
 }

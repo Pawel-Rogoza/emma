@@ -199,12 +199,8 @@ struct TasksScreen: View {
             .accessibilityAddTraits(.isHeader)
     }
 
+    /// Wibrację i natychmiastową zmianę kółka robi `TaskRow`.
     private func toggle(_ task: TaskItem) async {
-        if task.isDone {
-            EmmaHaptics.tap()
-        } else {
-            EmmaHaptics.success()
-        }
         await dependencies.perform {
             _ = try await dependencies.repository.setDone(
                 taskID: task.id,

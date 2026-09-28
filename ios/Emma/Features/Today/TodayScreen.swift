@@ -42,6 +42,10 @@ final class TodayStore: ObservableObject {
         var caseNumbers: [CaseID: String]
         /// Wszystkie kontakty — z nich liczona jest kolejka leadów do obsługi.
         var clients: [Client]
+        /// Niezakończone terminy w sprawach z ostatnich 30 dni, które już minęły —
+        /// najdawniejsze najpierw. Audyt 28.09.2026: przegapiony termin procesowy
+        /// to dla adwokata najgorsza wiadomość dnia, a ekran go nie pokazywał.
+        var missedDeadlines: [ScheduledEvent] = []
     }
 
     @Published private(set) var phase: LoadPhase<Model> = .idle
@@ -63,11 +67,22 @@ final class TodayStore: ObservableObject {
             async let tasksTask = repository.tasks(
                 filter: TaskFilter(scope: .open, dueOnOrBefore: today)
             )
+            async let pastTask = repository.events(
+                in: DateIntervalFilter(
+                    from: today.adding(days: -CaseUrgency.missedLookbackDays),
+                    through: today.adding(days: -1)
+                )
+            )
 
             let clients = try await clientsTask
             let cases = try await casesTask
             let events = try await eventsTask
             let tasks = try await tasksTask
+            // Brak przeszłych terminów nie może zablokować całego dnia.
+            let past = (try? await pastTask) ?? []
+            let missed = past
+                .filter { $0.kind == .caseDeadline && $0.status != .finished && $0.day < today }
+                .sorted { $0.day != $1.day ? $0.day < $1.day : $0.time < $1.time }
 
             let active = events.filter { $0.status != .finished || $0.day == today }
             let model = Model(
@@ -87,7 +102,8 @@ final class TodayStore: ObservableObject {
                         cases.map { ($0.id, $0.number) },
                         uniquingKeysWith: { first, _ in first }
                     ),
-                    clients: clients
+                    clients: clients,
+                    missedDeadlines: missed
                 )
             // Odświeżenie po zapisie (np. obsłużony lead) jest animowane.
             if phase.hasLoaded {
@@ -176,6 +192,12 @@ struct TodayScreen: View {
 
         pulse(model, inbox: inbox)
             .padding(.top, 6)
+
+        if !model.missedDeadlines.isEmpty {
+            missedDeadlinesCard(model)
+                .padding(.top, 12)
+                .transition(.move(edge: .top).combined(with: .opacity))
+        }
 
         leadsSection(inbox)
 
@@ -296,6 +318,111 @@ struct TodayScreen: View {
         }
         .accessibilityLabel("Porozmawiaj z Emmą")
         .accessibilityHint("Zaczyna rozmowę głosową. Przytrzymaj, aby napisać do Emmy.")
+    }
+
+    // MARK: Po terminie
+
+    /// Czerwona karta nad wszystkim innym: terminy w sprawach, które minęły,
+    /// a nikt ich nie zamknął. Dotknięcie otwiera termin (tam „Zakończ”
+    /// albo przesunięcie), przytrzymanie — sprawę.
+    private func missedDeadlinesCard(_ model: TodayStore.Model) -> some View {
+        let shown = Array(model.missedDeadlines.prefix(3))
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .symbolEffect(.pulse, options: .repeating.speed(0.5))
+                Text("Po terminie · \(model.missedDeadlines.count)")
+                    .font(EmmaTypography.ui(15, .semibold))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(EmmaTheme.pillDangerText)
+            .padding(.horizontal, 15)
+            .padding(.top, 13)
+            .padding(.bottom, 4)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
+
+            ForEach(Array(shown.enumerated()), id: \.element.id) { index, event in
+                Button {
+                    dependencies.present(.eventDetail(event.id))
+                } label: {
+                    missedRow(event, model: model)
+                }
+                .buttonStyle(EmmaCardButtonStyle())
+                .contextMenu {
+                    if let caseID = event.caseID {
+                        Button {
+                            dependencies.openCase(caseID)
+                        } label: {
+                            Label("Otwórz sprawę", systemImage: "folder")
+                        }
+                    }
+                    if let clientID = event.clientID {
+                        Button {
+                            dependencies.openPerson(clientID)
+                        } label: {
+                            Label("Karta klienta", systemImage: "person")
+                        }
+                    }
+                }
+                if index < shown.count - 1 {
+                    Divider().overlay(EmmaTheme.pillDangerText.opacity(0.15)).padding(.horizontal, 15)
+                }
+            }
+            if model.missedDeadlines.count > shown.count {
+                Button {
+                    dependencies.clientMode = .cases
+                    dependencies.go(to: .clients, resetStack: true)
+                } label: {
+                    Text("Wszystkie sprawy po terminie")
+                        .font(EmmaTypography.caption(.semibold))
+                        .foregroundStyle(EmmaTheme.pillDangerText)
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.bottom, 6)
+        .background(EmmaTheme.pillDangerBackground)
+        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
+                .strokeBorder(EmmaTheme.pillDangerText.opacity(0.25), lineWidth: 1)
+        }
+        .accessibilityIdentifier("today-missed-deadlines")
+    }
+
+    private func missedRow(_ event: ScheduledEvent, model: TodayStore.Model) -> some View {
+        let urgency = CaseUrgency(nextEvent: nil, missedEvent: event.day, overdueTasks: 0, today: model.today)
+        let meta = [
+            event.caseID.flatMap { model.caseNumbers[$0] },
+            event.clientID.flatMap { model.clientNames[$0] }
+        ].compactMap { $0 }.joined(separator: " · ")
+        return HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(event.title)
+                    .font(EmmaTypography.ui(14, .semibold))
+                    .foregroundStyle(EmmaTheme.ink)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                if !meta.isEmpty {
+                    Text(meta)
+                        .font(EmmaTypography.caption())
+                        .foregroundStyle(EmmaTheme.muted)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if let countdown = urgency.countdownText {
+                StatusPill(countdown, kind: .danger)
+            }
+        }
+        .padding(.horizontal, 15)
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Otwiera termin. Przytrzymaj, aby przejść do sprawy.")
     }
 
     // MARK: Leady do obsługi
@@ -614,12 +741,8 @@ struct TodayScreen: View {
             .accessibilityAddTraits(.isHeader)
     }
 
+    /// Wibrację i natychmiastową zmianę kółka robi `TaskRow`.
     private func toggle(_ task: TaskItem) async {
-        if task.isDone {
-            EmmaHaptics.tap()
-        } else {
-            EmmaHaptics.success()
-        }
         await dependencies.perform {
             _ = try await dependencies.repository.setDone(
                 taskID: task.id,

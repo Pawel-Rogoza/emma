@@ -14,6 +14,9 @@ public struct EmmaTabBar: View {
     private let unreadCount: Int
     /// Zgłoszenia do obsługi — plakietka na zakładce „Klienci”.
     private let leadCount: Int
+    /// Licznik „odbić” ikony — tylko nowo wybrana zakładka podskakuje
+    /// (efekt na samym `isSelected` ruszałby też ikonę, którą opuszczamy).
+    @State private var bounces: [AppTab: Int] = [:]
 
     public init(selection: Binding<AppTab>, unreadCount: Int, leadCount: Int = 0) {
         self._selection = selection
@@ -46,7 +49,8 @@ public struct EmmaTabBar: View {
                 dependencies.go(to: tab, resetStack: true)
             } else {
                 EmmaHaptics.selection()
-                selection = tab
+                bounces[tab, default: 0] += 1
+                withAnimation(EmmaMotion.smooth) { selection = tab }
             }
         } label: {
             VStack(spacing: 3) {
@@ -57,11 +61,15 @@ public struct EmmaTabBar: View {
                         .frame(width: EmmaMetrics.tabEmmaChipWidth, height: EmmaMetrics.tabEmmaChipHeight)
                         .background(isSelected ? EmmaTheme.tabEmmaChip : EmmaTheme.controlBackground)
                         .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                        .symbolEffect(.bounce, value: bounces[tab, default: 0])
                 } else {
                     ZStack(alignment: .topTrailing) {
                         Image(systemName: tab.systemImage)
                             .font(.system(size: 19, weight: isSelected ? .semibold : .regular))
                             .foregroundStyle(isSelected ? EmmaTheme.tabActive : EmmaTheme.tabInactive)
+                            // Wybrana ikona „odbija” — drobny, ale czytelny znak,
+                            // że przejście zaszło (audyt 28.09.2026).
+                            .symbolEffect(.bounce, value: bounces[tab, default: 0])
                             .frame(height: EmmaMetrics.tabEmmaChipHeight)
                         if tab == .messages && unreadCount > 0 {
                             UnreadBadge(count: unreadCount, compact: true)
