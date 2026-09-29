@@ -379,8 +379,9 @@ struct ClientsScreen: View {
                     .id(section.id)
                     .emmaListRow(top: 12, bottom: 2, horizontal: layout.horizontalPadding)
                 }
-                ForEach(section.clients) { client in
+                ForEach(Array(section.clients.enumerated()), id: \.element.id) { offset, client in
                     leadRow(client, model: model)
+                        .emmaAppear(offset)
                 }
             }
             bottomSpacer
@@ -504,8 +505,9 @@ struct ClientsScreen: View {
             ForEach(ClientDirectory.sections(rows)) { section in
                 GroupHeader(title: section.letter, count: section.clients.count, tone: nil, emphasized: false)
                     .emmaListRow(top: 12, bottom: 2, horizontal: layout.horizontalPadding)
-                ForEach(section.clients) { client in
+                ForEach(Array(section.clients.enumerated()), id: \.element.id) { offset, client in
                     directoryRow(client, model: model)
+                        .emmaAppear(offset)
                 }
             }
             // Szukana osoba bywa jeszcze zgłoszeniem — nie każ przełączać trybu.
@@ -614,8 +616,9 @@ struct ClientsScreen: View {
                         )
                         .id(Self.groupID(group))
                         .emmaListRow(top: 12, bottom: 2, horizontal: layout.horizontalPadding)
-                        ForEach(cases) { legalCase in
+                        ForEach(Array(cases.enumerated()), id: \.element.id) { offset, legalCase in
                             caseRow(legalCase, model: model)
+                                .emmaAppear(offset)
                         }
                     }
                 }
@@ -628,8 +631,9 @@ struct ClientsScreen: View {
             if closed.isEmpty {
                 casesEmptyState
             } else {
-                ForEach(closed) { legalCase in
+                ForEach(Array(closed.enumerated()), id: \.element.id) { offset, legalCase in
                     caseRow(legalCase, model: model)
+                        .emmaAppear(offset)
                 }
                 bottomSpacer
             }

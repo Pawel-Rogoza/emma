@@ -169,9 +169,17 @@ struct CaseScreen: View {
 
         caseTitle(model)
             .padding(.bottom, 12)
+            .emmaAppear(0)
+
+        // Puls sprawy (audyt 29.09.2026) — jak kafelki na „Dzisiaj”:
+        // dotknięcie przełącza na właściwą zakładkę.
+        casePulse(model)
+            .padding(.bottom, 12)
+            .emmaAppear(1)
 
         emmaCard(model)
             .padding(.bottom, 14)
+            .emmaAppear(2)
 
         SegmentedFilter(items: CaseStore.Tab.allCases, selection: $store.tab) { $0.rawValue }
             .padding(.bottom, 14)
@@ -182,6 +190,40 @@ struct CaseScreen: View {
         case .notes: notesTab(model)
         case .history: historyTab(model)
         }
+    }
+
+    // MARK: Puls sprawy
+
+    private func casePulse(_ model: CaseStore.Model) -> some View {
+        let open = model.openTasks.count
+        let overdue = model.urgency.overdueTasks
+        let upcoming = model.upcomingEvents.filter { $0.caseID == model.legalCase.id || $0.caseID == nil }.count
+        return HStack(spacing: 8) {
+            PulseTile(
+                value: upcoming,
+                label: EmmaPlural.form(upcoming, "termin przed nami", "terminy przed nami", "terminów przed nami"),
+                systemImage: "calendar",
+                tone: model.urgency.isCritical ? EmmaTheme.pillDangerText : EmmaTheme.accent
+            ) { selectTab(.overview) }
+            PulseTile(
+                value: open,
+                label: overdue > 0 ? "zadania · \(overdue) po terminie" : EmmaPlural.form(open, "otwarte zadanie", "otwarte zadania", "otwartych zadań"),
+                systemImage: "checklist",
+                tone: overdue > 0 ? EmmaTheme.pillUrgentText : EmmaTheme.accent
+            ) { selectTab(.tasks) }
+            PulseTile(
+                value: model.notes.count,
+                label: EmmaPlural.form(model.notes.count, "notatka", "notatki", "notatek"),
+                systemImage: "note.text",
+                tone: EmmaTheme.accent
+            ) { selectTab(.notes) }
+        }
+    }
+
+    private func selectTab(_ tab: CaseStore.Tab) {
+        guard store.tab != tab else { return }
+        EmmaHaptics.selection()
+        store.tab = tab
     }
 
     // MARK: Sekcje
@@ -270,6 +312,7 @@ struct CaseScreen: View {
     @ViewBuilder
     private func emmaCard(_ model: CaseStore.Model) -> some View {
         Button {
+            EmmaHaptics.tap()
             dependencies.openEmma(clientID: model.client.id, action: .prepareCase)
         } label: {
             // Wartości z reguły `.case-emma` referencji: gradient 110°, orb 32 pt,
@@ -305,7 +348,7 @@ struct CaseScreen: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(EmmaCardButtonStyle())
         .accessibilityLabel("Przygotuj mnie do tej sprawy z Emmą")
     }
 

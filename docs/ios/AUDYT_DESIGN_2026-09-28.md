@@ -131,6 +131,7 @@ wyłączone do 1.10). Zmiany wymagają przejścia w Xcode przed TestFlight.
 | 0.6.1 | gotowe odpowiedzi w języku klienta (PL/UA/RU) w wątku, „za 45 min” przy najbliższym terminie, płynne wejście blokady, liczby w kafelkach | zielone |
 | 0.6.2 | poranny skrót o 8:00 (terminy dnia + po terminie), karta zgody na powiadomienia, kolory kropek w kalendarzu (konsultacja / termin w sprawie / po terminie) | w toku |
 | 0.7.0 | Emma, Rozmowy i Kalendarz w języku „Dzisiaj” i „Klientów”: duże tytuły, kafelki, chipy z licznikami, grupy „czyj ruch” w rozmowach (nowe / do odpowiedzi / odpisane) z przesunięciami, oś dnia z „Teraz” w kalendarzu, kafelki poleceń i „Czekają na odpowiedź” u Emmy, kaskadowe wejście kart | do sprawdzenia w CI |
+| 0.8.0 | Audyt poprawek z 0.7.0 (szkic w wątku, poufność po wylogowaniu, ciche błędy, edycja klienta terminu, wątek odpowiedzi Emmy) oraz poziom wyżej na każdym ekranie: kaskada sekcji na „Dzisiaj”, w kartotece, karcie klienta i sprawie; zdanie o dniu; aureola i najbliższy termin w karcie klienta; puls sprawy; żywe szybkie akcje; wątek przewija się po wysłaniu, dymki wjeżdżają; przyciski ze stanem ładowania i reakcją na dotyk; potrząśnięcie przy błędzie logowania; blokada podwójnego zapisu zadania; pigułka i animowane liczniki w pasku zakładek; nowe stany puste | do sprawdzenia w CI |
 
 Testy UI (XCUITest, 42 scenariusze: przepływ demo, układ z długą cyrylicą, dialogi, blokada, menu leadów) biegną teraz w CI przy każdym pushu — pierwszy pełny przebieg: **42/42 zaliczone**.
 

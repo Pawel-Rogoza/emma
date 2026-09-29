@@ -408,31 +408,53 @@ public struct PrimaryButton: View {
     private let title: String
     private let systemImage: String?
     private let isEnabled: Bool
+    /// Trwa zapis albo logowanie — kręciołek zamiast ikony, przycisk nieaktywny,
+    /// ale w kolorze głównym (widać, że coś się dzieje, a nie że „nie działa”).
+    private let isLoading: Bool
     private let action: () -> Void
 
-    public init(_ title: String, systemImage: String? = nil, isEnabled: Bool = true, action: @escaping () -> Void) {
+    public init(
+        _ title: String,
+        systemImage: String? = nil,
+        isEnabled: Bool = true,
+        isLoading: Bool = false,
+        action: @escaping () -> Void
+    ) {
         self.title = title
         self.systemImage = systemImage
         self.isEnabled = isEnabled
+        self.isLoading = isLoading
         self.action = action
     }
+
+    private var looksEnabled: Bool { isEnabled || isLoading }
 
     public var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                if let systemImage {
+                if isLoading {
+                    ProgressView()
+                        .tint(EmmaTheme.primaryButtonText)
+                        .transition(.scale.combined(with: .opacity))
+                } else if let systemImage {
                     Image(systemName: systemImage).font(.system(size: 15, weight: .semibold))
+                        .transition(.scale.combined(with: .opacity))
                 }
                 Text(title).font(EmmaTypography.button)
             }
-            .foregroundStyle(isEnabled ? EmmaTheme.primaryButtonText : EmmaTheme.disabledButtonText)
+            .foregroundStyle(looksEnabled ? EmmaTheme.primaryButtonText : EmmaTheme.disabledButtonText)
             .frame(maxWidth: .infinity, minHeight: EmmaMetrics.primaryButtonMinHeight)
-            .background(isEnabled ? EmmaTheme.primaryButton : EmmaTheme.disabledButton)
+            .background(looksEnabled ? EmmaTheme.primaryButton : EmmaTheme.disabledButton)
             .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous))
+            .shadow(color: EmmaTheme.primaryButton.opacity(looksEnabled ? 0.18 : 0), radius: 8, x: 0, y: 4)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .disabled(!isEnabled)
+        // Audyt 29.09.2026: główny przycisk nie reagował na dotyk — teraz zapada
+        // się pod palcem, a przejście aktywny/nieaktywny jest płynne.
+        .buttonStyle(EmmaCardButtonStyle())
+        .animation(EmmaMotion.smooth, value: isEnabled)
+        .animation(EmmaMotion.smooth, value: isLoading)
+        .disabled(!isEnabled || isLoading)
     }
 }
 
@@ -463,7 +485,7 @@ public struct SecondaryButton: View {
             .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(EmmaCardButtonStyle())
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.5)
     }
@@ -715,10 +737,14 @@ public struct EmptyState: View {
 
     public var body: some View {
         VStack(spacing: 10) {
+            // Ikona w miękkim kółku akcentu — pusty stan to informacja, a nie
+            // błąd (audyt 29.09.2026: szara ikona wyglądała jak „nic nie działa”).
             Image(systemName: systemImage)
-                .font(.system(size: 30, weight: .light))
-                .foregroundStyle(EmmaTheme.mutedSoft)
-                .padding(.bottom, 2)
+                .font(.system(size: 26, weight: .regular))
+                .foregroundStyle(EmmaTheme.accent)
+                .frame(width: 62, height: 62)
+                .background(EmmaTheme.accentSoft, in: Circle())
+                .padding(.bottom, 4)
             Text(title)
                 .font(EmmaTypography.ui(15, .semibold))
                 .foregroundStyle(EmmaTheme.ink)
@@ -737,6 +763,7 @@ public struct EmptyState: View {
         .padding(.horizontal, 24)
         .padding(.vertical, 32)
         .accessibilityElement(children: .combine)
+        .emmaAppear()
     }
 }
 
@@ -946,15 +973,22 @@ public struct QuickActions: View {
 
     public var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            ForEach(actions) { action in
-                Button(action: action.handler) {
-                    VStack(spacing: 8) {
+            ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
+                Button {
+                    EmmaHaptics.tap()
+                    action.handler()
+                } label: {
+                    // Audyt 29.09.2026: szare ikony na białym tle nie wyglądały na
+                    // przyciski. Ikona w kafelku akcentu, cień i zapadnięcie pod palcem.
+                    VStack(spacing: 7) {
                         Image(systemName: action.systemImage)
-                            .font(.system(size: 19, weight: .regular))
-                            .foregroundStyle(EmmaTheme.personAvatarText)
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(EmmaTheme.accent)
+                            .frame(width: 36, height: 36)
+                            .background(EmmaTheme.accentSoft, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                         Text(action.title)
-                            .font(EmmaTypography.caption())
-                            .foregroundStyle(EmmaTheme.muted)
+                            .font(EmmaTypography.caption(.medium))
+                            .foregroundStyle(EmmaTheme.ink)
                             .multilineTextAlignment(.center)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -968,9 +1002,11 @@ public struct QuickActions: View {
                         RoundedRectangle(cornerRadius: 13, style: .continuous)
                             .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
                     }
+                    .emmaCardShadow()
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(EmmaCardButtonStyle())
+                .emmaAppear(index)
                 .accessibilityLabel(action.title)
             }
         }

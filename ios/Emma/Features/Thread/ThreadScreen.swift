@@ -479,8 +479,15 @@ struct ThreadScreen: View {
                             }
                         }
                         .id(message.id)
+                        // Nowa wiadomość wjeżdża od swojej strony (audyt 29.09.2026).
+                        .transition(.asymmetric(
+                            insertion: .move(edge: message.isOutgoing ? .trailing : .leading)
+                                .combined(with: .opacity),
+                            removal: .opacity
+                        ))
                     }
                 }
+                .animation(EmmaMotion.smooth, value: model.messages.count)
                 .padding(.horizontal, layout.threadHorizontalPadding)
                 .padding(.top, 10)
                 .padding(.bottom, EmmaSpacing.chatScrollBottomInset)
@@ -488,6 +495,15 @@ struct ThreadScreen: View {
             .scrollIndicators(.hidden)
             .onAppear {
                 if let last = model.messages.last?.id {
+                    proxy.scrollTo(last, anchor: .bottom)
+                }
+            }
+            // Po wysłaniu (i po nowej wiadomości) historia jedzie na dół —
+            // wcześniej przewijała się tylko przy otwarciu wątku, więc wysłana
+            // wiadomość potrafiła wylądować pod klawiaturą.
+            .onChange(of: model.messages.last?.id) { _, last in
+                guard let last else { return }
+                withAnimation(EmmaMotion.smooth) {
                     proxy.scrollTo(last, anchor: .bottom)
                 }
             }
@@ -630,17 +646,20 @@ struct ThreadScreen: View {
                 .accessibilityLabel(store.isDictating ? "Zakończ dyktowanie" : "Podyktuj wiadomość")
 
                 Button {
+                    EmmaHaptics.success()
                     Task { await store.send(dependencies) }
                 } label: {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 16, weight: .semibold))
+                        .symbolEffect(.bounce, value: hasSendableDraft(model))
                         .foregroundStyle(hasSendableDraft(model) ? EmmaTheme.primaryButtonText : EmmaTheme.disabledButtonText)
                         .frame(width: EmmaMetrics.micButtonSize, height: EmmaMetrics.micButtonSize)
                         .background(hasSendableDraft(model) ? EmmaTheme.primaryButton : EmmaTheme.disabledButton)
                         .clipShape(Circle())
                         .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(EmmaCardButtonStyle())
+                .animation(EmmaMotion.snappy, value: hasSendableDraft(model))
                 .disabled(!hasSendableDraft(model))
                 .accessibilityLabel("Wyślij wiadomość")
             }
@@ -656,6 +675,9 @@ struct ThreadScreen: View {
         .padding(.horizontal, layout.threadHorizontalPadding)
         .padding(.top, 10)
         .padding(.bottom, EmmaSpacing.listBottomInset)
+        // Gotowe odpowiedzi i cytat pojawiają się płynnie, a nie skokiem.
+        .animation(EmmaMotion.smooth, value: model.draft.text.isEmpty)
+        .animation(EmmaMotion.smooth, value: model.draft.quote != nil)
         .background(EmmaTheme.chatDockBackground)
         .overlay(alignment: .top) {
             Rectangle().fill(EmmaTheme.chatHeaderBorder).frame(height: 0.5)

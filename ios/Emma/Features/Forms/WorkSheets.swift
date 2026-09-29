@@ -66,7 +66,7 @@ struct NoteSheet: View {
 
             if let error { InlineError(error) }
 
-            PrimaryButton("Zapisz notatkę", systemImage: "checkmark", isEnabled: !isSaving) {
+            PrimaryButton("Zapisz notatkę", systemImage: "checkmark", isLoading: isSaving) {
                 Task { await save() }
             }
             .accessibilityIdentifier("note-save")
@@ -150,6 +150,9 @@ struct TaskFormSheet: View {
     @State private var clients: [Client] = []
     @State private var original: TaskItem?
     @State private var loaded = false
+    /// Audyt 29.09.2026: bez tej blokady szybkie dwa dotknięcia „Dodaj
+    /// zadanie” zakładały dwa identyczne zadania.
+    @State private var isSaving = false
 
     var body: some View {
         // Audyt 28.09.2026: formularz zadania wyglądał jak z innej aplikacji
@@ -231,7 +234,7 @@ struct TaskFormSheet: View {
                     .padding(.top, 12)
             }
 
-            PrimaryButton(taskID == nil ? "Dodaj zadanie" : "Zapisz zadanie", systemImage: "checkmark") {
+            PrimaryButton(taskID == nil ? "Dodaj zadanie" : "Zapisz zadanie", systemImage: "checkmark", isLoading: isSaving) {
                 Task { await save() }
             }
             .padding(.top, 20)
@@ -300,7 +303,10 @@ struct TaskFormSheet: View {
             error = "Wpisz, co trzeba zrobić."
             return
         }
+        guard !isSaving else { return }
         error = nil
+        isSaving = true
+        defer { isSaving = false }
 
         let outcome: SubmitOutcome<TaskItem>
         if let original {
@@ -318,7 +324,8 @@ struct TaskFormSheet: View {
                     NewTaskDraft(
                         title: trimmed,
                         clientID: selectedClient,
-                        caseID: caseID,
+                        // Sprawa z trasy tylko dla klienta, z którym ją otwarto.
+                        caseID: selectedClient == clientID ? caseID : nil,
                         dueDate: dueDate,
                         priority: priority
                     )

@@ -68,7 +68,8 @@ struct EventFormSheet: View {
             PrimaryButton(
                 eventID == nil ? "Dodaj termin" : "Zapisz zmiany",
                 systemImage: "checkmark",
-                isEnabled: !isSaving && (eventID == nil || original != nil)
+                isEnabled: eventID == nil || original != nil,
+                isLoading: isSaving
             ) {
                 Task { await save() }
             }
@@ -124,6 +125,7 @@ struct EventFormSheet: View {
                 kindChip(.consultation, systemImage: "person.2")
                 kindChip(.caseDeadline, systemImage: "building.columns")
             }
+            .animation(EmmaMotion.snappy, value: kind)
         }
     }
 
@@ -145,7 +147,7 @@ struct EventFormSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(EmmaCardButtonStyle())
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 

@@ -84,7 +84,7 @@ struct CaseSettingsSheet: View {
                 InlineError(errorMessage)
             }
 
-            PrimaryButton("Zapisz zmiany", isEnabled: !isSaving) {
+            PrimaryButton("Zapisz zmiany", isLoading: isSaving) {
                 Task { await save(legalCase) }
             }
         }
