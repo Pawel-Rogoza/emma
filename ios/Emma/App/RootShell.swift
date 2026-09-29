@@ -117,7 +117,7 @@ public struct RootShell: View {
         case .emma:
             TabContent(tab: .emma) { AssistantScreen() }
         case .messages:
-            TabContent(tab: .messages) { MessagesScreen() }
+            TabContent(tab: .messages) { MessagesScreen(store: dependencies.messagesStore) }
         case .calendar:
             TabContent(tab: .calendar) { CalendarScreen(store: dependencies.calendarStore) }
         }

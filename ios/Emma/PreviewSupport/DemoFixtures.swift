@@ -322,7 +322,7 @@ public enum DemoFixtures {
     }
 
     public static let threads: [ConversationThread] = [
-        ConversationThread(id: olenaThread, clientID: olenaID, sequenceHighWatermark: 2),
+        ConversationThread(id: olenaThread, clientID: olenaID, sequenceHighWatermark: 3),
         // Andrii ma dwie wiadomości nieprzeczytane dla obu adwokatów.
         ConversationThread(id: andriiThread, clientID: andriiID, sequenceHighWatermark: 2),
         ConversationThread(id: mariaThread, clientID: mariaID, sequenceHighWatermark: 1),
@@ -355,6 +355,21 @@ public enum DemoFixtures {
             sentAt: instant(referenceDay, "09:18"),
             sequence: 2,
             transport: .read,
+            source: .demoFixture
+        ),
+        // Przeczytana, a bez odpowiedzi — stan „Do odpowiedzi” na liście rozmów.
+        Message(
+            id: MessageID("msg-olena-3"),
+            threadID: olenaThread,
+            direction: .incoming,
+            authorID: nil,
+            authorLabel: "Olena Kovalenko",
+            providerMessageID: "wamid.demo.olena.3",
+            text: "Надіслала скан повістки на пошту. Оригінал взяти з собою?",
+            translation: "Wysłałam skan wezwania mailem. Czy wziąć ze sobą oryginał?",
+            sentAt: instant(referenceDay, "09:34"),
+            sequence: 3,
+            transport: .delivered,
             source: .demoFixture
         ),
 
@@ -449,6 +464,8 @@ public enum DemoFixtures {
 
     /// Kursory startowe: wszystko przed tą datą jest przeczytane.
     /// Andrii i Maria mają nieprzeczytane wiadomości, Olena i Dmytro nie.
+    /// Cztery stany listy rozmów: Andrii i Maria — nowe, Olena — przeczytana
+    /// i czeka na odpowiedź, Dmytro — odpisano (ostatnia wiadomość nasza).
     ///
     /// Stan odczytu jest nadal przypisany do konta (`userID`), bo to warunek
     /// działania liczników nieprzeczytanych §3.3 — ale w demo istnieje **jedno
@@ -456,7 +473,7 @@ public enum DemoFixtures {
     public static let threadStates: [ThreadUserState] = {
         var states: [ThreadUserState] = []
         for user in users {
-            states.append(ThreadUserState(userID: user.id, threadID: olenaThread, readCursorSequence: 2))
+            states.append(ThreadUserState(userID: user.id, threadID: olenaThread, readCursorSequence: 3))
             states.append(ThreadUserState(userID: user.id, threadID: andriiThread, readCursorSequence: 0))
             states.append(ThreadUserState(userID: user.id, threadID: mariaThread, readCursorSequence: 0))
             states.append(ThreadUserState(userID: user.id, threadID: dmytroThread, readCursorSequence: 3))

@@ -63,6 +63,8 @@ struct EmmaApp: App {
             }
             // Przypomnienia z nazwami klientów nie przeżywają końca sesji.
             await dependencies.reminders.removeAll()
+            // Dane i nawigacja poprzedniego konta też nie.
+            dependencies.clearSessionState()
         }
         // Po zalogowaniu powłoka ma używać prawdziwego użytkownika, a nie konta demo.
         authStore.onUserChanged = { [weak dependencies] remote in

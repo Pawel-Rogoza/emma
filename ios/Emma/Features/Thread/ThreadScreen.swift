@@ -8,6 +8,15 @@ import SwiftUI
 //   • dyktowanie wpisuje tekst do szkicu i **nigdy** nie wysyła,
 //   • wysyłka tworzy wiadomość oczekującą z kluczem idempotencji — demo nie udaje,
 //     że WhatsApp dostarczył cokolwiek.
+//
+// Audyt 29.09.2026: szkic zapisywał się przez `dependencies.perform` przy każdej
+// literze. `perform` podbija `dataVersion`, więc każda litera przeładowywała
+// wątek (szkielet ładowania, utrata klawiatury) i wszystkie zakładki, a poza
+// Demo — gdzie backend nie ma jeszcze zapisu szkicu — kończyła się komunikatem
+// błędu. Pole było też aktualizowane asynchronicznie, więc szybkie pisanie
+// gubiło litery. Teraz: pole zmienia się od razu, szkic zapisuje się po chwili
+// ciszy i **bez** ogłaszania zmiany danych, a ponowne wczytanie nie zdejmuje
+// wątku z ekranu i nie gubi separatora „Nowe wiadomości”.
 
 @MainActor
 final class ThreadStore: ObservableObject {
@@ -28,13 +37,26 @@ final class ThreadStore: ObservableObject {
 
     private let pageSize = 30
     private var snapshotSequence: Int = 0
+    /// Separator „Nowe wiadomości” z pierwszego wczytania — kolejne (po zapisie)
+    /// widzą już przesunięty kursor i zgubiłyby go.
+    private var initialFirstUnreadID: MessageID?
+    private var hasOpened = false
+    /// Odłożony zapis szkicu (po chwili bez pisania).
+    private var draftSaveTask: Task<Void, Never>?
+    private var pendingDraft: Draft?
+    private var isSending = false
+    private weak var dependencies: AppDependencies?
     private var state: ThreadUserState?
     private var dictationTarget: DictationTarget?
     private var previousDictationHandler: ((DictationTarget, String) -> Void)?
     private var previousFailureHandler: ((DictationFailure) -> Void)?
 
     func load(_ dependencies: AppDependencies, threadID: ThreadID) async {
-        phase = .loading
+        self.dependencies = dependencies
+        // Ponowne wczytanie (po zapisie) nie zdejmuje wątku z ekranu.
+        if !phase.hasLoaded { phase = .loading }
+        // Szkic w drodze zapisujemy przed odczytem — inaczej odczyt przywróciłby starszy.
+        await flushDraft()
         do {
             let repository = dependencies.repository
             let userID = dependencies.currentUser.id
@@ -54,8 +76,17 @@ final class ThreadStore: ObservableObject {
             let sorted = MessageOrdering.sorted(messages)
             snapshotSequence = sorted.map(\.sequence).max() ?? 0
 
-            // Separator „Nowe wiadomości” liczony wobec stanu **sprzed** otwarcia.
-            let firstUnread = ReadStatePolicy.firstUnreadMessageID(in: sorted, state: threadState)
+            // Separator „Nowe wiadomości” liczony wobec stanu **sprzed** otwarcia —
+            // raz, przy pierwszym wczytaniu tego ekranu.
+            if !hasOpened {
+                initialFirstUnreadID = ReadStatePolicy.firstUnreadMessageID(in: sorted, state: threadState)
+                hasOpened = true
+            }
+            let firstUnread = initialFirstUnreadID
+            // Repozytorium ma już zapisany szkic (flush wyżej) i ewentualny cytat
+            // ustawiony z opcji wiadomości; tekst bierzemy z pola, bo mógł się
+            // zmienić w trakcie odczytu.
+            var draft = threadState.draft ?? Draft(threadID: threadID, text: "", language: client.language)
 
             // Otwarcie wątku odnotowuje odczyt: kursor nigdy się nie cofa.
             threadState.readCursorSequence = ReadStatePolicy.cursorAfterOpeningThread(
@@ -66,15 +97,18 @@ final class ThreadStore: ObservableObject {
             threadState = (try? await repository.saveReadState(threadState)) ?? threadState
             state = threadState
             dependencies.refreshUnreadTotal()
+            let legalCase = try await repository.caseForClient(thread.clientID)
 
+            // Ostatni odczyt pola — po wszystkich `await`, żeby nie zgubić liter.
+            if let localText = phase.value?.draft.text { draft.text = localText }
             phase = .loaded(
                 Model(
                     thread: thread,
                     client: client,
-                    legalCase: try await repository.caseForClient(thread.clientID),
+                    legalCase: legalCase,
                     messages: sorted,
                     firstUnreadID: firstUnread,
-                    draft: threadState.draft ?? Draft(threadID: threadID, text: "", language: client.language),
+                    draft: draft,
                     loadEarlierAvailable: sorted.count >= pageSize
                 )
             )
@@ -93,8 +127,9 @@ final class ThreadStore: ObservableObject {
                 before: oldest,
                 limit: pageSize
             )
-            var updated = model
-            updated.messages = MessageOrdering.sorted(older + model.messages)
+            // Model czytany na nowo: w trakcie odczytu mogło zmienić się pole szkicu.
+            guard var updated = phase.value else { return }
+            updated.messages = MessageOrdering.sorted(older + updated.messages)
             updated.loadEarlierAvailable = older.count >= pageSize
             phase = .loaded(updated)
         } catch {
@@ -104,49 +139,75 @@ final class ThreadStore: ObservableObject {
 
     // MARK: Szkic
 
-    func updateDraft(_ text: String, dependencies: AppDependencies) async {
-        guard var model = phase.value, let threadState = state else { return }
-        var draft = model.draft
-        draft.text = text
-        draft.updatedAt = dependencies.clock.now()
-        model.draft = draft
+    /// Zmiana treści z pola — natychmiast w modelu, zapis po 0,6 s ciszy.
+    func setDraftText(_ text: String) {
+        guard var model = phase.value, model.draft.text != text else { return }
+        model.draft.text = text
+        model.draft.updatedAt = dependencies?.clock.now() ?? Date()
         phase = .loaded(model)
-        _ = await dependencies.perform { try await dependencies.repository.saveDraft(draft) }
-        _ = threadState
+        scheduleDraftSave(model.draft, delay: 600_000_000)
+    }
+
+    /// Gotowa odpowiedź albo dyktowanie — zapis bez czekania.
+    func replaceDraftText(_ text: String) async {
+        setDraftText(text)
+        await flushDraft()
     }
 
     func clearQuote(_ dependencies: AppDependencies) async {
-        guard var model = phase.value, var threadState = state else { return }
-        var draft = model.draft
-        draft.quote = nil
-        model.draft = draft
+        guard var model = phase.value else { return }
+        model.draft.quote = nil
         phase = .loaded(model)
-        threadState.draft = draft.isEmpty ? nil : draft
-        _ = await dependencies.perform { try await dependencies.repository.saveDraft(threadState.draft) }
-        state = threadState
+        // Zapisujemy szkic zawsze, także pusty: `saveDraft(nil)` nic nie zmienia
+        // w repozytorium, więc cytat wracał po najbliższym odświeżeniu.
+        scheduleDraftSave(model.draft, delay: 0)
+        await flushDraft()
     }
 
-    func setQuote(_ quote: QuotedReference, dependencies: AppDependencies) async {
-        guard var model = phase.value, var threadState = state else { return }
-        var draft = model.draft
-        draft.quote = quote
-        model.draft = draft
-        phase = .loaded(model)
-        threadState.draft = draft
-        _ = await dependencies.perform { try await dependencies.repository.saveDraft(draft) }
-        state = threadState
+    private func scheduleDraftSave(_ draft: Draft, delay: UInt64) {
+        pendingDraft = draft
+        draftSaveTask?.cancel()
+        guard delay > 0 else { return }
+        draftSaveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled else { return }
+            await self?.flushDraft()
+        }
+    }
+
+    /// Zapis szkicu **bez** `dataChanged()`: to stan pola, nie zmiana danych
+    /// kancelarii. Błąd zapisu (backend jeszcze nie przyjmuje szkiców) nie może
+    /// kończyć się komunikatem przy każdej literze — tekst zostaje w polu.
+    func flushDraft() async {
+        draftSaveTask?.cancel()
+        draftSaveTask = nil
+        guard let draft = pendingDraft, let dependencies else { return }
+        pendingDraft = nil
+        try? await dependencies.repository.saveDraft(draft)
+        if var threadState = state {
+            threadState.draft = draft
+            state = threadState
+        }
     }
 
     // MARK: Wysyłka
 
     func send(_ dependencies: AppDependencies) async {
-        guard var model = phase.value else { return }
+        // Podwójne dotknięcie „Wyślij” nie może wysłać dwóch wiadomości
+        // (każda próba ma własny klucz idempotencji).
+        guard !isSending, var model = phase.value else { return }
         let text = model.draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        isSending = true
+        defer { isSending = false }
 
         let client = model.client
         let draft = model.draft
         let key = UUID().uuidString
+        // Odłożony zapis nie może przywrócić wysłanego tekstu jako szkicu.
+        draftSaveTask?.cancel()
+        draftSaveTask = nil
+        pendingDraft = nil
 
         let sent = await dependencies.perform {
             let message = try await dependencies.repository.appendOutgoing(
@@ -161,11 +222,13 @@ final class ThreadStore: ObservableObject {
                 )
             )
             // Repozytorium samo czyści szkic nadawcy przy przyjęciu wiadomości.
+            // Oznaczenie klienta jako obsłużonego jest dodatkiem: jego błąd
+            // (np. konflikt wersji) nie może zgłaszać, że wysyłka się nie udała.
             var updatedClient = client
             if updatedClient.needsReply || updatedClient.stage == .new {
                 updatedClient.needsReply = false
                 if updatedClient.stage == .new { updatedClient.stage = .inContact }
-                _ = try await dependencies.repository.updateClient(
+                _ = try? await dependencies.repository.updateClient(
                     updatedClient,
                     expectedVersion: client.version
                 )
@@ -174,7 +237,12 @@ final class ThreadStore: ObservableObject {
         }
 
         guard let sent else { return }
-        model.messages = MessageOrdering.sorted(model.messages + [sent])
+        // Model czytany na nowo — w trakcie wysyłki mogło przyjść odświeżenie.
+        model = phase.value ?? model
+        // Odświeżenie mogło już przynieść tę wiadomość — bez dubla w `ForEach`.
+        if !model.messages.contains(where: { $0.id == sent.id }) {
+            model.messages = MessageOrdering.sorted(model.messages + [sent])
+        }
         model.draft = Draft(threadID: model.thread.id, text: "", language: client.language)
         phase = .loaded(model)
         if var threadState = state {
@@ -225,19 +293,14 @@ final class ThreadStore: ObservableObject {
     }
 
     private func appendDictated(_ text: String, dependencies: AppDependencies) async {
-        guard var model = phase.value else { return }
-        var draft = model.draft
-        draft.text = draft.text.isEmpty ? text : draft.text + " " + text
-        model.draft = draft
-        phase = .loaded(model)
-        if var threadState = state {
-            threadState.draft = draft
-            state = threadState
-            _ = await dependencies.perform { try await dependencies.repository.saveDraft(draft) }
-        }
+        guard let model = phase.value else { return }
+        let current = model.draft.text
+        await replaceDraftText(current.isEmpty ? text : current + " " + text)
     }
 
     func teardown(_ dependencies: AppDependencies) async {
+        // Wyjście z wątku zapisuje to, co zostało w polu.
+        await flushDraft()
         dependencies.voice.onDictationResult = previousDictationHandler
         dependencies.voice.onDictationFailure = previousFailureHandler
         if isDictating {
@@ -408,7 +471,12 @@ struct ThreadScreen: View {
                             senderLabel: message.outgoingAuthorLabel,
                             showsAuthor: true
                         ) {
-                            dependencies.present(.messageOptions(threadID: model.thread.id, messageID: message.id))
+                            // Najpierw zapis pisanego tekstu: arkusz dopisuje cytat
+                            // do szkicu z repozytorium i nie może go potem zgubić.
+                            Task {
+                                await store.flushDraft()
+                                dependencies.present(.messageOptions(threadID: model.thread.id, messageID: message.id))
+                            }
                         }
                         .id(message.id)
                     }
@@ -497,7 +565,7 @@ struct ThreadScreen: View {
                         ForEach(QuickReplies.templates(for: model.client.language)) { reply in
                             Button {
                                 EmmaHaptics.selection()
-                                Task { await store.updateDraft(reply.text, dependencies: dependencies) }
+                                Task { await store.replaceDraftText(reply.text) }
                             } label: {
                                 Text(reply.label)
                                     .font(EmmaTypography.caption(.medium))
@@ -526,7 +594,7 @@ struct ThreadScreen: View {
                     "Napisz wiadomość…",
                     text: Binding(
                         get: { model.draft.text },
-                        set: { newValue in Task { await store.updateDraft(newValue, dependencies: dependencies) } }
+                        set: { newValue in store.setDraftText(newValue) }
                     ),
                     axis: .vertical
                 )

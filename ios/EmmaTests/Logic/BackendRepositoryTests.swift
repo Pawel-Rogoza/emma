@@ -514,6 +514,28 @@ final class BackendRepositoryTests: XCTestCase {
         }
     }
 
+    /// Trasa edycji terminu nie przyjmuje klienta — zmiana klienta w formularzu
+    /// kończy się komunikatem, a nie cichym „zapisano” (audyt 29.09.2026).
+    func testEventClientChangeIgnoredByBackendIsReported() async throws {
+        let unchanged = #"{"id":"event-2","client_id":"client-12","case_id":null,"title":"Rozprawa","day":"2026-09-15","time":"10:00","all_day":false,"duration_minutes":30,"kind":"consultation","status":"confirmed","place":"Sąd","version":2}"#
+        StubURLProtocol.respond { request, _ in
+            request.httpMethod == "PATCH" ? (200, Data(unchanged.utf8)) : (404, Data())
+        }
+        let repository = makeRepository()
+        let event = ScheduledEvent(
+            id: EventID("event-2"), clientID: ClientID("client-99"), caseID: nil,
+            title: "Rozprawa", day: LocalDate(year: 2026, month: 9, day: 15), time: TimeOfDay(hhmm: "10:00")!,
+            durationMinutes: 30, kind: .consultation, status: .confirmed, place: "Sąd",
+            isAllDay: false, version: Version(1)
+        )
+        do {
+            _ = try await repository.updateEvent(event, expectedVersion: event.version)
+            XCTFail("Oczekiwano komunikatu o pominiętej zmianie klienta")
+        } catch BackendRepositoryError.notAvailableInBackend(let operation) {
+            XCTAssertTrue(operation.contains("klienta"), operation)
+        }
+    }
+
     func testCreateCaseSendsClientTitleAndSummary() async throws {
         let caseJSON = #"{"id":"case-77","number":"KR/2026/077","title":"Sprawa rozwodowa","client_id":"client-12","status":"in_progress","summary":"","created_at":"2026-09-23","version":1}"#
         StubURLProtocol.respond { request, body in

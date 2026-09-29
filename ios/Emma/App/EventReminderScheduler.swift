@@ -117,8 +117,10 @@ final class EventReminderScheduler {
             content.title = morning.title
             content.body = morning.body
             content.sound = .default
+            // Ze strefą: wyzwalacz bez niej trzyma „godzinę na zegarze”, więc po
+            // zmianie strefy telefonu przypomnienie przesuwałoby się o różnicę.
             let components = Calendar(identifier: .gregorian).dateComponents(
-                [.year, .month, .day, .hour, .minute, .second],
+                [.timeZone, .year, .month, .day, .hour, .minute, .second],
                 from: morning.fireAt
             )
             try? await center.add(UNNotificationRequest(
@@ -134,8 +136,10 @@ final class EventReminderScheduler {
             content.body = item.body
             content.sound = .default
             content.userInfo = [Self.eventIDKey: item.eventID.rawValue]
+            // Ze strefą: wyzwalacz bez niej trzyma „godzinę na zegarze”, więc po
+            // zmianie strefy telefonu przypomnienie przesuwałoby się o różnicę.
             let components = Calendar(identifier: .gregorian).dateComponents(
-                [.year, .month, .day, .hour, .minute, .second],
+                [.timeZone, .year, .month, .day, .hour, .minute, .second],
                 from: item.fireAt
             )
             let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)

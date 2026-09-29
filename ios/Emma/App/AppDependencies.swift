@@ -118,9 +118,13 @@ public final class AppDependencies: ObservableObject {
     // przy każdym przejściu: lista mrugała „Wczytuję…”, a przewinięcie
     // przepadało. Magazyny zakładek żyją tutaj — powrót na zakładkę pokazuje
     // od razu ostatni stan i odświeża go w tle.
-    let todayStore: TodayStore
-    let clientsStore: ClientsStore
-    let calendarStore: CalendarStore
+    private(set) var todayStore: TodayStore
+    private(set) var clientsStore: ClientsStore
+    private(set) var calendarStore: CalendarStore
+    /// Rozmowy — audyt 29.09.2026: jako jedyna zakładka trzymała magazyn
+    /// w `@StateObject`, więc każdy powrót mrugał „Wczytuję rozmowy…”,
+    /// a wybrany filtr przepadał.
+    private(set) var messagesStore: MessagesStore
     /// Przypomnienia o terminach (lokalne powiadomienia telefonu).
     let reminders: EventReminderScheduler
 
@@ -189,6 +193,7 @@ public final class AppDependencies: ObservableObject {
         self.todayStore = TodayStore()
         self.clientsStore = ClientsStore()
         self.calendarStore = CalendarStore()
+        self.messagesStore = MessagesStore()
         self.reminders = EventReminderScheduler(
             isEnabled: !configuration.usesMockServices
                 && !ProcessInfo.processInfo.arguments.contains("--skip-auth")
@@ -658,6 +663,38 @@ public final class AppDependencies: ObservableObject {
         refreshUnreadTotal()
         dataChanged()
         showToast("Przywrócono dane przykładowe.")
+    }
+
+    // MARK: Koniec sesji
+
+    /// Wylogowanie albo zmiana konta. Audyt 29.09.2026: powłoka przeżywa
+    /// wylogowanie, a z nią magazyny ekranów (klienci, sprawy, terminy, rozmowy),
+    /// stosy nawigacji, kontekst Emmy i „Ostatnio otwierani”. Po zalogowaniu
+    /// na innym koncie przez chwilę widać było dane poprzedniego, a stos mógł
+    /// otworzyć jego kartę klienta. Tu zaczynamy od czystej kartki.
+    public func clearSessionState() {
+        todayStore = TodayStore()
+        clientsStore = ClientsStore()
+        calendarStore = CalendarStore()
+        messagesStore = MessagesStore()
+        navigation = Dictionary(uniqueKeysWithValues: AppTab.allCases.map { ($0, TabNavigation()) })
+        tab = .today
+        sheet = nil
+        toastTask?.cancel()
+        toast = nil
+        toastAction = nil
+        emmaContext = nil
+        pendingEmmaAction = nil
+        pendingVoiceStart = false
+        pendingEventDraft = nil
+        pendingLeadFilter = nil
+        pendingClientSearch = false
+        clientMode = .leads
+        unreadTotal = 0
+        leadsNeedingAction = 0
+        recentClients = RecentClients()
+        UserDefaults.standard.removeObject(forKey: Self.recentClientsKey)
+        dataVersion &+= 1
     }
 
     // MARK: Użytkownik z sesji mobilnej

@@ -67,7 +67,13 @@ extension View {
         contextMenu {
             if EventActions.canFinish(event, today: dependencies.today) {
                 Button {
-                    Task { await EventActions.finish(event, dependencies: dependencies) }
+                    // Audyt 29.09.2026: wynik był odrzucany, więc nieudany zapis
+                    // z menu (Kalendarz, sprawa, karta klienta) nie mówił nic.
+                    Task {
+                        if let message = await EventActions.finish(event, dependencies: dependencies) {
+                            dependencies.showToast(message)
+                        }
+                    }
                 } label: {
                     Label("Załatwione", systemImage: "checkmark.circle")
                 }
@@ -117,8 +123,11 @@ enum TaskActions {
                     Task {
                         var restored = original
                         restored.version = saved.version
-                        _ = await dependencies.submit(fallback: "Nie udało się cofnąć.") {
+                        let undo = await dependencies.submit(fallback: "Nie udało się cofnąć.") {
                             try await dependencies.repository.updateTask(restored, expectedVersion: saved.version)
+                        }
+                        if let message = undo.errorMessage {
+                            dependencies.showToast(message)
                         }
                     }
                 }

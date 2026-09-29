@@ -82,10 +82,16 @@ struct NewLeadSheet: View {
             createdAt: dependencies.today
         )
 
-        let created = await dependencies.perform {
+        // Błąd wraca do formularza (`submit`), a nie do komunikatu pod arkuszem —
+        // tam go nie widać i „Dodaj kontakt” wyglądał, jakby nie działał.
+        let outcome = await dependencies.submit(fallback: "Nie udało się dodać kontaktu.") {
             try await dependencies.repository.createClient(draft)
         }
-        guard let created else { return }
+        guard let created = outcome.value else {
+            errorMessage = outcome.errorMessage
+            return
+        }
+        EmmaHaptics.success()
 
         dependencies.dismissSheet()
         dependencies.openPerson(created.id)
