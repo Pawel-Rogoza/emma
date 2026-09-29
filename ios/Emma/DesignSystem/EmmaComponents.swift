@@ -429,9 +429,13 @@ public struct PrimaryButton: View {
             .frame(maxWidth: .infinity, minHeight: EmmaMetrics.primaryButtonMinHeight)
             .background(isEnabled ? EmmaTheme.primaryButton : EmmaTheme.disabledButton)
             .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous))
+            .shadow(color: EmmaTheme.primaryButton.opacity(isEnabled ? 0.18 : 0), radius: 8, x: 0, y: 4)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        // Audyt 29.09.2026: główny przycisk nie reagował na dotyk — teraz zapada
+        // się pod palcem, a przejście aktywny/nieaktywny jest płynne.
+        .buttonStyle(EmmaCardButtonStyle())
+        .animation(EmmaMotion.smooth, value: isEnabled)
         .disabled(!isEnabled)
     }
 }
@@ -463,7 +467,7 @@ public struct SecondaryButton: View {
             .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(EmmaCardButtonStyle())
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.5)
     }

@@ -275,7 +275,7 @@ public struct SheetHeader: View {
                     .background(EmmaTheme.closeButton, in: Circle())
                     .contentShape(Circle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(EmmaCardButtonStyle())
             .accessibilityLabel("Zamknij")
         }
         .padding(.bottom, 14)
@@ -298,13 +298,19 @@ public struct SheetScaffold<Content: View>: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 SheetHeader(title: title, onClose: onClose)
-                content
+                // Treść arkusza wchodzi tuż za nim — łagodnie, bez skoku.
+                VStack(alignment: .leading, spacing: 0) {
+                    content
+                }
+                .emmaAppear(1)
             }
             .padding(.horizontal, 20)
             .padding(.top, 18)
             .padding(.bottom, 32)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // Klawiaturę chowa przeciągnięcie listy — formularze mają kilka pól.
+        .scrollDismissesKeyboard(.interactively)
         .background(EmmaTheme.sheetBackground)
     }
 }

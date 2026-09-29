@@ -25,6 +25,7 @@ struct FormCard<Content: View>: View {
             RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
                 .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
         }
+        .emmaCardShadow()
     }
 }
 
@@ -113,7 +114,8 @@ struct QuickChip: View {
                 .background(isSelected ? EmmaTheme.primaryButton : EmmaTheme.secondaryButton, in: Capsule())
                 .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(EmmaCardButtonStyle())
+        .animation(EmmaMotion.snappy, value: isSelected)
         .frame(minHeight: EmmaSpacing.hitTarget)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
