@@ -86,7 +86,7 @@ struct ClientCardScreen: View {
                 onBack: dependencies.back
             )
 
-            hero(client)
+            hero(model)
 
             quickActions(model)
                 .padding(.bottom, 16)
@@ -102,15 +102,21 @@ struct ClientCardScreen: View {
                 .padding(.bottom, 4)
             }
 
+            // Sekcje wchodzą kaskadowo — ten sam ruch co listy (audyt 29.09.2026).
             linkedCaseSection(model)
+                .emmaAppear(1)
 
-            reportSection(client)
+            VStack(alignment: .leading, spacing: 0) { reportSection(client) }
+                .emmaAppear(2)
 
-            consultationsSection(model)
+            VStack(alignment: .leading, spacing: 0) { consultationsSection(model) }
+                .emmaAppear(3)
 
-            notesBlock(model)
+            VStack(alignment: .leading, spacing: 0) { notesBlock(model) }
+                .emmaAppear(4)
 
             infoSection(client)
+                .emmaAppear(5)
 
             if client.stage != .client {
                 Button(role: .destructive) {
@@ -155,15 +161,30 @@ struct ClientCardScreen: View {
 
     // MARK: Hero
 
-    private func hero(_ client: Client) -> some View {
+    /// Najbliższy niezamknięty termin klienta — w nagłówku, żeby nie szukać
+    /// go w sekcji terminów.
+    private func nextEvent(_ model: ClientCardModel) -> ScheduledEvent? {
+        let today = dependencies.today
+        return model.events.first { $0.day >= today && $0.status != .finished }
+    }
+
+    private func hero(_ model: ClientCardModel) -> some View {
+        let client = model.client
         let topic = LeadTopic.parse(client.topic)
         let topicText = LeadStatusStyle.topicText(topic)
+        let tone = EmmaTheme.identityAvatar(IdentityTone.index(for: client.id))
         return VStack(spacing: 0) {
+            // Awatar na miękkiej aureoli w kolorze osoby — ten sam kolor co
+            // na listach, więc od razu wiadomo, czyja to karta.
             PersonAvatar(
                 initials: client.initials,
                 style: .identity(client.id),
                 diameter: EmmaMetrics.clientHeroAvatar
             )
+            .padding(9)
+            .background(tone.background.opacity(0.55), in: Circle())
+            .overlay { Circle().strokeBorder(tone.foreground.opacity(0.12), lineWidth: 1) }
+            .emmaAppear(0)
             Text(client.displayName)
                 .font(EmmaTypography.clientHero)
                 .tracking(-0.8)
@@ -186,6 +207,23 @@ struct ClientCardScreen: View {
                 .foregroundStyle(EmmaTheme.accent)
                 .padding(.top, 9)
             }
+            if topic.booking == nil, let next = nextEvent(model) {
+                Button {
+                    dependencies.present(.eventDetail(next.id))
+                } label: {
+                    Label(nextEventText(next), systemImage: "calendar")
+                        .font(EmmaTypography.caption(.semibold))
+                        .foregroundStyle(EmmaTheme.accent)
+                        .padding(.horizontal, 11)
+                        .frame(minHeight: 30)
+                        .background(EmmaTheme.accentSoft, in: Capsule())
+                        .frame(minHeight: EmmaSpacing.hitTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(EmmaCardButtonStyle())
+                .padding(.top, 6)
+                .accessibilityHint("Otwiera szczegóły terminu")
+            }
             HStack(spacing: 7) {
                 statusPills(client)
             }
@@ -194,6 +232,13 @@ struct ClientCardScreen: View {
         .frame(maxWidth: .infinity)
         .padding(.top, 18)
         .padding(.bottom, 21)
+    }
+
+    /// „Jutro, 10:30 · Konsultacja”.
+    private func nextEventText(_ event: ScheduledEvent) -> String {
+        let day = dependencies.dateText.dayLabel(event.day)
+        let when = event.isAllDay ? day : "\(day), \(event.time.hhmm)"
+        return "\(when) · \(event.kind.displayTitle)"
     }
 
     @ViewBuilder

@@ -946,15 +946,22 @@ public struct QuickActions: View {
 
     public var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            ForEach(actions) { action in
-                Button(action: action.handler) {
-                    VStack(spacing: 8) {
+            ForEach(Array(actions.enumerated()), id: \.element.id) { index, action in
+                Button {
+                    EmmaHaptics.tap()
+                    action.handler()
+                } label: {
+                    // Audyt 29.09.2026: szare ikony na białym tle nie wyglądały na
+                    // przyciski. Ikona w kafelku akcentu, cień i zapadnięcie pod palcem.
+                    VStack(spacing: 7) {
                         Image(systemName: action.systemImage)
-                            .font(.system(size: 19, weight: .regular))
-                            .foregroundStyle(EmmaTheme.personAvatarText)
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(EmmaTheme.accent)
+                            .frame(width: 36, height: 36)
+                            .background(EmmaTheme.accentSoft, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                         Text(action.title)
-                            .font(EmmaTypography.caption())
-                            .foregroundStyle(EmmaTheme.muted)
+                            .font(EmmaTypography.caption(.medium))
+                            .foregroundStyle(EmmaTheme.ink)
                             .multilineTextAlignment(.center)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -968,9 +975,11 @@ public struct QuickActions: View {
                         RoundedRectangle(cornerRadius: 13, style: .continuous)
                             .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
                     }
+                    .emmaCardShadow()
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(EmmaCardButtonStyle())
+                .emmaAppear(index)
                 .accessibilityLabel(action.title)
             }
         }
