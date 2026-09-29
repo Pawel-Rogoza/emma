@@ -156,6 +156,27 @@ public extension View {
     func emmaAppear(_ index: Int = 0) -> some View { modifier(EmmaAppear(index: index)) }
 }
 
+/// Potrząśnięcie — „nie tak” przy odrzuconym logowaniu albo zapisie.
+/// Zmiana `trigger` uruchamia jedno krótkie drgnięcie w poziomie.
+public struct EmmaShake: ViewModifier, Animatable {
+    public var animatableData: CGFloat
+
+    public init(trigger: Int) {
+        animatableData = CGFloat(trigger)
+    }
+
+    public func body(content: Content) -> some View {
+        content.offset(x: sin(animatableData * .pi * 4) * 6)
+    }
+}
+
+public extension View {
+    /// Potrząśnięcie przy każdej zmianie `trigger` (animowanej).
+    func emmaShake(_ trigger: Int) -> some View {
+        modifier(EmmaShake(trigger: trigger))
+    }
+}
+
 /// Miękko pulsująca obwódka — „tu jest coś nowego”. Jedyny ciągły ruch listy,
 /// dlatego bardzo wolny i delikatny; przy „Ogranicz ruch” obwódka stoi.
 public struct EmmaPulseRing: View {

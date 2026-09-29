@@ -18,6 +18,8 @@ struct LoginScreen: View {
     @State private var password = ""
     @State private var totp = ""
     @FocusState private var focusedField: Field?
+    /// Licznik odrzuconych logowań — każde potrząsa polami (audyt 29.09.2026).
+    @State private var shakes = 0
 
     private enum Field { case email, password, totp }
 
@@ -73,16 +75,24 @@ struct LoginScreen: View {
                         .foregroundStyle(EmmaTheme.danger)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
                 PrimaryButton(
-                    "Zaloguj się",
+                    auth.isAuthenticating ? "Loguję…" : "Zaloguj się",
                     systemImage: "arrow.right",
-                    isEnabled: !auth.isAuthenticating
+                    isLoading: auth.isAuthenticating
                 ) {
                     submit()
                 }
                 .padding(.top, 4)
+            }
+            .emmaShake(shakes)
+            .animation(EmmaMotion.smooth, value: auth.notice)
+            .onChange(of: auth.notice) { _, notice in
+                guard notice != nil else { return }
+                EmmaHaptics.error()
+                withAnimation(.linear(duration: 0.4)) { shakes += 1 }
             }
         } footer: {
             Text(auth.usesRemoteAuth
@@ -122,7 +132,7 @@ struct LockScreen: View {
                 PrimaryButton(
                     auth.unlockButtonTitle,
                     systemImage: auth.canUseBiometrics ? "faceid" : "lock.open",
-                    isEnabled: !auth.isAuthenticating,
+                    isLoading: auth.isAuthenticating,
                     action: { Task { await auth.unlock() } }
                 )
 

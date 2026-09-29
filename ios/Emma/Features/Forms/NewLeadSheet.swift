@@ -52,7 +52,7 @@ struct NewLeadSheet: View {
                     InlineError(errorMessage)
                 }
 
-                PrimaryButton("Dodaj kontakt", isEnabled: !isSaving) {
+                PrimaryButton("Dodaj kontakt", isLoading: isSaving) {
                     Task { await save() }
                 }
             }

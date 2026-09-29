@@ -87,7 +87,7 @@ struct StartCaseSheet: View {
                 InlineError(errorMessage)
             }
 
-            PrimaryButton("Przyjmij sprawę", systemImage: "folder.badge.plus", isEnabled: !isSaving) {
+            PrimaryButton("Przyjmij sprawę", systemImage: "folder.badge.plus", isLoading: isSaving) {
                 Task { await save(client) }
             }
             .accessibilityIdentifier("case-accept-save")

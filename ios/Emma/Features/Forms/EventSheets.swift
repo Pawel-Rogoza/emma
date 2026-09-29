@@ -68,7 +68,8 @@ struct EventFormSheet: View {
             PrimaryButton(
                 eventID == nil ? "Dodaj termin" : "Zapisz zmiany",
                 systemImage: "checkmark",
-                isEnabled: !isSaving && (eventID == nil || original != nil)
+                isEnabled: eventID == nil || original != nil,
+                isLoading: isSaving
             ) {
                 Task { await save() }
             }

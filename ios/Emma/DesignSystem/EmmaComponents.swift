@@ -408,35 +408,53 @@ public struct PrimaryButton: View {
     private let title: String
     private let systemImage: String?
     private let isEnabled: Bool
+    /// Trwa zapis albo logowanie — kręciołek zamiast ikony, przycisk nieaktywny,
+    /// ale w kolorze głównym (widać, że coś się dzieje, a nie że „nie działa”).
+    private let isLoading: Bool
     private let action: () -> Void
 
-    public init(_ title: String, systemImage: String? = nil, isEnabled: Bool = true, action: @escaping () -> Void) {
+    public init(
+        _ title: String,
+        systemImage: String? = nil,
+        isEnabled: Bool = true,
+        isLoading: Bool = false,
+        action: @escaping () -> Void
+    ) {
         self.title = title
         self.systemImage = systemImage
         self.isEnabled = isEnabled
+        self.isLoading = isLoading
         self.action = action
     }
+
+    private var looksEnabled: Bool { isEnabled || isLoading }
 
     public var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                if let systemImage {
+                if isLoading {
+                    ProgressView()
+                        .tint(EmmaTheme.primaryButtonText)
+                        .transition(.scale.combined(with: .opacity))
+                } else if let systemImage {
                     Image(systemName: systemImage).font(.system(size: 15, weight: .semibold))
+                        .transition(.scale.combined(with: .opacity))
                 }
                 Text(title).font(EmmaTypography.button)
             }
-            .foregroundStyle(isEnabled ? EmmaTheme.primaryButtonText : EmmaTheme.disabledButtonText)
+            .foregroundStyle(looksEnabled ? EmmaTheme.primaryButtonText : EmmaTheme.disabledButtonText)
             .frame(maxWidth: .infinity, minHeight: EmmaMetrics.primaryButtonMinHeight)
-            .background(isEnabled ? EmmaTheme.primaryButton : EmmaTheme.disabledButton)
+            .background(looksEnabled ? EmmaTheme.primaryButton : EmmaTheme.disabledButton)
             .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous))
-            .shadow(color: EmmaTheme.primaryButton.opacity(isEnabled ? 0.18 : 0), radius: 8, x: 0, y: 4)
+            .shadow(color: EmmaTheme.primaryButton.opacity(looksEnabled ? 0.18 : 0), radius: 8, x: 0, y: 4)
             .contentShape(Rectangle())
         }
         // Audyt 29.09.2026: główny przycisk nie reagował na dotyk — teraz zapada
         // się pod palcem, a przejście aktywny/nieaktywny jest płynne.
         .buttonStyle(EmmaCardButtonStyle())
         .animation(EmmaMotion.smooth, value: isEnabled)
-        .disabled(!isEnabled)
+        .animation(EmmaMotion.smooth, value: isLoading)
+        .disabled(!isEnabled || isLoading)
     }
 }
 
