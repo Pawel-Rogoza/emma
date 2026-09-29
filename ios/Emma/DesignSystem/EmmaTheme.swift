@@ -87,6 +87,10 @@ public enum EmmaTheme {
     public static let pillAmberText = Color(hex: 0x986B36)
     public static let pillUrgentBackground = Color(hex: 0xFBF0E3)
     public static let pillUrgentText = Color(hex: 0xA47740)
+    /// Plakietka „termin dziś / za 2 dni” na liście spraw — jedyny czerwony
+    /// akcent listy, żeby pilna sprawa nie wyglądała jak „czeka na klienta”.
+    public static let pillDangerBackground = Color(hex: 0xF8ECE8)
+    public static let pillDangerText = Color(hex: 0xA1533E)
 
     // Awatary
     // Tokeny awatara zalogowanego użytkownika (`avatarBackground`/`avatarText`)
@@ -131,24 +135,17 @@ public enum EmmaTheme {
     public static let draftBorder = Color(hex: 0xDBE5EE)
     public static let actionCardBorder = Color(hex: 0xCCDBE9)
 
-    /// Kolor awatara z prezentacji listy rozmów. Zależy od **stabilnej pozycji**,
-    /// nie od identyfikatora (§4.3).
-    public static func conversationAvatar(_ tone: Client.AvatarTone) -> (background: Color, foreground: Color) {
-        switch tone {
-        case .none: return (Color(hex: 0xE3EBF1), Color(hex: 0x4E6882))
-        case .one: return (Color(hex: 0xEAE3DA), Color(hex: 0x88704E))
-        case .two: return (Color(hex: 0xEEE4E8), Color(hex: 0x926778))
-        case .three: return (Color(hex: 0xE4E9E2), Color(hex: 0x6A7A60))
-        }
-    }
-
-    /// Stabilne przypisanie tonu do pozycji na liście rozmów.
-    public static func avatarTone(forPresentationIndex index: Int) -> Client.AvatarTone {
-        switch index % 4 {
-        case 1: return .one
-        case 2: return .two
-        case 3: return .three
-        default: return .none
+    /// Stały ton awatara osoby (`IdentityTone`): stonowane pary tło/tekst
+    /// w rodzinie kolorów aplikacji — rozróżniają osoby, nie krzyczą.
+    /// Review 27.09.2026, odstępstwo D-34.
+    public static func identityAvatar(_ index: Int) -> (background: Color, foreground: Color) {
+        switch index % IdentityTone.count {
+        case 1: return (Color(hex: 0xEFE6DA), Color(hex: 0x86653F))
+        case 2: return (Color(hex: 0xF0E3E8), Color(hex: 0x8E5A6E))
+        case 3: return (Color(hex: 0xE2ECE4), Color(hex: 0x4F7560))
+        case 4: return (Color(hex: 0xE8E5F3), Color(hex: 0x5E5692))
+        case 5: return (Color(hex: 0xE0ECEF), Color(hex: 0x3F6F7B))
+        default: return (Color(hex: 0xE3EAF4), Color(hex: 0x40628F))
         }
     }
 

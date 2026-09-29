@@ -42,6 +42,10 @@ final class TodayStore: ObservableObject {
         var caseNumbers: [CaseID: String]
         /// Wszystkie kontakty — z nich liczona jest kolejka leadów do obsługi.
         var clients: [Client]
+        /// Niezakończone terminy w sprawach z ostatnich 30 dni, które już minęły —
+        /// najdawniejsze najpierw. Audyt 28.09.2026: przegapiony termin procesowy
+        /// to dla adwokata najgorsza wiadomość dnia, a ekran go nie pokazywał.
+        var missedDeadlines: [ScheduledEvent] = []
     }
 
     @Published private(set) var phase: LoadPhase<Model> = .idle
@@ -63,11 +67,22 @@ final class TodayStore: ObservableObject {
             async let tasksTask = repository.tasks(
                 filter: TaskFilter(scope: .open, dueOnOrBefore: today)
             )
+            async let pastTask = repository.events(
+                in: DateIntervalFilter(
+                    from: today.adding(days: -CaseUrgency.missedLookbackDays),
+                    through: today.adding(days: -1)
+                )
+            )
 
             let clients = try await clientsTask
             let cases = try await casesTask
             let events = try await eventsTask
             let tasks = try await tasksTask
+            // Brak przeszłych terminów nie może zablokować całego dnia.
+            let past = (try? await pastTask) ?? []
+            let missed = past
+                .filter { $0.kind == .caseDeadline && $0.status != .finished && $0.day < today }
+                .sorted { $0.day != $1.day ? $0.day < $1.day : $0.time < $1.time }
 
             let active = events.filter { $0.status != .finished || $0.day == today }
             let model = Model(
@@ -87,7 +102,8 @@ final class TodayStore: ObservableObject {
                         cases.map { ($0.id, $0.number) },
                         uniquingKeysWith: { first, _ in first }
                     ),
-                    clients: clients
+                    clients: clients,
+                    missedDeadlines: missed
                 )
             // Odświeżenie po zapisie (np. obsłużony lead) jest animowane.
             if phase.hasLoaded {
@@ -116,6 +132,8 @@ struct TodayScreen: View {
     @State private var eventPendingDeletion: ScheduledEvent?
     /// Minione terminy są domyślnie zwinięte: to zapis dnia, nie plan na teraz.
     @State private var showsPastEvents = false
+    /// Karta „Włącz poranny skrót” — gdy system jeszcze nie pytał o powiadomienia.
+    @State private var offersNotifications = false
 
     var body: some View {
         ScrollView {
@@ -139,6 +157,7 @@ struct TodayScreen: View {
         .scrollIndicators(.hidden)
         .refreshable { await store.load(dependencies) }
         .task(id: dependencies.dataVersion) { await store.load(dependencies) }
+        .task { offersNotifications = await dependencies.reminders.shouldOfferPermission() }
         .confirmationDialog(
             "Usunąć termin?",
             isPresented: Binding(
@@ -154,6 +173,13 @@ struct TodayScreen: View {
             Button("Wróć", role: .cancel) { eventPendingDeletion = nil }
         } message: { event in
             Text("„\(event.title)” o \(event.time.hhmm) zniknie z kalendarza.")
+        }
+    }
+
+    /// „Załatwione” z menu wiersza — wspólna czynność (`EventActions`), z „Cofnij”.
+    private func finishEvent(_ event: ScheduledEvent) async {
+        if let message = await EventActions.finish(event, dependencies: dependencies) {
+            dependencies.showToast(message)
         }
     }
 
@@ -176,6 +202,18 @@ struct TodayScreen: View {
 
         pulse(model, inbox: inbox)
             .padding(.top, 6)
+
+        if !model.missedDeadlines.isEmpty {
+            missedDeadlinesCard(model)
+                .padding(.top, 12)
+                .transition(.move(edge: .top).combined(with: .opacity))
+        }
+
+        if offersNotifications {
+            notificationsOffer
+                .padding(.top, 12)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+        }
 
         leadsSection(inbox)
 
@@ -232,6 +270,21 @@ struct TodayScreen: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Szukanie klienta, sprawy albo numeru telefonu jednym dotknięciem
+            // (audyt 28.09.2026) — bez przechodzenia przez zakładkę i tryby.
+            Button {
+                EmmaHaptics.tap()
+                dependencies.openClientSearch()
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 19, weight: .medium))
+                    .foregroundStyle(EmmaTheme.mutedSoft)
+                    .frame(width: EmmaSpacing.hitTarget, height: EmmaSpacing.hitTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Szukaj klienta, sprawy lub telefonu")
 
             emmaHeaderButton
 
@@ -296,6 +349,166 @@ struct TodayScreen: View {
         }
         .accessibilityLabel("Porozmawiaj z Emmą")
         .accessibilityHint("Zaczyna rozmowę głosową. Przytrzymaj, aby napisać do Emmy.")
+    }
+
+    // MARK: Zgoda na powiadomienia
+
+    /// Jedno zdanie, dwa przyciski. Bez zgody nie ma porannego skrótu ani
+    /// przypomnień o rozprawach — a system pyta tylko raz, więc pytamy w porę.
+    private var notificationsOffer: some View {
+        SurfaceCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "bell.badge")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(EmmaTheme.accent)
+                        .frame(width: 34, height: 34)
+                        .background(EmmaTheme.accentSoft, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Poranny skrót i przypomnienia")
+                            .font(EmmaTypography.ui(15, .semibold))
+                            .foregroundStyle(EmmaTheme.ink)
+                        Text("O 8:00 powiem, co dziś w kalendarzu i co jest po terminie. Przypomnę też przed rozprawą.")
+                            .font(EmmaTypography.caption())
+                            .foregroundStyle(EmmaTheme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                HStack(spacing: 10) {
+                    PrimaryButton("Włącz", systemImage: "bell") {
+                        Task {
+                            _ = await dependencies.reminders.requestAuthorizationIfNeeded()
+                            dependencies.reminders.scheduleRefresh(dependencies)
+                            withAnimation(EmmaMotion.smooth) { offersNotifications = false }
+                        }
+                    }
+                    SecondaryButton("Nie teraz") {
+                        dependencies.reminders.dismissPermissionOffer()
+                        withAnimation(EmmaMotion.smooth) { offersNotifications = false }
+                    }
+                }
+            }
+        }
+        .accessibilityIdentifier("today-notifications-offer")
+    }
+
+    // MARK: Po terminie
+
+    /// Czerwona karta nad wszystkim innym: terminy w sprawach, które minęły,
+    /// a nikt ich nie zamknął. Dotknięcie otwiera termin (tam „Zakończ”
+    /// albo przesunięcie), przytrzymanie — sprawę.
+    private func missedDeadlinesCard(_ model: TodayStore.Model) -> some View {
+        let shown = Array(model.missedDeadlines.prefix(3))
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .symbolEffect(.pulse, options: .repeating.speed(0.5))
+                Text("Po terminie · \(model.missedDeadlines.count)")
+                    .font(EmmaTypography.ui(15, .semibold))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(EmmaTheme.pillDangerText)
+            .padding(.horizontal, 15)
+            .padding(.top, 13)
+            .padding(.bottom, 4)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
+
+            ForEach(Array(shown.enumerated()), id: \.element.id) { index, event in
+                Button {
+                    dependencies.present(.eventDetail(event.id))
+                } label: {
+                    missedRow(event, model: model)
+                }
+                .buttonStyle(EmmaCardButtonStyle())
+                .contextMenu {
+                    Button {
+                        Task { await finishEvent(event) }
+                    } label: {
+                        Label("Załatwione", systemImage: "checkmark.circle")
+                    }
+                    if let caseID = event.caseID {
+                        Button {
+                            dependencies.openCase(caseID)
+                        } label: {
+                            Label("Otwórz sprawę", systemImage: "folder")
+                        }
+                    }
+                    if let clientID = event.clientID {
+                        Button {
+                            dependencies.openPerson(clientID)
+                        } label: {
+                            Label("Karta klienta", systemImage: "person")
+                        }
+                    }
+                }
+                if index < shown.count - 1 {
+                    Divider().overlay(EmmaTheme.pillDangerText.opacity(0.15)).padding(.horizontal, 15)
+                }
+            }
+            if model.missedDeadlines.count > shown.count {
+                Button {
+                    dependencies.clientMode = .cases
+                    dependencies.go(to: .clients, resetStack: true)
+                } label: {
+                    Text("Wszystkie sprawy po terminie")
+                        .font(EmmaTypography.caption(.semibold))
+                        .foregroundStyle(EmmaTheme.pillDangerText)
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.bottom, 6)
+        .background(EmmaTheme.pillDangerBackground)
+        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
+                .strokeBorder(EmmaTheme.pillDangerText.opacity(0.25), lineWidth: 1)
+        }
+        .accessibilityIdentifier("today-missed-deadlines")
+    }
+
+    private func missedRow(_ event: ScheduledEvent, model: TodayStore.Model) -> some View {
+        let urgency = CaseUrgency(nextEvent: nil, missedEvent: event.day, overdueTasks: 0, today: model.today)
+        let meta = [
+            event.caseID.flatMap { model.caseNumbers[$0] },
+            event.clientID.flatMap { model.clientNames[$0] }
+        ].compactMap { $0 }.joined(separator: " · ")
+        return HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(event.title)
+                    .font(EmmaTypography.ui(14, .semibold))
+                    .foregroundStyle(EmmaTheme.ink)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                // Kiedy minął — pod tytułem, na czerwono; plakietka z boku
+                // zabierała tytułowi połowę szerokości.
+                HStack(spacing: 6) {
+                    if let countdown = urgency.countdownText {
+                        Text(countdown.prefix(1).uppercased() + countdown.dropFirst())
+                            .font(EmmaTypography.caption(.semibold))
+                            .foregroundStyle(EmmaTheme.pillDangerText)
+                    }
+                    if !meta.isEmpty {
+                        Text("· \(meta)")
+                            .font(EmmaTypography.caption())
+                            .foregroundStyle(EmmaTheme.muted)
+                            .lineLimit(1)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(EmmaTheme.pillDangerText.opacity(0.6))
+        }
+        .padding(.horizontal, 15)
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Otwiera termin. Przytrzymaj, aby oznaczyć jako załatwiony albo przejść do sprawy.")
     }
 
     // MARK: Leady do obsługi
@@ -370,6 +583,16 @@ struct TodayScreen: View {
                             Text(dependencies.dateText.dayLabel(event.day))
                                 .font(EmmaTypography.ui(14, .semibold))
                                 .foregroundStyle(EmmaTheme.accent)
+                        }
+                        // „za 45 min” / „teraz” — odświeżane co minutę.
+                        TimelineView(.periodic(from: .now, by: 60)) { _ in
+                            if let countdown = event.countdownText(
+                                now: TimeOfDay.at(dependencies.clock.now()),
+                                today: model.today
+                            ) {
+                                StatusPill(countdown, kind: countdown == "teraz" ? .green : .neutral)
+                                    .transition(.scale.combined(with: .opacity))
+                            }
                         }
                         Spacer(minLength: 8)
                         Label(event.kind.displayTitle, systemImage: event.kind.systemImage)
@@ -586,6 +809,9 @@ struct TodayScreen: View {
                         } onOpen: {
                             dependencies.present(.taskDetail(entry.task.id))
                         }
+                        .taskContextMenu(entry.task, dependencies: dependencies) {
+                            dependencies.present(.taskDetail(entry.task.id))
+                        }
                         if index < entries.count - 1 {
                             Divider().overlay(EmmaTheme.rowSeparator).padding(.horizontal, 15)
                         }
@@ -614,12 +840,8 @@ struct TodayScreen: View {
             .accessibilityAddTraits(.isHeader)
     }
 
+    /// Wibrację i natychmiastową zmianę kółka robi `TaskRow`.
     private func toggle(_ task: TaskItem) async {
-        if task.isDone {
-            EmmaHaptics.tap()
-        } else {
-            EmmaHaptics.success()
-        }
         await dependencies.perform {
             _ = try await dependencies.repository.setDone(
                 taskID: task.id,
@@ -643,7 +865,8 @@ struct TodayScreen: View {
                         event: event,
                         now: now,
                         onOpen: { dependencies.present(.eventDetail(event.id)) },
-                        onDelete: { eventPendingDeletion = event }
+                        onDelete: { eventPendingDeletion = event },
+                        onFinish: { Task { await finishEvent(event) } }
                     )
                     if index < events.count - 1 {
                         Divider().overlay(EmmaTheme.rowSeparator).padding(.horizontal, 15)
@@ -684,54 +907,6 @@ struct TodayScreen: View {
         }
     }
 
-}
-
-/// Kafelek pulsu dnia: liczba, podpis i ikona; dotknięcie otwiera listę.
-private struct PulseTile: View {
-    let value: Int
-    let label: String
-    let systemImage: String
-    let tone: Color
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .center) {
-                    Text("\(value)")
-                        .font(EmmaTypography.heading(24))
-                        .foregroundStyle(EmmaTheme.ink)
-                        .contentTransition(.numericText())
-                    Spacer(minLength: 4)
-                    Image(systemName: systemImage)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(tone)
-                        .frame(width: 26, height: 26)
-                        .background(EmmaTheme.accentSoft, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-                Text(label)
-                    .font(EmmaTypography.caption())
-                    .foregroundStyle(EmmaTheme.muted)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, minHeight: 70, alignment: .topLeading)
-            .padding(12)
-            .background(EmmaTheme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
-                    .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
-            }
-            .emmaCardShadow()
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(EmmaCardButtonStyle())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(value) \(label)")
-        .accessibilityAddTraits(.isButton)
-    }
 }
 
 /// Wiersz zadania z informacją, do którego kubełka należy — potrzebne, żeby

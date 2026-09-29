@@ -17,7 +17,6 @@ struct ConversationRow: View {
     let preview: Message?
     let unreadCount: Int
     let isPinned: Bool
-    let avatarTone: Client.AvatarTone
     let hasDraft: Bool
     let onOpen: () -> Void
     let onOptions: () -> Void
@@ -35,7 +34,7 @@ struct ConversationRow: View {
                 HStack(alignment: .top, spacing: 12) {
                     PersonAvatar(
                         initials: client.initials,
-                        style: .conversation(avatarTone),
+                        style: .identity(client.id),
                         diameter: EmmaMetrics.conversationAvatar
                     )
 

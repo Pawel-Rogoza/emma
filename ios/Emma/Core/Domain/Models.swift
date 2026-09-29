@@ -118,14 +118,6 @@ public struct Client: Identifiable, Hashable, Codable, Sendable {
         self.email = email
         self.version = version
     }
-
-    /// Kolor awatara z prezentacji. Zależy od **stabilnej pozycji prezentacji**, nie od ID (§4.3).
-    public enum AvatarTone: Int, Codable, Sendable, CaseIterable {
-        case none = 0
-        case one = 1
-        case two = 2
-        case three = 3
-    }
 }
 
 // MARK: - Sprawa

@@ -188,6 +188,60 @@ final class ScreenshotCaptureUITests: XCTestCase {
             }
             return nil
         }
+
+        closeSheet()
+
+        // Audyt 28.09.2026: nowe ekrany i stany, których wcześniej nie było w zrzutach.
+        capture("15-kartoteka", description: "Klienci — kartoteka klientów kancelarii (A–Ż)") {
+            selectTab("clients")
+            let mode = application.buttons["Klienci"]
+            guard mode.waitForExistence(timeout: 10) else { return "brak przełącznika trybu „Klienci”" }
+            mode.tap()
+            return nil
+        }
+
+        capture("16-sprawy-lista", description: "Klienci — sprawy w grupach pilności") {
+            selectTab("clients")
+            let mode = application.buttons["Sprawy"]
+            guard mode.waitForExistence(timeout: 10) else { return "brak przełącznika trybu „Sprawy”" }
+            mode.tap()
+            return nil
+        }
+
+        capture("17-dzisiaj-po-terminie", description: "Dzisiaj — karta „Po terminie” (przegapiony termin w sprawie)") {
+            selectTab("today")
+            guard application.otherElements["today-missed-deadlines"].waitForExistence(timeout: 10)
+                || application.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Po terminie'")).firstMatch.waitForExistence(timeout: 5)
+            else { return "brak karty „Po terminie”" }
+            return nil
+        }
+
+        capture("18-termin-zalatwione", description: "Szczegóły przegapionego terminu z przyciskiem „Załatwione”") {
+            selectTab("today")
+            let missed = application.buttons.matching(
+                NSPredicate(format: "label CONTAINS[c] 'Uzupełnienie braków'")
+            ).firstMatch
+            guard missed.waitForExistence(timeout: 10) else { return "brak przegapionego terminu na „Dzisiaj”" }
+            missed.tap()
+            guard application.buttons["Załatwione"].waitForExistence(timeout: 10) else {
+                return "brak przycisku „Załatwione”"
+            }
+            return nil
+        }
+
+        closeSheet()
+
+        capture("19-szukaj", description: "Lupa na „Dzisiaj” — kartoteka z klawiaturą w polu szukania") {
+            selectTab("today")
+            let search = application.buttons["Szukaj klienta, sprawy lub telefonu"]
+            guard search.waitForExistence(timeout: 10) else { return "brak lupy na „Dzisiaj”" }
+            search.tap()
+            guard application.keyboards.firstMatch.waitForExistence(timeout: 5) else {
+                return "klawiatura się nie pojawiła"
+            }
+            application.typeText("Bond")
+            return nil
+        }
     }
 
     /// Zamknięcie arkusza przyciskiem „Zamknij”; brak arkusza nie jest błędem sceny.

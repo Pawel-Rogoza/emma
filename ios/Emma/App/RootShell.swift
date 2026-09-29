@@ -9,6 +9,11 @@ import SwiftUI
 public struct RootShell: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @EnvironmentObject private var auth: AuthStore
+    @ObservedObject private var quickActions = HomeScreenQuickActions.shared
+    /// Przy otwartej klawiaturze pasek zakładek znika (jak w aplikacjach
+    /// systemowych) — wcześniej unosił się nad klawiaturą i zabierał ~70 pt
+    /// liście wyników i polu wiadomości (zrzut 19 z CI, audyt 28.09.2026).
+    @State private var keyboardVisible = false
 
     public init() {}
 
@@ -16,7 +21,11 @@ public struct RootShell: View {
         VStack(spacing: 0) {
             ZStack {
                 EmmaTheme.bg
+                // Zakładki przenikają się zamiast przeskakiwać (animację
+                // uruchamia pasek zakładek; `go(to:)` z kodu zostaje natychmiastowe).
                 content
+                    .id(dependencies.tab)
+                    .transition(.opacity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -36,11 +45,22 @@ public struct RootShell: View {
                 )
             }
 
-            EmmaTabBar(
-                selection: $dependencies.tab,
-                unreadCount: dependencies.unreadTotal,
-                leadCount: dependencies.leadsNeedingAction
-            )
+            if !keyboardVisible {
+                EmmaTabBar(
+                    selection: $dependencies.tab,
+                    unreadCount: dependencies.unreadTotal,
+                    leadCount: dependencies.leadsNeedingAction
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            // Klawiatura arkusza nie dotyczy powłoki pod spodem.
+            guard dependencies.sheet == nil else { return }
+            withAnimation(EmmaMotion.smooth) { keyboardVisible = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            withAnimation(EmmaMotion.smooth) { keyboardVisible = false }
         }
         .background(EmmaTheme.bg)
         .overlay(alignment: .bottom) {
@@ -65,7 +85,11 @@ public struct RootShell: View {
                 dependencies.voice.viewDidDisappear()
             }
         }
+        // Skrót z ikony aplikacji — dopiero po odblokowaniu (Face ID).
+        .onChange(of: quickActions.pending) { _, _ in consumeQuickAction() }
+        .onChange(of: auth.state) { _, _ in consumeQuickAction() }
         .onAppear {
+            consumeQuickAction()
             dependencies.refreshUnreadTotal()
             dependencies.refreshLeadCount()
             dependencies.reminders.scheduleRefresh(dependencies)
@@ -76,6 +100,11 @@ public struct RootShell: View {
                 dependencies.showToast(notice)
             }
         }
+    }
+
+    private func consumeQuickAction() {
+        guard auth.state == .unlocked else { return }
+        quickActions.consume(dependencies)
     }
 
     @ViewBuilder
@@ -117,11 +146,16 @@ struct ToastLayer: View {
                 )
                 .padding(.horizontal, EmmaSpacing.screenH)
                 .padding(.bottom, bottomPadding)
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                .transition(
+                    .asymmetric(
+                        insertion: .move(edge: .bottom).combined(with: .scale(scale: 0.92)).combined(with: .opacity),
+                        removal: .opacity
+                    )
+                )
                 .allowsHitTesting(dependencies.toastAction != nil)
             }
         }
-        .animation(.easeOut(duration: 0.22), value: dependencies.toast)
+        .animation(EmmaMotion.bouncy, value: dependencies.toast)
     }
 }
 

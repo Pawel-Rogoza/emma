@@ -10,6 +10,9 @@ import Foundation
 struct ClientCardModel: Equatable {
     var client: Client
     var legalCase: LegalCase?
+    /// Wszystkie sprawy klienta, aktywne najpierw. Audyt 28.09.2026: karta
+    /// pokazywała jedną sprawę, a klient karnisty często ma kilka postępowań.
+    var cases: [LegalCase] = []
     /// Terminy klienta posortowane rosnąco (jak `sortEvents` w referencji).
     var events: [ScheduledEvent]
     var notes: [CaseNote]
@@ -37,11 +40,22 @@ final class ClientCardStore: ObservableObject {
             async let eventsTask = repository.events(in: window, clientID: clientID)
             async let notesTask = repository.notes(clientID: clientID, caseID: nil)
             async let threadsTask = repository.threads()
+            async let allCasesTask = repository.cases(status: nil)
 
             let legalCase = try await legalCaseTask
             let events = try await eventsTask
             var notes = try await notesTask
             let threads = try await threadsTask
+            // Lista spraw jest dodatkiem — jej brak nie blokuje karty.
+            var cases = ((try? await allCasesTask) ?? []).filter { $0.clientID == clientID }
+            if let legalCase, !cases.contains(where: { $0.id == legalCase.id }) {
+                cases.append(legalCase)
+            }
+            cases.sort { lhs, rhs in
+                if lhs.status.isActive != rhs.status.isActive { return lhs.status.isActive }
+                if lhs.createdAt != rhs.createdAt { return rhs.createdAt < lhs.createdAt }
+                return lhs.title.localizedCompare(rhs.title) == .orderedAscending
+            }
 
             // Notatka dodana z karty klienta, który ma sprawę, trafia do sprawy.
             // Karta czytała wyłącznie notatki kartoteki, więc zapisana notatka
@@ -57,6 +71,7 @@ final class ClientCardStore: ObservableObject {
                 ClientCardModel(
                     client: client,
                     legalCase: legalCase,
+                    cases: cases,
                     events: events
                         .sorted { lhs, rhs in
                             if lhs.day != rhs.day { return lhs.day < rhs.day }

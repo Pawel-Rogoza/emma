@@ -19,9 +19,16 @@ import SwiftUI
 struct EventActionsMenu: View {
     let onOpen: () -> Void
     let onDelete: (() -> Void)?
+    /// „Załatwione” — tylko dla terminu, który minął i nie jest zamknięty.
+    var onFinish: (() -> Void)? = nil
 
     var body: some View {
         Menu {
+            if let onFinish {
+                Button("Załatwione", systemImage: "checkmark.circle") {
+                    onFinish()
+                }
+            }
             Button("Otwórz szczegóły", systemImage: "arrow.up.forward.square") {
                 onOpen()
             }
@@ -58,6 +65,8 @@ struct TodayEventRow: View {
     let now: TimeOfDay
     let onOpen: () -> Void
     let onDelete: () -> Void
+    /// Zamknięcie terminu z menu wiersza (audyt 28.09.2026) — bez otwierania arkusza.
+    var onFinish: (() -> Void)? = nil
 
     private var isPast: Bool { event.hasPassed(at: now) }
     private var isHappening: Bool { event.isHappening(at: now) }
@@ -108,7 +117,11 @@ struct TodayEventRow: View {
             }
             .buttonStyle(.plain)
 
-            EventActionsMenu(onOpen: onOpen, onDelete: onDelete)
+            EventActionsMenu(
+                onOpen: onOpen,
+                onDelete: onDelete,
+                onFinish: isPast && event.status != .finished ? onFinish : nil
+            )
         }
         .padding(.vertical, 13)
         .padding(.horizontal, 15)

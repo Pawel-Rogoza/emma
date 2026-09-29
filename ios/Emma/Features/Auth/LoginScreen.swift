@@ -180,6 +180,11 @@ private struct AuthScaffold<Content: View, Footer: View>: View {
     let content: Content
     let footer: Footer
 
+    /// Wejście ekranu: orb, potem treść — zamiast pojawienia się skokiem przy
+    /// każdym powrocie do aplikacji (audyt 28.09.2026). „Ogranicz ruch” — bez.
+    @State private var appeared = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     init(
         orbActive: Bool,
         title: String,
@@ -204,6 +209,8 @@ private struct AuthScaffold<Content: View, Footer: View>: View {
                 EmmaOrb(size: .hero, isActive: orbActive, breathing: true)
                     .padding(.top, 44)
                     .padding(.bottom, 26)
+                    .scaleEffect(appeared || reduceMotion ? 1 : 0.86)
+                    .opacity(appeared || reduceMotion ? 1 : 0)
 
                 Text(title)
                     .font(EmmaTypography.heading(26))
@@ -235,6 +242,8 @@ private struct AuthScaffold<Content: View, Footer: View>: View {
                 footer
                     .padding(.top, 22)
             }
+            .offset(y: appeared || reduceMotion ? 0 : 12)
+            .opacity(appeared || reduceMotion ? 1 : 0.001)
             .padding(.horizontal, 24)
             .padding(.bottom, 40)
             .frame(maxWidth: 430)
@@ -242,6 +251,9 @@ private struct AuthScaffold<Content: View, Footer: View>: View {
         }
         .background(EmmaTheme.bg)
         .scrollDismissesKeyboard(.interactively)
+        .onAppear {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) { appeared = true }
+        }
     }
 }
 

@@ -1,0 +1,107 @@
+# Emma · pełne testy interfejsu (XCUITest) na symulatorze
+#
+# Workflow „Emma · iOS” uruchamia tylko testy jednostkowe i scenę zrzutów.
+# Tutaj idą wszystkie pozostałe testy UI (przepływ demo, układ, dialogi,
+# blokada, menu leadów) — równolegle i bez blokowania wydań na TestFlight.
+# Wynik: podsumowanie w przebiegu i artefakt z logiem oraz pakietem .xcresult.
+
+name: Emma · testy UI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-uitests.yml"
+
+# Grupa per commit: nowy push nie anuluje trwającego przebiegu — każdy commit
+# dostaje własny raport testów UI.
+concurrency:
+  group: ios-uitests-${{ github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  ARTIFACTS: ${{ github.workspace }}/artifacts
+
+jobs:
+  uitests:
+    name: Testy UI (bez backendu)
+    runs-on: macos-15
+    timeout-minutes: 75
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Projekt z project.yml
+        working-directory: ios
+        run: |
+          brew install xcodegen
+          ./scripts/generate-project.sh
+          xcodebuild -resolvePackageDependencies -project Emma.xcodeproj -scheme Emma-Demo
+
+      - name: Symulator
+        id: simulator
+        run: |
+          set -euo pipefail
+          LIST=$(xcrun simctl list devices available)
+          UDID='[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}'
+          ID=$(printf '%s\n' "$LIST" | grep -i 'iPhone 16 ' | grep -oE "$UDID" | head -1 || true)
+          [[ -z "$ID" ]] && ID=$(printf '%s\n' "$LIST" | grep -i 'iPhone' | grep -oE "$UDID" | head -1)
+          echo "device_id=$ID" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$ID" || true
+
+      - name: Testy UI
+        id: tests
+        continue-on-error: true
+        working-directory: ios
+        run: |
+          set +e
+          mkdir -p "$ARTIFACTS"
+          # BackendLoginUITests wymaga działającego backendu — poza zakresem CI.
+          # ScreenshotCaptureUITests biegnie w workflow „Emma · iOS”.
+          xcodebuild test \
+            -project Emma.xcodeproj \
+            -scheme Emma-Demo \
+            -destination "id=${{ steps.simulator.outputs.device_id }}" \
+            -derivedDataPath .build/DerivedData \
+            -resultBundlePath "$ARTIFACTS/uitests.xcresult" \
+            -only-testing:EmmaUITests \
+            -skip-testing:EmmaUITests/BackendLoginUITests \
+            -skip-testing:EmmaUITests/ScreenshotCaptureUITests \
+            CODE_SIGNING_ALLOWED=NO \
+            > "$ARTIFACTS/uitests.log" 2>&1
+          status=$?
+          grep -E "Test Case .* (passed|failed)|error: -\[|Executed" "$ARTIFACTS/uitests.log" | tail -150
+          exit $status
+
+      - name: Podsumowanie
+        if: always()
+        run: |
+          LOG="$ARTIFACTS/uitests.log"
+          {
+            echo "## Emma · testy UI"
+            if [[ -f "$LOG" ]]; then
+              echo "Zaliczone: $(grep -cE "Test Case .* passed" "$LOG")  ·  Niezaliczone: $(grep -cE "Test Case .* failed" "$LOG")"
+              echo
+              echo '```'
+              grep -E "Test Case .* failed|error: -\[" "$LOG" | head -80
+              echo '```'
+            else
+              echo "Brak logu testów."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: emma-uitests
+          path: artifacts/
+          retention-days: 14

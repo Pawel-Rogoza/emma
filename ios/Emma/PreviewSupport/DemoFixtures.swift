@@ -138,6 +138,9 @@ public enum DemoFixtures {
     public static let eventAndriiID = EventID("event-14")
     public static let eventMariaID = EventID("event-15")
     public static let eventHearingID = EventID("event-16")
+    /// Termin w sprawie, który minął bez zamknięcia — pokazuje kartę
+    /// „Po terminie” na „Dzisiaj” (audyt 28.09.2026).
+    public static let eventMissedDeadlineID = EventID("event-17")
 
     public static let events: [ScheduledEvent] = [
         ScheduledEvent(
@@ -199,6 +202,18 @@ public enum DemoFixtures {
             kind: .caseDeadline,
             status: .confirmed,
             place: "Warszawa · miejsce do sprawdzenia"
+        ),
+        ScheduledEvent(
+            id: eventMissedDeadlineID,
+            clientID: nil,
+            caseID: caseDmytroID,
+            title: "Uzupełnienie braków formalnych",
+            day: LocalDate(year: 2026, month: 9, day: 9),
+            time: TimeOfDay(hhmm: "15:00")!,
+            durationMinutes: 30,
+            kind: .caseDeadline,
+            status: .confirmed,
+            place: "Sąd Rejonowy"
         )
     ]
 

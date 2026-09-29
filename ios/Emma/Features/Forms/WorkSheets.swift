@@ -152,43 +152,34 @@ struct TaskFormSheet: View {
     @State private var loaded = false
 
     var body: some View {
+        // Audyt 28.09.2026: formularz zadania wyglądał jak z innej aplikacji
+        // (pola z ramkami, rozwijane menu klientów) obok dopracowanego
+        // formularza terminu. Teraz ten sam układ: duży tytuł, karty z
+        // wierszami, szybkie chipy — i wyszukiwarka klientów zamiast menu.
         SheetScaffold(title: taskID == nil ? "Nowe zadanie" : "Edytuj zadanie", onClose: { dependencies.dismissSheet() }) {
-            LabeledField("Co trzeba zrobić?") {
-                TextField("Nazwa zadania", text: $title)
-                    .emmaFieldStyle()
-                    .accessibilityLabel("Co trzeba zrobić?")
-            }
-
-            LabeledField("Powiązany klient") {
-                Menu {
-                    Button("Bez klienta") { selectedClient = nil }
-                    ForEach(clients) { client in
-                        Button(client.displayName) { selectedClient = client.id }
-                    }
-                } label: {
-                    HStack {
-                        Text(clients.first { $0.id == selectedClient }?.displayName ?? "Bez klienta")
-                            .font(EmmaTypography.fieldValue)
-                            .foregroundStyle(EmmaTheme.ink)
-                        Spacer()
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 12))
-                            .foregroundStyle(EmmaTheme.mutedSoft)
-                    }
-                    .padding(.horizontal, 12)
-                    .frame(minHeight: EmmaMetrics.fieldMinHeight)
+            VStack(alignment: .leading, spacing: 10) {
+                TextField("Co trzeba zrobić?", text: $title)
+                    .font(EmmaTypography.heading(20))
+                    .foregroundStyle(EmmaTheme.ink)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 56)
                     .background(EmmaTheme.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.field, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
                     .overlay {
-                        RoundedRectangle(cornerRadius: EmmaRadii.field, style: .continuous)
-                            .strokeBorder(EmmaTheme.fieldBorder, lineWidth: 1)
+                        RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
+                            .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
                     }
+                    .accessibilityLabel("Co trzeba zrobić?")
+
+                HStack(spacing: 8) {
+                    priorityChip(.normal, systemImage: "checklist")
+                    priorityChip(.urgent, systemImage: "flame")
                 }
-                .accessibilityLabel("Powiązany klient")
             }
 
-            LabeledField("Termin") {
-                HStack(spacing: 10) {
+            FormSectionLabel("Termin")
+            FormCard {
+                FormRow(systemImage: "calendar", title: "Do kiedy") {
                     DatePicker(
                         "Termin",
                         selection: Binding(
@@ -200,49 +191,77 @@ struct TaskFormSheet: View {
                     .labelsHidden()
                     .environment(\.timeZone, FirmDateTime.timeZone)
                     .environment(\.locale, Locale(identifier: "pl_PL"))
-                    Spacer(minLength: 0)
-                }
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach([("Dziś", 0), ("Jutro", 1), ("Za tydzień", 7)], id: \.1) { label, offset in
-                            let target = dependencies.today.adding(days: offset)
-                            QuickChip(title: label, isSelected: dueDate == target) { dueDate = target }
-                        }
-                    }
                 }
             }
-
-            LabeledField("Priorytet") {
+            ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
-                    ForEach([TaskPriority.normal, .urgent], id: \.self) { candidate in
-                        let isSelected = candidate == priority
-                        Button {
-                            priority = candidate
-                        } label: {
-                            Text(candidate.displayName)
-                                .font(EmmaTypography.caption(isSelected ? .semibold : .regular))
-                                .foregroundStyle(isSelected ? EmmaTheme.ink : EmmaTheme.muted)
-                                .frame(maxWidth: .infinity, minHeight: EmmaMetrics.segmentedMinHeight - 6)
-                                .background(isSelected ? EmmaTheme.controlSelected : Color.clear)
-                                .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.segmentedInner, style: .continuous))
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+                    ForEach([("Dziś", 0), ("Jutro", 1), ("Pojutrze", 2), ("Za tydzień", 7)], id: \.1) { label, offset in
+                        let target = dependencies.today.adding(days: offset)
+                        QuickChip(title: label, isSelected: dueDate == target) { dueDate = target }
                     }
                 }
-                .padding(3)
-                .background(EmmaTheme.controlBackground)
-                .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.segmented, style: .continuous))
+                .padding(.horizontal, 2)
+            }
+            .padding(.top, 4)
+
+            FormSectionLabel("Dla kogo")
+            FormCard {
+                NavigationLink {
+                    ClientPickerView(clients: clients, selection: $selectedClient)
+                } label: {
+                    FormRow(systemImage: "person", title: "Klient") {
+                        HStack(spacing: 6) {
+                            Text(clients.first { $0.id == selectedClient }?.displayName ?? "Bez klienta")
+                                .font(EmmaTypography.ui(15))
+                                .foregroundStyle(selectedClient == nil ? EmmaTheme.mutedSoft : EmmaTheme.ink)
+                                .lineLimit(1)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(EmmaTheme.mutedSoft)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Powiązany klient")
             }
 
-            if let error { InlineError(error) }
+            if let error {
+                InlineError(error)
+                    .padding(.top, 12)
+            }
 
             PrimaryButton(taskID == nil ? "Dodaj zadanie" : "Zapisz zadanie", systemImage: "checkmark") {
                 Task { await save() }
             }
+            .padding(.top, 20)
         }
         .task { await prepare() }
+    }
+
+    /// Priorytet jako dwa duże chipy (jak rodzaj terminu), a nie segment
+    /// schowany na dole formularza — „pilne” to decyzja, którą widać.
+    private func priorityChip(_ candidate: TaskPriority, systemImage: String) -> some View {
+        let isSelected = priority == candidate
+        return Button {
+            EmmaHaptics.selection()
+            withAnimation(EmmaMotion.snappy) { priority = candidate }
+        } label: {
+            Label(candidate.displayName, systemImage: systemImage)
+                .font(EmmaTypography.ui(14, isSelected ? .semibold : .medium))
+                .foregroundStyle(isSelected ? EmmaTheme.primaryButtonText : EmmaTheme.secondaryButtonText)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(
+                    isSelected
+                        ? (candidate == .urgent ? EmmaTheme.pillDangerText : EmmaTheme.primaryButton)
+                        : EmmaTheme.secondaryButton,
+                    in: RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Priorytet: \(candidate.displayName)")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 
     private func prepare() async {

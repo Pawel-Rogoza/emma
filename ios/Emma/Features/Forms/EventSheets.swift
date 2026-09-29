@@ -654,10 +654,24 @@ struct EventDetailSheet: View {
 
         if let error { InlineError(error) }
 
-        PrimaryButton("Edytuj termin", systemImage: "pencil") {
-            dependencies.present(.eventForm(editing: event.id, clientID: event.clientID, caseID: event.caseID, initialDay: nil))
+        // Audyt 28.09.2026: termin, który już minął (albo trwa dziś), dało się
+        // tylko edytować albo usunąć — a „załatwione” to jedno dotknięcie.
+        // Bez tego przegapiony termin wisiał na czerwono na „Dzisiaj”.
+        if EventActions.canFinish(event, today: dependencies.today) {
+            PrimaryButton("Załatwione", systemImage: "checkmark.circle") {
+                Task { await markFinished(event) }
+            }
+            .padding(.bottom, 10)
+            SecondaryButton("Edytuj termin", systemImage: "pencil") {
+                dependencies.present(.eventForm(editing: event.id, clientID: event.clientID, caseID: event.caseID, initialDay: nil))
+            }
+            .padding(.bottom, 10)
+        } else {
+            PrimaryButton("Edytuj termin", systemImage: "pencil") {
+                dependencies.present(.eventForm(editing: event.id, clientID: event.clientID, caseID: event.caseID, initialDay: nil))
+            }
+            .padding(.bottom, 10)
         }
-        .padding(.bottom, 10)
 
         if let clientID = event.clientID {
             HStack(spacing: 10) {
@@ -729,5 +743,13 @@ struct EventDetailSheet: View {
         dependencies.reminders.removeReminder(for: event.id)
         dependencies.dismissSheet()
         dependencies.showToast("Usunięto termin: \(event.title)")
+    }
+
+    private func markFinished(_ event: ScheduledEvent) async {
+        if let message = await EventActions.finish(event, dependencies: dependencies) {
+            error = message
+            return
+        }
+        dependencies.dismissSheet()
     }
 }

@@ -357,6 +357,9 @@ struct CalendarScreen: View {
                 MeetingCard(event: event, clientName: event.clientID.flatMap { model.clientNames[$0] }) {
                     dependencies.present(.eventDetail(event.id))
                 }
+                .eventContextMenu(event, dependencies: dependencies) {
+                    dependencies.present(.eventDetail(event.id))
+                }
                 .padding(.bottom, EmmaSpacing.cardGap)
             }
         }
@@ -387,7 +390,7 @@ struct CalendarScreen: View {
                         Text("\(day.day)")
                             .font(EmmaTypography.heading(16))
                             .foregroundStyle(isSelected ? EmmaTheme.daySelectedNumber : EmmaTheme.ink)
-                        EventDots(count: count, highlighted: isSelected)
+                        EventDots(events: model.eventsByDay[day] ?? [], today: model.today, highlighted: isSelected)
                     }
                     .frame(maxWidth: .infinity, minHeight: EmmaMetrics.dayCellMinHeight)
                     .background(isSelected ? EmmaTheme.daySelected : EmmaTheme.surface)
@@ -430,6 +433,9 @@ struct CalendarScreen: View {
                     .accessibilityAddTraits(.isHeader)
                 ForEach(events, id: \.id) { event in
                     MeetingCard(event: event, clientName: event.clientID.flatMap { model.clientNames[$0] }) {
+                        dependencies.present(.eventDetail(event.id))
+                    }
+                    .eventContextMenu(event, dependencies: dependencies) {
                         dependencies.present(.eventDetail(event.id))
                     }
                     .padding(.bottom, EmmaSpacing.cardGap)
@@ -496,7 +502,7 @@ private struct MonthGrid: View {
                         isSelected ? EmmaTheme.daySelectedNumber
                             : (inMonth ? (isToday ? EmmaTheme.accent : EmmaTheme.ink) : EmmaTheme.mutedSoft.opacity(0.55))
                     )
-                EventDots(count: count, highlighted: isSelected)
+                EventDots(events: model.eventsByDay[day] ?? [], today: model.today, highlighted: isSelected)
                     .opacity(inMonth ? 1 : 0.5)
             }
             .frame(maxWidth: .infinity, minHeight: 44)
@@ -518,20 +524,43 @@ private struct MonthGrid: View {
 }
 
 /// Kropki terminów dnia: do trzech kropek, powyżej — liczba.
+///
+/// Audyt 28.09.2026: konsultacja i rozprawa wyglądały w siatce tak samo.
+/// Termin w sprawie ma kropkę bursztynową, a niezamknięty termin w sprawie,
+/// który już minął — czerwoną. Konsultacje zostają niebieskie.
 private struct EventDots: View {
-    let count: Int
+    let events: [ScheduledEvent]
+    let today: LocalDate
     let highlighted: Bool
 
+    /// 0 — po terminie, 1 — termin w sprawie, 2 — konsultacja; najważniejsze najpierw.
+    private var ranks: [Int] {
+        events.map { event in
+            guard event.kind == .caseDeadline else { return 2 }
+            return event.status != .finished && event.day < today ? 0 : 1
+        }
+        .sorted()
+    }
+
+    private func color(_ rank: Int) -> Color {
+        switch rank {
+        case 0: return EmmaTheme.pillDangerText
+        case 1: return EmmaTheme.pillAmberText
+        default: return EmmaTheme.accent
+        }
+    }
+
     var body: some View {
+        let sorted = ranks
         HStack(spacing: 3) {
-            if count > 3 {
-                Text("\(count)")
+            if sorted.count > 3 {
+                Text("\(sorted.count)")
                     .font(EmmaTypography.caption(.semibold))
-                    .foregroundStyle(highlighted ? EmmaTheme.daySelectedNumber : EmmaTheme.accent)
+                    .foregroundStyle(highlighted ? EmmaTheme.daySelectedNumber : color(sorted.first ?? 2))
             } else {
-                ForEach(0..<count, id: \.self) { _ in
+                ForEach(Array(sorted.enumerated()), id: \.offset) { _, rank in
                     Circle()
-                        .fill(highlighted ? EmmaTheme.daySelectedNumber : EmmaTheme.accent)
+                        .fill(highlighted ? EmmaTheme.daySelectedNumber : color(rank))
                         .frame(width: 5, height: 5)
                 }
             }

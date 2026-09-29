@@ -1,4 +1,7 @@
 import XCTest
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 @testable import Emma
 
 // MARK: - Klient HTTP danych kancelarii: żądanie i odpowiedź

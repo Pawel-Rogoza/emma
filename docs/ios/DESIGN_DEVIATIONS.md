@@ -642,6 +642,79 @@ istniejący token z przezroczystością.
 
 ---
 
+### D-34 · Ekran „Klienci”: stały kolor osoby, trzy tryby, pilność spraw — **review właściciela 27.09.2026**
+
+**Treść:**
+- Awatar osoby ma **stały ton** liczony z identyfikatora (`IdentityTone`, FNV-1a,
+  sześć stonowanych par w `EmmaTheme.identityAvatar`). Ta sama osoba wygląda tak
+  samo na liście leadów, w kartotece, na karcie sprawy, w rozmowach i na swojej
+  karcie. Zastępuje §4.3 („ton zależy od pozycji na liście rozmów”) — typ
+  `Client.AvatarTone` i ton pozycyjny zostały usunięte.
+- Obok nazwiska plakietka języka klienta („UA”, „RU”, „PL”).
+- „Klienci” ma trzy tryby: **Leady · Klienci · Sprawy**. Nowy tryb to kartoteka
+  (etap `client`) w sekcjach A–Ż z paskiem „Ostatnio otwierani” (zapamiętany
+  w `UserDefaults`) i filtrami Wszyscy / Z aktywną sprawą / Wymaga uwagi.
+- Nad listą trzy kafelki podsumowania (`PulseTile`, wspólny z „Dzisiaj”).
+  Zniknął podpis „BAZA KANCELARII” — zostaje sam tytuł.
+- Karta sprawy zaczyna się od klienta (awatar, nazwisko, język), plakietka mówi
+  „dziś / jutro / za N dni” (czerwona do 3 dni, bursztynowa do 7) zamiast stałego
+  „W toku”; numer sprawy zszedł do stopki. Aktywne sprawy w grupach
+  **Wymaga uwagi → W toku → Czekamy na klienta** (`CaseBoard`).
+- Kolejka leadów „Do obsługi” ma nagłówki „Czekają ponad dobę” i „Nowe”.
+- Nowy token `pillDanger*` (czerwony akcent pilnego terminu).
+
+**Powód:** „wszystko się zlewa, w sekcji sprawy/klienci nie odróżnisz jednego od
+drugiego”. Identyczne szare awatary i jednakowe karty zmuszały do czytania każdego
+nazwiska; pilna sprawa wyglądała jak ta, w której nic się nie dzieje, a klient bez
+otwartego leada był osiągalny tylko przez wyszukiwanie.
+
+**Czego nie ma (brak danych w backendzie):** rodzaju sprawy (kolor/ikona
+legalizacja–karna–deportacja) i daty zmiany statusu („czekamy od 9 dni”).
+
+**Cofnięcie:** `PersonAvatar(style: .person)` zamiast `.identity`, usunięcie trybu
+`.clients` z `ClientListMode` i powrót `CaseCard` do wersji z 0.3.0.
+
+---
+
+### D-35 · „Klienci”: terminy po czasie, przesunięcia, „bez ruchu” — **28.09.2026**
+
+**Treść:**
+- Niezakończony **termin w sprawie** z ostatnich 30 dni to najwyższy poziom pilności
+  (`CaseUrgency.Level.missed`): czerwona plakietka „minął wczoraj / minął 3 dni temu”,
+  pierwszy w „Wymaga uwagi”. Wcześniej sprawa po terminie lądowała w „W toku”.
+- Termin sprawy bez wpisanego klienta (np. rozprawa z kalendarza sądu) liczy się dla
+  właściciela sprawy — kartoteka pokazuje go i oznacza klienta jako „Wymaga uwagi”.
+- Kartoteka: przesunięcie w prawo — „Zadzwoń” / „WhatsApp”, w lewo — „Termin”.
+  Na kartach spraw w lewo — „Termin” w tej sprawie.
+- Chip „Bez ruchu” (aktywna sprawa starsza niż 30 dni, zero terminów od miesiąca
+  i przed nami) — widoczny tylko, gdy ktoś taki jest.
+- Wyszukiwanie po numerze telefonu (same cyfry, z +48 lub bez); w trybie Klienci
+  wyniki obejmują też zgłoszenia.
+- Kafelek „czeka ponad dobę” przewija do tej grupy zamiast dublować „do obsługi”.
+- Zamknięte sprawy od najnowszych.
+- Liczenie (pilność, filtry, liczniki) raz przy wczytaniu: `ClientsModel.make`.
+
+**Cofnięcie:** `missedEvents: [:]` w `CaseBoard.make`, usunięcie `.stale`
+z `ClientDirectoryFilter` i `swipeActions` z wierszy kartoteki.
+
+---
+
+### D-36 · Ruch, szkielet ładowania, „Po terminie” — **audyt 28.09.2026**
+
+**Treść:** przesuwana pigułka w segmentach i chipach, odbicie ikony wybranej
+zakładki i przenikanie zakładek, optymistyczne odhaczenie zadania, szkielet kart
+zamiast `ProgressView`, ikona ✓ / ! w komunikatach, karta „Po terminie” na
+„Dzisiaj”, „Załatwione” w szczegółach terminu, pilność i kontakt na ekranie
+sprawy, wszystkie sprawy na karcie klienta. Szczegóły:
+`docs/ios/AUDYT_DESIGN_2026-09-28.md`.
+
+**Powód:** aplikacja reagowała skokiem i nie pokazywała przegapionych terminów.
+
+**Cofnięcie:** `EmmaMotion` → `nil`-owe animacje; `LoadingState` do wersji
+z `ProgressView`; usunięcie `missedDeadlinesCard` i `markFinished`.
+
+---
+
 ## Czego ten rejestr nie zawiera
 
 Nie zawiera porównania zrzutów ekranu z referencją **piksel po pikselu**. Zrzuty są

@@ -67,6 +67,33 @@
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
 	</dict>
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>pl.emma.quick.event</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Nowy termin</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>calendar.badge.plus</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>pl.emma.quick.task</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Nowe zadanie</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>checklist</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>pl.emma.quick.voice</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Porozmawiaj z Emmą</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>mic.fill</string>
+		</dict>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

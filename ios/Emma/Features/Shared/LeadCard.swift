@@ -182,14 +182,11 @@ struct LeadCard: View {
                     text: LeadWorkflow.badgeText(for: client, now: dependencies.now, today: dependencies.today)
                 )
                 Spacer(minLength: 8)
-                Text(client.language.displayName)
-                    .font(EmmaTypography.caption())
-                    .foregroundStyle(EmmaTheme.muted)
-                    .lineLimit(1)
+                LanguageBadge(language: client.language)
             }
 
             HStack(alignment: .center, spacing: 12) {
-                PersonAvatar(initials: client.initials, style: .person)
+                PersonAvatar(initials: client.initials, style: .identity(client.id))
                 VStack(alignment: .leading, spacing: 3) {
                     Text(client.displayName)
                         .font(EmmaTypography.personName)
@@ -376,7 +373,7 @@ struct LeadInboxRow: View {
             Button(action: onOpen) {
                 HStack(alignment: .center, spacing: 11) {
                     ZStack(alignment: .bottomTrailing) {
-                        PersonAvatar(initials: client.initials, style: .person, diameter: 38)
+                        PersonAvatar(initials: client.initials, style: .identity(client.id), diameter: 38)
                         Circle()
                             .fill(LeadStatusStyle.tone(status))
                             .frame(width: 11, height: 11)

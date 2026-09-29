@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 // MARK: - Repozytorium sesji głosu na prawdziwym backendzie (M5)
 //

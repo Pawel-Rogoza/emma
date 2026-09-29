@@ -4,22 +4,11 @@ import SwiftUI
 
 // MARK: - Magazyn ekranu „Klienci”
 //
-// Jedno wczytanie dla obu trybów listy (leady i sprawy): ekran nie składa
+// Jedno wczytanie dla trzech trybów listy (leady, klienci i sprawy): ekran nie składa
 // danych z wielu niezależnych tablic, a po każdym zapisie wraca tu przez
 // `dataVersion` (§ „STORE + VIEW”).
 
-/// Dane listy leadów i spraw wraz z policzonymi zależnościami.
-struct ClientsModel: Equatable {
-    var clients: [Client]
-    var cases: [LegalCase]
-    /// Liczba otwartych zadań w sprawie — stopka karty sprawy.
-    var openTaskCounts: [CaseID: Int]
-    /// Najbliższy przyszły, niezakończony termin sprawy.
-    var nextCaseEvents: [CaseID: ScheduledEvent]
-    /// Najbliższy niezakończony termin leada (referencja: pierwszy z posortowanych).
-    var nextLeadEvents: [ClientID: ScheduledEvent]
-    var clientNames: [ClientID: String]
-}
+// `ClientsModel` i reguły liczenia mieszkają w rdzeniu (`ClientsOverview.swift`).
 
 @MainActor
 final class ClientsStore: ObservableObject {
@@ -44,33 +33,12 @@ final class ClientsStore: ObservableObject {
             let openTasks = try await openTasksTask
             let events = try await eventsTask
 
-            var openTaskCounts: [CaseID: Int] = [:]
-            for task in openTasks {
-                guard let caseID = task.caseID else { continue }
-                openTaskCounts[caseID, default: 0] += 1
-            }
-
-            let activeEvents = events.filter { $0.status != .finished }
-
-            var nextCaseEvents: [CaseID: ScheduledEvent] = [:]
-            for legalCase in cases {
-                nextCaseEvents[legalCase.id] = earliest(
-                    activeEvents.filter { $0.caseID == legalCase.id && $0.day >= today }
-                )
-            }
-
-            var nextLeadEvents: [ClientID: ScheduledEvent] = [:]
-            for client in clients {
-                nextLeadEvents[client.id] = earliest(activeEvents.filter { $0.clientID == client.id })
-            }
-
-            let model = ClientsModel(
+            let model = ClientsModel.make(
                 clients: clients,
                 cases: cases,
-                openTaskCounts: openTaskCounts,
-                nextCaseEvents: nextCaseEvents,
-                nextLeadEvents: nextLeadEvents,
-                clientNames: Dictionary(clients.map { ($0.id, $0.displayName) }, uniquingKeysWith: { first, _ in first })
+                openTasks: openTasks,
+                events: events,
+                today: today
             )
             // Odświeżenie po zapisie jest animowane: obsłużony lead wysuwa się
             // z listy, zamiast zniknąć skokiem. Pierwsze wczytanie — bez animacji.
@@ -85,16 +53,6 @@ final class ClientsStore: ObservableObject {
             if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać bazy kancelarii.") {
                 dependencies.showToast(message)
             }
-        }
-    }
-
-    /// Najwcześniejszy termin: data, potem godzina, na końcu identyfikator
-    /// (deterministyczne rozstrzygnięcie remisu, jak w repozytorium).
-    private func earliest(_ events: [ScheduledEvent]) -> ScheduledEvent? {
-        events.min { lhs, rhs in
-            if lhs.day != rhs.day { return lhs.day < rhs.day }
-            if lhs.time != rhs.time { return lhs.time < rhs.time }
-            return lhs.id.rawValue < rhs.id.rawValue
         }
     }
 }

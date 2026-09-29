@@ -161,7 +161,7 @@ struct ClientCardScreen: View {
         return VStack(spacing: 0) {
             PersonAvatar(
                 initials: client.initials,
-                style: .person,
+                style: .identity(client.id),
                 diameter: EmmaMetrics.clientHeroAvatar
             )
             Text(client.displayName)
@@ -308,9 +308,13 @@ struct ClientCardScreen: View {
     @ViewBuilder
     private func linkedCaseSection(_ model: ClientCardModel) -> some View {
         // Bez sprawy czynność „Przyjmij sprawę” jest w panelu ścieżki zgłoszenia.
-        if let legalCase = model.legalCase {
-            linkedCaseButton(legalCase)
-                .padding(.vertical, 18)
+        if !model.cases.isEmpty {
+            VStack(spacing: 8) {
+                ForEach(model.cases) { legalCase in
+                    linkedCaseButton(legalCase)
+                }
+            }
+            .padding(.vertical, 18)
         }
     }
 
@@ -323,13 +327,18 @@ struct ClientCardScreen: View {
                     .font(.system(size: 19))
                     .foregroundStyle(EmmaTheme.personAvatarText)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(legalCase.number)
-                        .font(EmmaTypography.caption(.medium))
-                        .tracking(0.7)
-                        .foregroundStyle(EmmaTheme.mutedSoft)
+                    HStack(spacing: 6) {
+                        Text(legalCase.number)
+                            .font(EmmaTypography.caption(.medium))
+                            .tracking(0.7)
+                            .foregroundStyle(EmmaTheme.mutedSoft)
+                        if legalCase.status != .inProgress {
+                            StatusPill(legalCase.status.displayName, kind: .neutral)
+                        }
+                    }
                     Text(legalCase.title)
                         .font(EmmaTypography.body(for: legalCase.title, size: 13, weight: .medium))
-                        .foregroundStyle(EmmaTheme.ink)
+                        .foregroundStyle(legalCase.status.isActive ? EmmaTheme.ink : EmmaTheme.muted)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -347,9 +356,9 @@ struct ClientCardScreen: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(EmmaCardButtonStyle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(legalCase.number), \(legalCase.title)")
+        .accessibilityLabel("\(legalCase.number), \(legalCase.title), \(legalCase.status.displayName)")
         .accessibilityHint("Otwiera sprawę")
         .accessibilityAddTraits(.isButton)
     }
@@ -398,6 +407,9 @@ struct ClientCardScreen: View {
             VStack(spacing: EmmaSpacing.cardGap) {
                 ForEach(model.events) { event in
                     EventRow(event: event) {
+                        dependencies.present(.eventDetail(event.id))
+                    }
+                    .eventContextMenu(event, dependencies: dependencies) {
                         dependencies.present(.eventDetail(event.id))
                     }
                 }

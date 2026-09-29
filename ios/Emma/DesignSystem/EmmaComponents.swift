@@ -177,10 +177,11 @@ public struct DetailHeader: View {
 public struct PersonAvatar: View {
 
     public enum Style: Sendable {
-        /// Lista rozmów — ton zależny od pozycji.
-        case conversation(Client.AvatarTone)
         /// Karty osób, klientów i spraw.
         case person
+        /// Stały kolor osoby liczony z jej identyfikatora (`IdentityTone`) —
+        /// ta sama osoba wygląda tak samo na każdej liście (D-34).
+        case identity(ClientID)
     }
 
     private let initials: String
@@ -204,15 +205,15 @@ public struct PersonAvatar: View {
 
     private var background: Color {
         switch style {
-        case .conversation(let tone): return EmmaTheme.conversationAvatar(tone).background
         case .person: return EmmaTheme.personAvatarBackground
+        case .identity(let id): return EmmaTheme.identityAvatar(IdentityTone.index(for: id)).background
         }
     }
 
     private var foreground: Color {
         switch style {
-        case .conversation(let tone): return EmmaTheme.conversationAvatar(tone).foreground
         case .person: return EmmaTheme.personAvatarText
+        case .identity(let id): return EmmaTheme.identityAvatar(IdentityTone.index(for: id)).foreground
         }
     }
 }
@@ -226,6 +227,8 @@ public struct StatusPill: View {
         case green
         case amber
         case urgent
+        /// Termin za 0–3 dni na liście spraw.
+        case danger
 
         var colors: (background: Color, text: Color) {
             switch self {
@@ -233,6 +236,7 @@ public struct StatusPill: View {
             case .green: return (EmmaTheme.pillGreenBackground, EmmaTheme.pillGreenText)
             case .amber: return (EmmaTheme.pillAmberBackground, EmmaTheme.pillAmberText)
             case .urgent: return (EmmaTheme.pillUrgentBackground, EmmaTheme.pillUrgentText)
+            case .danger: return (EmmaTheme.pillDangerBackground, EmmaTheme.pillDangerText)
             }
         }
     }
@@ -285,6 +289,8 @@ public struct SegmentedFilter<Item: Hashable>: View {
     private let items: [Item]
     private let title: (Item) -> String
     @Binding private var selection: Item
+    /// Wspólna przestrzeń dla przesuwanej „pigułki” wyboru.
+    @Namespace private var selectionSpace
 
     public init(
         items: [Item],
@@ -301,6 +307,11 @@ public struct SegmentedFilter<Item: Hashable>: View {
             ForEach(items, id: \.self) { item in
                 let isSelected = item == selection
                 Button {
+                    guard selection != item else { return }
+                    EmmaHaptics.selection()
+                    // Bez `withAnimation`: animowana byłaby też podmiana treści
+                    // pod przełącznikiem (dwie listy przenikały się na zrzutach
+                    // z CI). Rusza się tylko pigułka — patrz `.animation` niżej.
                     selection = item
                 } label: {
                     Text(title(item))
@@ -316,8 +327,14 @@ public struct SegmentedFilter<Item: Hashable>: View {
                         // ograniczamy skalę tak jak w pasku zakładek.
                         .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                         .frame(maxWidth: .infinity, minHeight: EmmaMetrics.segmentedMinHeight - 6)
-                        .background(isSelected ? EmmaTheme.controlSelected : Color.clear)
-                        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.segmentedInner, style: .continuous))
+                        .background {
+                            if isSelected {
+                                RoundedRectangle(cornerRadius: EmmaRadii.segmentedInner, style: .continuous)
+                                    .fill(EmmaTheme.controlSelected)
+                                    .shadow(color: EmmaTheme.ink.opacity(0.08), radius: 3, x: 0, y: 1)
+                                    .matchedGeometryEffect(id: "segment-selection", in: selectionSpace)
+                            }
+                        }
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -328,6 +345,8 @@ public struct SegmentedFilter<Item: Hashable>: View {
         .background(EmmaTheme.controlBackground)
         .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.segmented, style: .continuous))
         .frame(minHeight: EmmaMetrics.segmentedMinHeight)
+        // Biała pigułka przesuwa się do nowego segmentu, zamiast przeskoczyć.
+        .animation(EmmaMotion.snappy, value: selection)
     }
 }
 
@@ -335,10 +354,28 @@ public struct SegmentedFilter<Item: Hashable>: View {
 public struct SearchField: View {
     @Binding private var text: String
     private let placeholder: String
+    /// Ekran może ustawić fokus (np. lupa na „Dzisiaj” otwiera od razu klawiaturę).
+    private let isFocused: FocusState<Bool>.Binding?
 
-    public init(text: Binding<String>, placeholder: String = "Szukaj") {
+    public init(text: Binding<String>, placeholder: String = "Szukaj", isFocused: FocusState<Bool>.Binding? = nil) {
         self._text = text
         self.placeholder = placeholder
+        self.isFocused = isFocused
+    }
+
+    @ViewBuilder
+    private var field: some View {
+        let base = TextField(placeholder, text: $text)
+            .font(EmmaTypography.ui(16))
+            .foregroundStyle(EmmaTheme.ink)
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
+            .submitLabel(.search)
+        if let isFocused {
+            base.focused(isFocused)
+        } else {
+            base
+        }
     }
 
     public var body: some View {
@@ -346,11 +383,7 @@ public struct SearchField: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(EmmaTheme.muted)
-            TextField(placeholder, text: $text)
-                .font(EmmaTypography.ui(16))
-                .foregroundStyle(EmmaTheme.ink)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
+            field
             if !text.isEmpty {
                 Button {
                     text = ""
@@ -715,16 +748,49 @@ public struct LoadingState: View {
         self.label = label
     }
 
+    /// Audyt 28.09.2026: zamiast kręciołka z podpisem — szkielet trzech kart
+    /// w kształcie treści, która zaraz się pojawi. Ekran od razu ma swój układ,
+    /// a przejście do danych jest płynne, nie „mignięciem”.
     public var body: some View {
-        HStack(spacing: 10) {
-            ProgressView().controlSize(.small)
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(0..<3, id: \.self) { index in
+                skeletonCard(wide: index % 2 == 0)
+            }
             Text(label)
-                .font(EmmaTypography.ui(13))
-                .foregroundStyle(EmmaTheme.muted)
+                .font(EmmaTypography.caption())
+                .foregroundStyle(EmmaTheme.mutedSoft)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 4)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 28)
+        .padding(.vertical, 12)
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
+    }
+
+    private func skeletonCard(wide: Bool) -> some View {
+        HStack(spacing: 12) {
+            Circle()
+                .fill(EmmaTheme.controlBackground)
+                .frame(width: 40, height: 40)
+            VStack(alignment: .leading, spacing: 8) {
+                Capsule()
+                    .fill(EmmaTheme.controlBackground)
+                    .frame(width: wide ? 170 : 130, height: 12)
+                Capsule()
+                    .fill(EmmaTheme.controlBackground.opacity(0.7))
+                    .frame(width: wide ? 220 : 180, height: 10)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(EmmaTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
+                .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
+        }
+        .emmaShimmer()
     }
 }
 
@@ -786,8 +852,22 @@ public struct TraceToast: View {
         self.action = action
     }
 
+    /// Komunikaty o niepowodzeniu zaczynają się w aplikacji od „Nie…”
+    /// („Nie udało się…”, „Nie znaleziono…”) — ikona mówi to, zanim się przeczyta.
+    static func isFailure(_ message: String) -> Bool {
+        let lowered = message.lowercased()
+        return lowered.hasPrefix("nie ") || lowered.contains("błąd") || lowered.contains("brak połączenia")
+    }
+
     public var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
+            // Audyt 28.09.2026: sam tekst na granatowym tle nie odróżniał
+            // „Zapisano” od „Nie udało się zapisać”.
+            Image(systemName: Self.isFailure(message) ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Self.isFailure(message) ? EmmaTheme.pillAmberBackground : EmmaTheme.pillGreenBackground)
+                .symbolEffect(.bounce, value: message)
+                .accessibilityHidden(true)
             Text(message)
                 .font(EmmaTypography.caption(.medium))
                 .foregroundStyle(.white)
@@ -808,7 +888,7 @@ public struct TraceToast: View {
                 .frame(minHeight: EmmaSpacing.hitTarget)
             }
         }
-        .padding(.leading, 16)
+        .padding(.leading, 14)
         .padding(.trailing, actionTitle == nil ? 16 : 8)
         .padding(.vertical, actionTitle == nil ? 13 : 2)
         .background(EmmaTheme.toastBackground)
@@ -1055,32 +1135,54 @@ public struct TaskRow: View {
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    /// Stan pokazany od razu po dotknięciu, zanim backend potwierdzi zapis.
+    /// Audyt 28.09.2026: kółko zmieniało się dopiero po odświeżeniu listy
+    /// (pół sekundy później), więc odhaczenie „nie trafiało”. Gdy zapis się
+    /// nie uda, lista nie zmieni `task.isDone` i po chwili wracamy do prawdy.
+    @State private var optimisticDone: Bool?
+
+    private var isDone: Bool { optimisticDone ?? task.isDone }
+
     private var checkButton: some View {
-        Button(action: onToggle) {
+        Button {
+            let target = !isDone
+            if target { EmmaHaptics.success() } else { EmmaHaptics.tap() }
+            withAnimation(EmmaMotion.bouncy) { optimisticDone = target }
+            onToggle()
+        } label: {
             ZStack {
                 // Świadomie nie „biały checkbox”: puste pole czytało się jak
                 // formularz do wypełnienia, a nie jak zadanie do odhaczenia.
                 // Pierścień pokazuje stan, a nie miejsce na treść.
                 Circle()
-                    .fill(task.isDone ? EmmaTheme.accent : Color.clear)
+                    .fill(isDone ? EmmaTheme.accent : Color.clear)
+                    .scaleEffect(isDone ? 1 : 0.4)
                 Circle()
                     .strokeBorder(
-                        task.isDone ? EmmaTheme.accent : EmmaTheme.accent.opacity(0.38),
-                        lineWidth: task.isDone ? 0 : 1.6
+                        isDone ? EmmaTheme.accent : EmmaTheme.accent.opacity(0.38),
+                        lineWidth: isDone ? 0 : 1.6
                     )
-                if task.isDone {
+                if isDone {
                     Image(systemName: "checkmark")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(EmmaTheme.primaryButtonText)
+                        .transition(.scale(scale: 0.3).combined(with: .opacity))
                 }
             }
             .frame(width: EmmaMetrics.taskCheckSize, height: EmmaMetrics.taskCheckSize)
             .frame(width: EmmaSpacing.hitTarget, height: EmmaSpacing.hitTarget, alignment: .topLeading)
             .contentShape(Rectangle())
-            .animation(.easeInOut(duration: 0.18), value: task.isDone)
+            .animation(EmmaMotion.bouncy, value: isDone)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(task.isDone ? "Przywróć zadanie" : "Oznacz jako wykonane")
+        .accessibilityLabel(isDone ? "Przywróć zadanie" : "Oznacz jako wykonane")
+        .onChange(of: task.isDone) { _, _ in optimisticDone = nil }
+        .task(id: optimisticDone) {
+            // Bezpiecznik na nieudany zapis: bez potwierdzenia po 4 s wracamy do stanu z danych.
+            guard optimisticDone != nil else { return }
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            if !Task.isCancelled { withAnimation(EmmaMotion.smooth) { optimisticDone = nil } }
+        }
     }
 
     private var openButton: some View {
@@ -1089,7 +1191,9 @@ public struct TaskRow: View {
                 Text(task.title)
                     .font(EmmaTypography.taskTitle)
                     .foregroundStyle(EmmaTheme.ink)
-                    .strikethrough(task.isDone, color: EmmaTheme.mutedSoft)
+                    .strikethrough(isDone, color: EmmaTheme.mutedSoft)
+                    .opacity(isDone ? 0.6 : 1)
+                    .animation(EmmaMotion.smooth, value: isDone)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(TaskItem.taskMeta(clientName: clientName))

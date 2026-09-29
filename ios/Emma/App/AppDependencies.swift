@@ -109,6 +109,8 @@ public final class AppDependencies: ObservableObject {
     /// Filtr listy leadów, który ma się otworzyć po przejściu z innego ekranu
     /// (np. „Wszystkie” przy leadach na „Dzisiaj” otwiera „Do obsługi”).
     @Published var pendingLeadFilter: LeadListFilter?
+    /// Lupa na „Dzisiaj”: kartoteka ma otworzyć się z klawiaturą w polu szukania.
+    @Published var pendingClientSearch = false
 
     // MARK: Pamięć ekranów zakładek
     //
@@ -129,8 +131,15 @@ public final class AppDependencies: ObservableObject {
     /// Pola spotkania rozpoznane głosem (F14). Formularz terminu zużywa je przy
     /// otwarciu, żeby „dodaj spotkanie … o 11” nie gubiło godziny i tytułu.
     @Published public var pendingEventDraft: EventDraftSeed?
-    /// Tryb listy klientów: leady albo sprawy (odpowiada `clientMode`).
+    /// Tryb listy klientów: leady, kartoteka klientów albo sprawy (`clientMode`).
     @Published public var clientMode: ClientListMode = .leads
+    /// Ostatnio otwierane karty osób — pasek „Ostatnio otwierani” w kartotece.
+    /// Przeżywa ponowne uruchomienie (`UserDefaults`), bo po to jest: wrócić
+    /// jednym dotknięciem do klienta, nad którym pracowało się wczoraj.
+    @Published public private(set) var recentClients = RecentClients(
+        ids: (UserDefaults.standard.stringArray(forKey: AppDependencies.recentClientsKey) ?? []).map { ClientID(rawValue: $0) }
+    )
+    static let recentClientsKey = "emma.recentClientIDs"
     /// Licznik zmian danych. Każdy ekran obserwuje go w `.task(id:)` i po
     /// operacji zapisu wczytuje dane ponownie — jedno miejsce zamiast wielu
     /// kanałów powiadamiania między ekranami.
@@ -141,6 +150,9 @@ public final class AppDependencies: ObservableObject {
 
     public enum ClientListMode: String, Hashable, CaseIterable, Sendable {
         case leads = "Leady"
+        /// Kartoteka klientów kancelarii — review 27.09.2026: wcześniej osoba
+        /// z etapu „Klient” była osiągalna wyłącznie przez wyszukiwanie.
+        case clients = "Klienci"
         case cases = "Sprawy"
     }
 
@@ -437,6 +449,8 @@ public final class AppDependencies: ObservableObject {
     }
 
     public func openPerson(_ clientID: ClientID) {
+        recentClients.record(clientID)
+        UserDefaults.standard.set(recentClients.ids.map { $0.rawValue }, forKey: Self.recentClientsKey)
         appendingToClients(.person(clientID))
     }
 
@@ -445,6 +459,13 @@ public final class AppDependencies: ObservableObject {
     }
 
     /// Lista leadów z wybranym filtrem — wejście z ekranu „Dzisiaj”.
+    /// Szukanie klienta, sprawy albo numeru telefonu jednym dotknięciem.
+    func openClientSearch() {
+        clientMode = .clients
+        pendingClientSearch = true
+        go(to: .clients, resetStack: true)
+    }
+
     func openLeads(filter: LeadListFilter) {
         clientMode = .leads
         pendingLeadFilter = filter
@@ -632,6 +653,8 @@ public final class AppDependencies: ObservableObject {
         pendingVoiceStart = false
         clientMode = .leads
         pendingLeadFilter = nil
+        recentClients = RecentClients()
+        UserDefaults.standard.removeObject(forKey: Self.recentClientsKey)
         refreshUnreadTotal()
         dataChanged()
         showToast("Przywrócono dane przykładowe.")

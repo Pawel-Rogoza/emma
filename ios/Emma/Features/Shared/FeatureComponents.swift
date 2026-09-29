@@ -5,7 +5,7 @@ import SwiftUI
 // Komponentybudowane z powtarzalnych fragmentów referencji:
 //   PersonRow   ← `personRow(p, sub)`            (.person)
 //   MeetingCard ← `meetingCard(e)`               (.card.meeting)
-//   CaseCard    ← `caseCard(c)`                  (.card.case-card)
+//   CaseCard    ← `caseCard(c)`                  (.card.case-card), przebudowana 27.09.2026
 //   LeadCard    ← lista leadów w `clientList()`  (.card.large-lead)
 //   EventRow    ← `personPage()`                 (.event-row.card)
 //   ActivityRow pochodzi z design systemu (EmmaComponents).
@@ -33,7 +33,7 @@ struct PersonRow: View {
         let content = HStack(spacing: 11) {
             // Awatar listy rozmów ma ton zależny od pozycji; tutaj używamy tonu
             // neutralnego, bo karta nie zna swojej pozycji na liście.
-            PersonAvatar(initials: client.initials, style: .person)
+            PersonAvatar(initials: client.initials, style: .identity(client.id))
             VStack(alignment: .leading, spacing: 3) {
                 Text(client.displayName)
                     .font(EmmaTypography.personName)
@@ -155,78 +155,280 @@ struct MeetingCard: View {
 
 // MARK: Sprawa
 
-/// Karta sprawy: numer ze statusem, nazwa, klient, licznik zadań i kolejny termin.
+/// Karta sprawy. Review 27.09.2026: karty spraw „zlewały się” — każda zaczynała
+/// się szarym numerem i plakietką „W toku”. Teraz odpowiada na pytania w tej
+/// kolejności, w jakiej zadaje je prawnik:
+///
+///   1. **Czyja?** — awatar w stałym kolorze osoby, nazwisko i język klienta,
+///   2. **Czy goni?** — plakietka „dziś / jutro / za 5 dni” (czerwona do 3 dni)
+///      i pasek z lewej; spokojna sprawa w toku nie ma plakietki wcale,
+///   3. **Co to za sprawa?** — tytuł,
+///   4. **Co dalej?** — najbliższy termin, zadania (zaległe na czerwono), numer.
 struct CaseCard: View {
     let legalCase: LegalCase
-    let clientName: String
+    /// `nil`, gdy kartoteka klienta nie przyszła z backendu — karta pokazuje
+    /// wtedy samą nazwę zastępczą.
+    let client: Client?
     let openTaskCount: Int
+    let overdueTaskCount: Int
     let nextEvent: ScheduledEvent?
+    /// Niezakończony termin w sprawie, który już minął — plakietka „minął wczoraj”.
+    let missedEvent: ScheduledEvent?
     let onOpen: () -> Void
 
     init(
         legalCase: LegalCase,
-        clientName: String,
+        client: Client?,
         openTaskCount: Int,
+        overdueTaskCount: Int = 0,
         nextEvent: ScheduledEvent?,
+        missedEvent: ScheduledEvent? = nil,
         onOpen: @escaping () -> Void
     ) {
         self.legalCase = legalCase
-        self.clientName = clientName
+        self.client = client
         self.openTaskCount = openTaskCount
+        self.overdueTaskCount = overdueTaskCount
         self.nextEvent = nextEvent
+        self.missedEvent = missedEvent
         self.onOpen = onOpen
     }
 
     @EnvironmentObject private var dependencies: AppDependencies
 
     var body: some View {
+        let urgency = CaseUrgency(
+            nextEvent: nextEvent?.day,
+            missedEvent: legalCase.status.isActive ? missedEvent?.day : nil,
+            overdueTasks: overdueTaskCount,
+            today: dependencies.today
+        )
+        let stripe = stripeColor(urgency)
         Button(action: onOpen) {
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 8) {
-                    Text(legalCase.number)
-                        .font(EmmaTypography.caseNumber)
-                        .tracking(0.4)
-                        .foregroundStyle(EmmaTheme.mutedSoft)
-                    Spacer(minLength: 0)
-                    StatusPill(legalCase.status.rawValue, kind: legalCase.status == .inProgress ? .green : .neutral)
+                    if let client {
+                        PersonAvatar(initials: client.initials, style: .identity(client.id), diameter: 28)
+                    }
+                    Text(clientName)
+                        .font(EmmaTypography.caption(.medium))
+                        .foregroundStyle(EmmaTheme.muted)
+                        .lineLimit(1)
+                    if let client {
+                        LanguageBadge(language: client.language)
+                    }
+                    Spacer(minLength: 6)
+                    if let pill = pill(urgency) {
+                        StatusPill(pill.text, kind: pill.kind)
+                    }
                 }
 
                 Text(legalCase.title)
                     .font(EmmaTypography.ui(16, .semibold))
-                    .foregroundStyle(EmmaTheme.ink)
+                    .foregroundStyle(legalCase.status == .closed ? EmmaTheme.muted : EmmaTheme.ink)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text(clientName)
-                    .font(EmmaTypography.caption())
-                    .foregroundStyle(EmmaTheme.muted)
+                footer(urgency)
+            }
+            .padding(EdgeInsets(top: 14, leading: stripe == nil ? 16 : 19, bottom: 14, trailing: 16))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(EmmaTheme.surface)
+            .overlay(alignment: .leading) {
+                if let stripe {
+                    Rectangle().fill(stripe).frame(width: 4)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
+                    .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
+            }
+            .emmaCardShadow()
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(EmmaCardButtonStyle())
+        .accessibilityIdentifier("case-card")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText(urgency))
+        .accessibilityAddTraits(.isButton)
+    }
 
-                HStack(spacing: 14) {
-                    Label {
-                        Text(EmmaPlural.tasks(openTaskCount))
-                            .font(EmmaTypography.meetingMeta)
-                    } icon: {
-                        Image(systemName: "checklist").font(.system(size: 12))
-                    }
+    private var clientName: String {
+        client?.displayName ?? Client.unknownDisplayName
+    }
 
-                    if let nextEvent {
-                        Label {
-                            Text("\(dependencies.dateText.dayLabel(nextEvent.day)), \(nextEvent.time.hhmm)")
-                                .font(EmmaTypography.meetingMeta)
-                        } icon: {
-                            Image(systemName: "calendar").font(.system(size: 12))
-                        }
-                    } else {
-                        Text("Brak kolejnego terminu")
-                            .font(EmmaTypography.meetingMeta)
-                    }
+    // MARK: Stopka
 
-                    Spacer(minLength: 0)
+    private func footer(_ urgency: CaseUrgency) -> some View {
+        HStack(spacing: 12) {
+            Label {
+                Text(footerEventText ?? "Brak terminu")
+                    .font(EmmaTypography.caption(urgency.level == .calm ? .regular : .medium))
+            } icon: {
+                Image(systemName: "calendar").font(.system(size: 11, weight: .semibold))
+            }
+            .foregroundStyle(eventColor(urgency))
+            // Termin ważniejszy niż numer sprawy — to numer ma się skrócić.
+            .layoutPriority(2)
+
+            if overdueTaskCount > 0 {
+                Label {
+                    Text(EmmaPlural.overdueTasks(overdueTaskCount))
+                        .font(EmmaTypography.caption(.medium))
+                } icon: {
+                    Image(systemName: "exclamationmark.circle").font(.system(size: 11, weight: .semibold))
+                }
+                .foregroundStyle(EmmaTheme.pillDangerText)
+            } else if openTaskCount > 0 {
+                Label {
+                    Text(EmmaPlural.tasks(openTaskCount))
+                        .font(EmmaTypography.caption())
+                } icon: {
+                    Image(systemName: "checklist").font(.system(size: 11))
                 }
                 .foregroundStyle(EmmaTheme.mutedSoft)
             }
-            .padding(EdgeInsets(top: 16, leading: 17, bottom: 16, trailing: 17))
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Spacer(minLength: 6)
+
+            Text(legalCase.number)
+                .font(EmmaTypography.caption())
+                .tracking(0.3)
+                .foregroundStyle(EmmaTheme.mutedSoft)
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.85)
+    }
+
+    /// Po terminie stopka mówi, **który** termin minął — plakietka mówi kiedy.
+    private var footerEventText: String? {
+        if legalCase.status.isActive, let missedEvent {
+            return "Minął: \(dependencies.dateText.dayLabel(missedEvent.day))"
+        }
+        return eventText
+    }
+
+    private var eventText: String? {
+        guard let nextEvent else { return nil }
+        let day = dependencies.dateText.dayLabel(nextEvent.day)
+        return nextEvent.isAllDay ? day : "\(day), \(nextEvent.time.hhmm)"
+    }
+
+    private func eventColor(_ urgency: CaseUrgency) -> Color {
+        switch urgency.level {
+        case .missed, .urgent: return EmmaTheme.pillDangerText
+        case .soon: return EmmaTheme.pillAmberText
+        case .calm: return EmmaTheme.mutedSoft
+        }
+    }
+
+    // MARK: Stan
+
+    /// Plakietka tylko wtedy, gdy coś mówi: termin w ciągu tygodnia, sprawa
+    /// czeka na klienta albo jest zamknięta. „W toku” to stan domyślny — bez plakietki.
+    private func pill(_ urgency: CaseUrgency) -> (text: String, kind: StatusPill.Kind)? {
+        if legalCase.status == .closed {
+            return (legalCase.status.displayName, .neutral)
+        }
+        if let countdown = urgency.countdownText {
+            return (countdown, urgency.isCritical ? .danger : .amber)
+        }
+        if legalCase.status == .awaitingClient {
+            return ("Czeka na klienta", .neutral)
+        }
+        return nil
+    }
+
+    private func stripeColor(_ urgency: CaseUrgency) -> Color? {
+        guard legalCase.status.isActive else { return nil }
+        switch urgency.level {
+        case .missed, .urgent: return EmmaTheme.pillDangerText
+        case .soon: return EmmaTheme.pillAmberText
+        case .calm: return urgency.overdueTasks > 0 ? EmmaTheme.pillAmberText : nil
+        }
+    }
+
+    private func accessibilityText(_ urgency: CaseUrgency) -> String {
+        var parts = [legalCase.title, clientName, legalCase.status.displayName]
+        if let countdown = urgency.countdownText {
+            parts.append(urgency.level == .missed ? "termin \(countdown), niezamknięty" : "termin \(countdown)")
+        } else if let eventText {
+            parts.append("termin \(eventText)")
+        }
+        if overdueTaskCount > 0 {
+            parts.append(EmmaPlural.overdueTasks(overdueTaskCount))
+        } else {
+            parts.append(EmmaPlural.tasks(openTaskCount))
+        }
+        parts.append(legalCase.number)
+        return parts.joined(separator: ", ")
+    }
+}
+
+// MARK: Język klienta
+
+/// Plakietka języka klienta: „UA”, „RU”, „PL”. Przy klienteli mówiącej po
+/// rosyjsku i ukraińsku to od razu podpowiada, z kim się rozmawia.
+struct LanguageBadge: View {
+    let language: LanguageCode
+
+    var body: some View {
+        Text(language.badgeCode)
+            // Kontrola czytelności (F09): nic poniżej 12 pt.
+            .font(EmmaTypography.caption(.semibold))
+            .tracking(0.3)
+            .foregroundStyle(EmmaTheme.secondaryButtonText)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(EmmaTheme.controlBackground, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .fixedSize()
+            .accessibilityLabel(language.displayName)
+    }
+}
+
+// MARK: Podsumowanie
+
+/// Kafelek podsumowania: liczba, podpis i ikona; dotknięcie otwiera listę.
+/// Wspólny dla pulsu dnia na „Dzisiaj” i nagłówka ekranu „Klienci”.
+struct PulseTile: View {
+    let value: Int
+    let label: String
+    let systemImage: String
+    let tone: Color
+    let action: () -> Void
+
+    /// Liczba „przewija się” od zera przy pierwszym pokazaniu kafelka —
+    /// mały, szybki akcent (audyt 28.09.2026). „Ogranicz ruch” — od razu wartość.
+    @State private var revealed = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var shownValue: Int { revealed || reduceMotion ? value : 0 }
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .center) {
+                    Text("\(shownValue)")
+                        .font(EmmaTypography.heading(24))
+                        .foregroundStyle(EmmaTheme.ink)
+                        .contentTransition(.numericText())
+                    Spacer(minLength: 4)
+                    Image(systemName: systemImage)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(tone)
+                        .frame(width: 26, height: 26)
+                        .background(EmmaTheme.accentSoft, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                Text(label)
+                    .font(EmmaTypography.caption())
+                    .foregroundStyle(EmmaTheme.muted)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, minHeight: 70, alignment: .topLeading)
+            .padding(12)
             .background(EmmaTheme.surface)
             .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
             .overlay {
@@ -237,13 +439,16 @@ struct CaseCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(EmmaCardButtonStyle())
+        .onAppear {
+            guard !revealed else { return }
+            withAnimation(.snappy(duration: 0.45).delay(0.05)) { revealed = true }
+        }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            "\(legalCase.title), \(legalCase.number), \(legalCase.status.displayName), \(clientName), \(EmmaPlural.tasks(openTaskCount))"
-        )
+        .accessibilityLabel("\(value) \(label)")
         .accessibilityAddTraits(.isButton)
     }
 }
+
 
 enum ClientInitials {
     /// Inicjały z imienia i nazwiska. Wspólne dla awatarów w całej aplikacji.
