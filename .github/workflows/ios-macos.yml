@@ -118,7 +118,11 @@ jobs:
       - name: Testy jednostkowe w Xcode
         working-directory: ios
         run: |
-          set -o pipefail
+          # Pełny wypis idzie do pliku, a na ekran — ostatnie 200 linii i, przy
+          # porażce, **nazwy nieudanych testów z komunikatem**. Wcześniej samo
+          # `tail -200` ucinało miejsce porażki i nie było wiadomo, co padło.
+          mkdir -p "$ARTIFACTS"
+          set +e
           xcodebuild test \
             -project Emma.xcodeproj \
             -scheme Emma-Demo \
@@ -127,7 +131,16 @@ jobs:
             -resultBundlePath "$ARTIFACTS/unit-tests.xcresult" \
             -only-testing:EmmaTests \
             CODE_SIGNING_ALLOWED=NO \
-            | tail -200
+            > "$ARTIFACTS/unit-tests.log" 2>&1
+          status=$?
+          set -e
+          tail -200 "$ARTIFACTS/unit-tests.log"
+          if [[ $status -ne 0 ]]; then
+            echo "::group::Nieudane testy jednostkowe"
+            grep -E "error:|' failed \(|XCTAssert|Fatal error" "$ARTIFACTS/unit-tests.log" | head -100 || true
+            echo "::endgroup::"
+          fi
+          exit $status
 
       - name: Zrzuty ekranu jedenastu ekranów
         id: screenshots
