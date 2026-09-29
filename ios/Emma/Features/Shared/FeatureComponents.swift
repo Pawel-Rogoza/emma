@@ -458,3 +458,48 @@ enum ClientInitials {
         return letters.joined().uppercased()
     }
 }
+
+// MARK: Grupy list
+
+/// Nagłówek grupy listy: „● CZEKAJĄ PONAD DOBĘ · 2”. Kropka w kolorze stanu;
+/// grupa wymagająca działania ma tytuł w tym samym kolorze. Wspólny dla
+/// „Klientów”, „Rozmów” i listy „Kalendarza” (przebudowa 29.09.2026).
+struct GroupHeader: View {
+    let title: String
+    let count: Int
+    /// `nil` — nagłówek bez kropki (litera kartoteki).
+    let tone: Color?
+    let emphasized: Bool
+
+    var body: some View {
+        HStack(spacing: 7) {
+            if let tone {
+                Circle()
+                    .fill(tone)
+                    .frame(width: 7, height: 7)
+            }
+            Text(title.uppercased())
+                .font(EmmaTypography.caption(.semibold))
+                .tracking(0.6)
+                .foregroundStyle(emphasized ? (tone ?? EmmaTheme.mutedSoft) : EmmaTheme.mutedSoft)
+            Text("\(count)")
+                .font(EmmaTypography.caption(.medium))
+                .foregroundStyle(EmmaTheme.mutedSoft)
+                .contentTransition(.numericText())
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+extension View {
+    /// Wiersz `List` wyglądający jak zwykły widok: bez tła, separatorów
+    /// i systemowych marginesów — karty mają własny wygląd. `List` zostaje
+    /// tam, gdzie potrzebne są systemowe przesunięcia z obsługą VoiceOver.
+    func emmaListRow(top: CGFloat, bottom: CGFloat, horizontal: CGFloat) -> some View {
+        listRowInsets(EdgeInsets(top: top, leading: horizontal, bottom: bottom, trailing: horizontal))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+    }
+}

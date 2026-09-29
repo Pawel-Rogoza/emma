@@ -121,3 +121,72 @@ public struct EmmaShimmer: ViewModifier {
 public extension View {
     func emmaShimmer() -> some View { modifier(EmmaShimmer()) }
 }
+
+// MARK: - Wejście kart
+//
+// Backlog audytu 28.09.2026 (P2, pkt 7): karty listy wchodzą lekkim
+// przenikaniem z przesunięciem 8 pt, kaskadowo po 35 ms. Tylko przy pierwszym
+// pokazaniu widoku — odświeżenie danych nie „miga” całą listą. Kaskada ma
+// górny limit, żeby długa lista nie czekała na ostatnią kartę.
+
+public struct EmmaAppear: ViewModifier {
+    private let index: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var visible = false
+
+    public init(index: Int) {
+        self.index = index
+    }
+
+    public func body(content: Content) -> some View {
+        let shown = visible || reduceMotion
+        return content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown ? 0 : 8)
+            .onAppear {
+                guard !visible else { return }
+                let delay = Double(min(index, 8)) * 0.035
+                withAnimation(EmmaMotion.smooth.delay(delay)) { visible = true }
+            }
+    }
+}
+
+public extension View {
+    /// Kaskadowe wejście karty listy (`index` — pozycja na liście).
+    func emmaAppear(_ index: Int = 0) -> some View { modifier(EmmaAppear(index: index)) }
+}
+
+/// Miękko pulsująca obwódka — „tu jest coś nowego”. Jedyny ciągły ruch listy,
+/// dlatego bardzo wolny i delikatny; przy „Ogranicz ruch” obwódka stoi.
+public struct EmmaPulseRing: View {
+    private let color: Color
+    private let diameter: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var expanded = false
+
+    public init(color: Color, diameter: CGFloat) {
+        self.color = color
+        self.diameter = diameter
+    }
+
+    public var body: some View {
+        ZStack {
+            Circle()
+                .strokeBorder(color, lineWidth: 2)
+            if !reduceMotion {
+                Circle()
+                    .strokeBorder(color.opacity(expanded ? 0 : 0.45), lineWidth: 2)
+                    .scaleEffect(expanded ? 1.28 : 1)
+            }
+        }
+        .frame(width: diameter, height: diameter)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) {
+                expanded = true
+            }
+        }
+    }
+}

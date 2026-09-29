@@ -11,6 +11,17 @@ import SwiftUI
 //   • **Tydzień** — dotychczasowy pasek tygodnia z listą dnia,
 //   • **Lista** — najbliższe 60 dni pogrupowane po dniach (tylko dni z terminami).
 //
+// Przebudowa 29.09.2026 — ten sam język co „Dzisiaj” i „Klienci”:
+//   • tytuł „Kalendarz” i trzy kafelki: terminy dziś, najbliższe 7 dni i terminy
+//     po czasie (ten sam próg 30 dni co karta „Po terminie” na „Dzisiaj”),
+//   • miesiąc przewija się w stronę gestu, tytuł miesiąca „przewija” litery,
+//     a wybór dnia to przesuwana pigułka (jak w filtrach),
+//   • legenda kolorów kropek pod siatką,
+//   • dzień jako **oś**: kropka w kolorze rodzaju, linia łącząca terminy,
+//     znacznik „Teraz” między minionymi a nadchodzącymi, odliczanie przy
+//     najbliższym i czerwona plakietka przy przegapionym terminie w sprawie.
+//     Bez kolumny godzin — plan tego zakazuje (test `testCalendarHasNoHourColumn`).
+//
 // Terminy całego widoku są wczytywane jednym zapytaniem, a wybór dnia w obrębie
 // wczytanego zakresu nie pyta serwera. Rachuba tygodnia opiera się na `LocalDate`
 // (poniedziałek pierwszy), a nie na `Calendar.current` (§2.2).
@@ -37,18 +48,43 @@ final class CalendarStore: ObservableObject {
         /// Terminy każdego dnia wczytanego zakresu (kropki w siatce, lista).
         var eventsByDay: [LocalDate: [ScheduledEvent]]
         var clientNames: [ClientID: String]
+        /// Kafelki nad kalendarzem — niezależne od wyświetlanego zakresu.
+        var pulse: Pulse
+    }
+
+    /// Puls kalendarza: dziś, najbliższy tydzień i terminy po czasie.
+    struct Pulse {
+        var today = 0
+        var week = 0
+        /// Niezakończone terminy w sprawach z ostatnich 30 dni, najstarsze najpierw.
+        var missed: [ScheduledEvent] = []
+
+        static func make(_ events: [ScheduledEvent], today: LocalDate) -> Pulse {
+            let open = events.filter { $0.status != .finished }
+            return Pulse(
+                today: open.filter { $0.day == today }.count,
+                week: open.filter { $0.day >= today && $0.day <= today.adding(days: 6) }.count,
+                missed: open
+                    .filter { $0.kind == .caseDeadline && $0.day < today }
+                    .sorted { $0.day != $1.day ? $0.day < $1.day : $0.time < $1.time }
+            )
+        }
     }
 
     @Published private(set) var phase: LoadPhase<Model> = .idle
     @Published private(set) var mode: CalendarMode = .month
     @Published private(set) var selectedDay: LocalDate = LocalDate(year: 2026, month: 9, day: 11)
     @Published private(set) var visibleMonth: LocalDate = LocalDate(year: 2026, month: 9, day: 1)
+    /// Kierunek ostatniej zmiany okresu (+1 dalej, −1 wstecz) — w tę stronę
+    /// wjeżdża nowy miesiąc i „przewija się” jego nazwa.
+    @Published private(set) var direction: Int = 1
 
     /// Jednorazowa inicjalizacja (F01): odświeżenie nie cofa wyboru dnia.
     private var didConfigure = false
     private var events: [ScheduledEvent] = []
     private var loadedRange: DateIntervalFilter?
     private var clientNames: [ClientID: String] = [:]
+    private var pulse = Pulse()
 
     /// Horyzont widoku listy.
     static let agendaDays = 60
@@ -83,12 +119,21 @@ final class CalendarStore: ObservableObject {
         do {
             async let eventsTask = repository.events(in: requested)
             async let clientsTask = repository.clients(matching: "", stage: nil)
+            async let pulseTask = repository.events(
+                in: DateIntervalFilter(
+                    from: today.adding(days: -CaseUrgency.missedLookbackDays),
+                    through: today.adding(days: 6)
+                )
+            )
             let loadedEvents = try await eventsTask
             let clients = try await clientsTask
+            // Kafelki nie mogą zablokować kalendarza — bez nich zostaje siatka.
+            let pulseEvents = (try? await pulseTask) ?? []
             // W międzyczasie wybrano inny zakres — jego wczytanie ma ostatnie słowo.
             guard requested == range(today: today) else { return }
             events = loadedEvents
             loadedRange = requested
+            pulse = Pulse.make(pulseEvents, today: today)
             clientNames = Dictionary(clients.map { ($0.id, $0.displayName) }, uniquingKeysWith: { first, _ in first })
             rebuild(today: today)
         } catch {
@@ -130,7 +175,8 @@ final class CalendarStore: ObservableObject {
                 days: days,
                 dayEvents: byDay[selectedDay] ?? [],
                 eventsByDay: byDay,
-                clientNames: clientNames
+                clientNames: clientNames,
+                pulse: pulse
             )
         )
     }
@@ -150,6 +196,7 @@ final class CalendarStore: ObservableObject {
     /// zakresu przestawia widok na jego miesiąc albo tydzień.
     func select(_ day: LocalDate, dependencies: AppDependencies) async {
         configure(today: dependencies.today)
+        if day != selectedDay { direction = day > selectedDay ? 1 : -1 }
         selectedDay = day
         if mode == .agenda { mode = .month }
         if mode == .month, day.firstOfMonth != visibleMonth {
@@ -166,6 +213,7 @@ final class CalendarStore: ObservableObject {
 
     /// Poprzedni/następny miesiąc albo tydzień.
     func shift(by step: Int, dependencies: AppDependencies) async {
+        direction = step >= 0 ? 1 : -1
         switch mode {
         case .month:
             visibleMonth = visibleMonth.addingMonths(step)
@@ -183,6 +231,7 @@ final class CalendarStore: ObservableObject {
 
     func backToToday(_ dependencies: AppDependencies) async {
         let today = dependencies.today
+        direction = today >= selectedDay ? 1 : -1
         selectedDay = today
         visibleMonth = today.firstOfMonth
         await load(dependencies)
@@ -205,13 +254,13 @@ struct CalendarScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top, spacing: 10) {
-                    ScreenHeader(kicker: "WSPÓLNY PLAN", title: headerTitle)
-                    IconButton(systemName: "plus", accessibilityLabel: "Dodaj termin") {
-                        dependencies.present(store.newEventRoute)
-                    }
+                header
+                    .padding(.bottom, 14)
+
+                if case .loaded(let model) = store.phase {
+                    pulseTiles(model.pulse)
+                        .padding(.bottom, 14)
                 }
-                .padding(.bottom, 12)
 
                 SegmentedFilter(
                     items: CalendarMode.allCases,
@@ -225,7 +274,7 @@ struct CalendarScreen: View {
 
                 if store.mode != .agenda {
                     navigationControls
-                        .padding(.bottom, 12)
+                        .padding(.bottom, 10)
                 }
 
                 switch store.phase {
@@ -249,61 +298,167 @@ struct CalendarScreen: View {
         .task(id: dependencies.dataVersion) { await store.load(dependencies) }
     }
 
-    private var headerTitle: String {
-        switch store.mode {
-        case .month: return dependencies.dateText.monthTitle(for: store.visibleMonth)
-        case .week: return dependencies.dateText.monthTitle(for: store.selectedDay)
-        case .agenda: return "Najbliższe terminy"
+    // MARK: Nagłówek
+
+    /// Sam tytuł i „+” — jak „Klienci” i „Rozmowy”. Miesiąc jest w pasku nawigacji.
+    private var header: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Text("Kalendarz")
+                .font(EmmaTypography.welcome)
+                .tracking(-0.9)
+                .foregroundStyle(EmmaTheme.ink)
+                .accessibilityAddTraits(.isHeader)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            IconButton(systemName: "plus", accessibilityLabel: "Dodaj termin") {
+                dependencies.present(store.newEventRoute)
+            }
         }
     }
+
+    // MARK: Kafelki
+
+    private func pulseTiles(_ pulse: CalendarStore.Pulse) -> some View {
+        HStack(spacing: 8) {
+            PulseTile(
+                value: pulse.today,
+                label: EmmaPlural.form(pulse.today, "termin dziś", "terminy dziś", "terminów dziś"),
+                systemImage: "sun.max",
+                tone: EmmaTheme.accent
+            ) {
+                Task { await store.select(dependencies.today, dependencies: dependencies) }
+            }
+            PulseTile(
+                value: pulse.week,
+                label: EmmaPlural.form(pulse.week, "termin w 7 dni", "terminy w 7 dni", "terminów w 7 dni"),
+                systemImage: "calendar",
+                tone: EmmaTheme.accent
+            ) {
+                Task { await store.setMode(.agenda, dependencies: dependencies) }
+            }
+            PulseTile(
+                value: pulse.missed.count,
+                label: "po terminie",
+                systemImage: "exclamationmark.triangle",
+                tone: pulse.missed.isEmpty ? EmmaTheme.accent : EmmaTheme.pillDangerText
+            ) {
+                // Najstarszy przegapiony termin — tam jest „Załatwione”.
+                let day = pulse.missed.first?.day ?? dependencies.today
+                Task { await store.select(day, dependencies: dependencies) }
+            }
+        }
+    }
+
+    // MARK: Widoki
 
     @ViewBuilder
     private func loaded(_ model: CalendarStore.Model) -> some View {
         switch model.mode {
         case .month:
-            MonthGrid(model: model) { day in
-                Task { await store.select(day, dependencies: dependencies) }
+            ZStack {
+                MonthGrid(model: model) { day in
+                    Task { await store.select(day, dependencies: dependencies) }
+                }
+                .id(model.visibleMonth)
+                .transition(periodTransition)
             }
+            .animation(EmmaMotion.smooth, value: model.visibleMonth)
             .simultaneousGesture(swipe)
-            .padding(.bottom, 6)
+            dotsLegend
+                .padding(.top, 9)
+                .padding(.bottom, 2)
             dayAgenda(model)
         case .week:
-            weekStrip(model)
-                .simultaneousGesture(swipe)
-                .padding(.bottom, 6)
+            ZStack {
+                weekStrip(model)
+                    .id(model.days.first)
+                    .transition(periodTransition)
+            }
+            .animation(EmmaMotion.smooth, value: model.days.first)
+            .simultaneousGesture(swipe)
+            dotsLegend
+                .padding(.top, 9)
+                .padding(.bottom, 2)
             dayAgenda(model)
         case .agenda:
             agendaList(model)
         }
     }
 
+    /// Nowy okres wjeżdża od strony gestu, stary gaśnie w miejscu.
+    private var periodTransition: AnyTransition {
+        .asymmetric(
+            insertion: .move(edge: store.direction >= 0 ? .trailing : .leading).combined(with: .opacity),
+            removal: .opacity
+        )
+    }
+
     // MARK: Nawigacja
 
+    /// „Wrzesień 2026” po lewej, „Dzisiaj” tylko wtedy, gdy jesteśmy gdzie
+    /// indziej, strzałki po prawej — jeden rząd zamiast dwóch.
     private var navigationControls: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
+            Text(periodTitle)
+                .font(EmmaTypography.heading(19))
+                .tracking(-0.4)
+                .foregroundStyle(EmmaTheme.ink)
+                .contentTransition(.numericText(countsDown: store.direction < 0))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityAddTraits(.isHeader)
+
+            if !showsToday {
+                Button {
+                    EmmaHaptics.selection()
+                    Task { await store.backToToday(dependencies) }
+                } label: {
+                    Text("Dzisiaj")
+                        .font(EmmaTypography.caption(.semibold))
+                        .foregroundStyle(EmmaTheme.weekControlText)
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 32)
+                        .background(EmmaTheme.weekControlBackground, in: Capsule())
+                        .frame(minHeight: EmmaSpacing.hitTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .transition(.scale(scale: 0.8).combined(with: .opacity))
+                .accessibilityLabel("Wróć do dzisiaj")
+            }
+
             IconButton(
                 systemName: "chevron.left",
                 accessibilityLabel: store.mode == .month ? "Poprzedni miesiąc" : "Poprzedni tydzień"
             ) {
+                EmmaHaptics.selection()
                 Task { await store.shift(by: -1, dependencies: dependencies) }
             }
-            Button("Dzisiaj") {
-                EmmaHaptics.selection()
-                Task { await store.backToToday(dependencies) }
-            }
-            .font(EmmaTypography.caption(.medium))
-            .foregroundStyle(EmmaTheme.weekControlText)
-            .frame(maxWidth: .infinity, minHeight: EmmaSpacing.hitTarget)
-            .background(EmmaTheme.weekControlBackground)
-            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous))
-
             IconButton(
                 systemName: "chevron.right",
                 accessibilityLabel: store.mode == .month ? "Następny miesiąc" : "Następny tydzień"
             ) {
+                EmmaHaptics.selection()
                 Task { await store.shift(by: 1, dependencies: dependencies) }
             }
         }
+        .animation(EmmaMotion.snappy, value: periodTitle)
+        .animation(EmmaMotion.snappy, value: showsToday)
+    }
+
+    private var periodTitle: String {
+        switch store.mode {
+        case .month: return dependencies.dateText.monthTitle(for: store.visibleMonth)
+        case .week: return dependencies.dateText.monthTitle(for: store.selectedDay)
+        case .agenda: return ""
+        }
+    }
+
+    /// Czy widać dzisiejszy dzień z zaznaczeniem na nim.
+    private var showsToday: Bool {
+        let today = dependencies.today
+        guard store.selectedDay == today else { return false }
+        return store.mode != .month || store.visibleMonth == today.firstOfMonth
     }
 
     /// Wyraźnie poziomy ruch zmienia miesiąc/tydzień — nie łapie przewijania.
@@ -317,6 +472,30 @@ struct CalendarScreen: View {
             }
     }
 
+    /// Co znaczą kolory kropek — bez zgadywania.
+    private var dotsLegend: some View {
+        HStack(spacing: 14) {
+            legendItem(EmmaTheme.accent, "Konsultacja")
+            legendItem(EmmaTheme.pillAmberText, "W sprawie")
+            legendItem(EmmaTheme.pillDangerText, "Po terminie")
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 4)
+        .accessibilityHidden(true)
+    }
+
+    private func legendItem(_ color: Color, _ title: String) -> some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+            Text(title)
+                .font(EmmaTypography.caption())
+                .foregroundStyle(EmmaTheme.mutedSoft)
+                .lineLimit(1)
+        }
+    }
+
     // MARK: Dzień
 
     @ViewBuilder
@@ -324,48 +503,181 @@ struct CalendarScreen: View {
         SectionHeader(daySectionTitle(model), actionTitle: "Dodaj", compact: true) {
             dependencies.present(store.newEventRoute)
         }
-        if model.dayEvents.isEmpty {
-            Button {
-                dependencies.present(store.newEventRoute)
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "calendar.badge.plus")
-                        .font(.system(size: 20))
-                        .foregroundStyle(EmmaTheme.accent)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Wolny dzień")
-                            .font(EmmaTypography.ui(14, .semibold))
-                            .foregroundStyle(EmmaTheme.ink)
-                        Text("Dotknij, aby dodać termin na ten dzień.")
-                            .font(EmmaTypography.caption())
-                            .foregroundStyle(EmmaTheme.muted)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(15)
-                .background(EmmaTheme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
-                        .strokeBorder(EmmaTheme.cardBorder, style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
-                }
-                .contentShape(Rectangle())
+        Group {
+            if model.dayEvents.isEmpty {
+                freeDay
+                    .emmaAppear()
+            } else {
+                dayTimeline(model)
             }
-            .buttonStyle(EmmaCardButtonStyle())
-        } else {
-            ForEach(model.dayEvents, id: \.id) { event in
-                MeetingCard(event: event, clientName: event.clientID.flatMap { model.clientNames[$0] }) {
-                    dependencies.present(.eventDetail(event.id))
+        }
+        // Nowy dzień — karty wchodzą od nowa, kaskadowo.
+        .id(model.selectedDay)
+        .transition(.opacity)
+    }
+
+    private var freeDay: some View {
+        Button {
+            dependencies.present(store.newEventRoute)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "calendar.badge.plus")
+                    .font(.system(size: 20))
+                    .foregroundStyle(EmmaTheme.accent)
+                    .frame(width: 38, height: 38)
+                    .background(EmmaTheme.accentSoft, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Wolny dzień")
+                        .font(EmmaTypography.ui(14, .semibold))
+                        .foregroundStyle(EmmaTheme.ink)
+                    Text("Dotknij, aby dodać termin na ten dzień.")
+                        .font(EmmaTypography.caption())
+                        .foregroundStyle(EmmaTheme.muted)
                 }
-                .eventContextMenu(event, dependencies: dependencies) {
-                    dependencies.present(.eventDetail(event.id))
+                Spacer(minLength: 0)
+            }
+            .padding(15)
+            .background(EmmaTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
+                    .strokeBorder(EmmaTheme.cardBorder, style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(EmmaCardButtonStyle())
+    }
+
+    /// Oś dnia: kropka w kolorze rodzaju, linia łącząca terminy, „Teraz”
+    /// między minionymi a nadchodzącymi (tylko dziś).
+    private func dayTimeline(_ model: CalendarStore.Model) -> some View {
+        let now = TimeOfDay.at(dependencies.clock.now())
+        let isToday = model.selectedDay == model.today
+        let events = model.dayEvents
+        let upcoming = events.first(where: { !$0.isAllDay && !$0.hasPassed(at: now) })
+        let nextID: EventID? = isToday ? upcoming?.id : nil
+        let allPassed = isToday && nextID == nil && events.contains { !$0.isAllDay }
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(events.enumerated()), id: \.element.id) { index, event in
+                if event.id == nextID {
+                    nowMarker(now)
                 }
-                .padding(.bottom, EmmaSpacing.cardGap)
+                timelineRow(
+                    event,
+                    model: model,
+                    now: now,
+                    isNext: event.id == nextID,
+                    isFirst: index == 0,
+                    isLast: index == events.count - 1
+                )
+                .emmaAppear(index)
+            }
+            if allPassed {
+                nowMarker(now)
             }
         }
     }
 
-    /// „Dzisiaj, 24 września · 3 terminy”.
+    private func timelineRow(
+        _ event: ScheduledEvent,
+        model: CalendarStore.Model,
+        now: TimeOfDay,
+        isNext: Bool,
+        isFirst: Bool,
+        isLast: Bool
+    ) -> some View {
+        let isMissed = event.kind == .caseDeadline && event.day < model.today
+        let isPast = !isMissed && (
+            event.day < model.today
+                || (event.day == model.today && !event.isAllDay && event.hasPassed(at: now))
+        )
+        let tone = isMissed ? EmmaTheme.pillDangerText
+            : (event.kind == .caseDeadline ? EmmaTheme.pillAmberText : EmmaTheme.accent)
+
+        return MeetingCard(event: event, clientName: event.clientID.flatMap { model.clientNames[$0] }) {
+            dependencies.present(.eventDetail(event.id))
+        }
+        .overlay(alignment: .topTrailing) {
+            timelineBadge(event, model: model, now: now, isMissed: isMissed, isNext: isNext)
+                .padding(10)
+        }
+        .eventContextMenu(event, dependencies: dependencies) {
+            dependencies.present(.eventDetail(event.id))
+        }
+        .opacity(isPast ? 0.6 : 1)
+        .padding(.leading, 26)
+        .padding(.bottom, EmmaSpacing.cardGap)
+        .background(alignment: .topLeading) {
+            VStack(spacing: 0) {
+                Rectangle()
+                    .fill(isFirst ? Color.clear : EmmaTheme.border)
+                    .frame(width: 2, height: 15)
+                ZStack {
+                    if isNext {
+                        Circle()
+                            .fill(tone.opacity(0.16))
+                            .frame(width: 20, height: 20)
+                    }
+                    Circle()
+                        .fill(isPast ? EmmaTheme.bg : tone)
+                        .frame(width: 10, height: 10)
+                        .overlay { Circle().strokeBorder(tone, lineWidth: 2) }
+                }
+                .frame(width: 20, height: 20)
+                Rectangle()
+                    .fill(isLast ? Color.clear : EmmaTheme.border)
+                    .frame(width: 2)
+                    .frame(maxHeight: .infinity)
+            }
+            .frame(width: 20)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// Plakietka w rogu karty: „Minął 2 dni temu” albo „za 45 min” przy najbliższym.
+    @ViewBuilder
+    private func timelineBadge(
+        _ event: ScheduledEvent,
+        model: CalendarStore.Model,
+        now: TimeOfDay,
+        isMissed: Bool,
+        isNext: Bool
+    ) -> some View {
+        if isMissed {
+            let urgency = CaseUrgency(nextEvent: nil, missedEvent: event.day, overdueTasks: 0, today: model.today)
+            if let text = urgency.countdownText {
+                StatusPill(text.prefix(1).uppercased() + text.dropFirst(), kind: .danger)
+            }
+        } else if isNext {
+            // „za 45 min” / „teraz” — odświeżane co minutę.
+            TimelineView(.periodic(from: .now, by: 60)) { _ in
+                if let countdown = event.countdownText(now: TimeOfDay.at(dependencies.clock.now()), today: model.today) {
+                    StatusPill(countdown, kind: countdown == "teraz" ? .green : .neutral)
+                }
+            }
+        }
+    }
+
+    private func nowMarker(_ now: TimeOfDay) -> some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(EmmaTheme.accent)
+                .frame(width: 8, height: 8)
+                .frame(width: 20)
+            Text("Teraz · \(now.hhmm)")
+                .font(EmmaTypography.caption(.semibold))
+                .foregroundStyle(EmmaTheme.accent)
+                .fixedSize()
+            Rectangle()
+                .fill(EmmaTheme.accent.opacity(0.35))
+                .frame(height: 1)
+        }
+        .padding(.bottom, EmmaSpacing.cardGap)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// „Dzisiaj, 24 września · 3”.
     private func daySectionTitle(_ model: CalendarStore.Model) -> String {
         let label = dependencies.dateText.dayTitle(model.selectedDay)
         guard !model.dayEvents.isEmpty else { return label }
@@ -375,38 +687,8 @@ struct CalendarScreen: View {
     // MARK: Tydzień
 
     private func weekStrip(_ model: CalendarStore.Model) -> some View {
-        HStack(spacing: 4) {
-            ForEach(model.days, id: \.self) { day in
-                let isSelected = day == model.selectedDay
-                let count = model.eventsByDay[day]?.count ?? 0
-                Button {
-                    if day != model.selectedDay { EmmaHaptics.selection() }
-                    Task { await store.select(day, dependencies: dependencies) }
-                } label: {
-                    VStack(spacing: 5) {
-                        Text(dependencies.dateText.weekdayShort(for: day))
-                            .font(EmmaTypography.caption(.medium))
-                            .foregroundStyle(isSelected ? EmmaTheme.daySelectedLabel : EmmaTheme.mutedSoft)
-                        Text("\(day.day)")
-                            .font(EmmaTypography.heading(16))
-                            .foregroundStyle(isSelected ? EmmaTheme.daySelectedNumber : EmmaTheme.ink)
-                        EventDots(events: model.eventsByDay[day] ?? [], today: model.today, highlighted: isSelected)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: EmmaMetrics.dayCellMinHeight)
-                    .background(isSelected ? EmmaTheme.daySelected : EmmaTheme.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.dayCell, style: .continuous))
-                    .overlay {
-                        if !isSelected && day == model.today {
-                            RoundedRectangle(cornerRadius: EmmaRadii.dayCell, style: .continuous)
-                                .strokeBorder(EmmaTheme.dayTodayDot, lineWidth: 1)
-                        }
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(dependencies.dateText.dayTitle(day)), \(EmmaPlural.events(count))")
-                .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-            }
+        WeekStrip(model: model) { day in
+            Task { await store.select(day, dependencies: dependencies) }
         }
     }
 
@@ -422,15 +704,15 @@ struct CalendarScreen: View {
                 message: "W najbliższych \(CalendarStore.agendaDays) dniach nie ma zaplanowanych terminów."
             )
         } else {
+            let firstIndex = Dictionary(
+                uniqueKeysWithValues: days.enumerated().map { ($0.element, $0.offset) }
+            )
             ForEach(days, id: \.self) { day in
                 let events = model.eventsByDay[day] ?? []
-                Text(dependencies.dateText.dayTitle(day).uppercased())
-                    .font(EmmaTypography.caption(.semibold))
-                    .tracking(0.6)
-                    .foregroundStyle(day == model.today ? EmmaTheme.accent : EmmaTheme.mutedSoft)
+                agendaDayHeader(day, count: events.count, today: model.today)
                     .padding(.top, 14)
-                    .padding(.bottom, 7)
-                    .accessibilityAddTraits(.isHeader)
+                    .padding(.bottom, 8)
+                    .emmaAppear(firstIndex[day] ?? 0)
                 ForEach(events, id: \.id) { event in
                     MeetingCard(event: event, clientName: event.clientID.flatMap { model.clientNames[$0] }) {
                         dependencies.present(.eventDetail(event.id))
@@ -439,18 +721,124 @@ struct CalendarScreen: View {
                         dependencies.present(.eventDetail(event.id))
                     }
                     .padding(.bottom, EmmaSpacing.cardGap)
+                    .emmaAppear(firstIndex[day] ?? 0)
                 }
             }
         }
+    }
+
+    /// Dzień na liście: kafelek z datą (dziś — wypełniony) i „za 3 dni · 2 terminy”.
+    private func agendaDayHeader(_ day: LocalDate, count: Int, today: LocalDate) -> some View {
+        let isToday = day == today
+        let distance = today.days(until: day)
+        let relative: String
+        switch distance {
+        case 0: relative = "dziś"
+        case 1: relative = "jutro"
+        default: relative = "za \(EmmaPlural.days(distance))"
+        }
+        return HStack(spacing: 12) {
+            VStack(spacing: 0) {
+                Text(dependencies.dateText.weekdayShort(for: day).uppercased())
+                    .font(EmmaTypography.caption(.semibold))
+                    .foregroundStyle(isToday ? EmmaTheme.daySelectedLabel : EmmaTheme.mutedSoft)
+                Text("\(day.day)")
+                    .font(EmmaTypography.heading(18))
+                    .foregroundStyle(isToday ? EmmaTheme.daySelectedNumber : EmmaTheme.ink)
+            }
+            .frame(width: 46, height: 50)
+            .background(isToday ? EmmaTheme.daySelected : EmmaTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .overlay {
+                if !isToday {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(dependencies.dateText.dayTitle(day))
+                    .font(EmmaTypography.ui(15, .semibold))
+                    .foregroundStyle(EmmaTheme.ink)
+                Text("\(relative) · \(EmmaPlural.label(count, "termin", "terminy", "terminów"))")
+                    .font(EmmaTypography.caption())
+                    .foregroundStyle(isToday ? EmmaTheme.accent : EmmaTheme.mutedSoft)
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+// MARK: - Pasek tygodnia
+
+/// Siedem dni z kropkami; wybrany dzień to przesuwana ciemna pigułka.
+private struct WeekStrip: View {
+    @EnvironmentObject private var dependencies: AppDependencies
+    @Namespace private var selectionSpace
+
+    let model: CalendarStore.Model
+    let onSelect: (LocalDate) -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(model.days, id: \.self) { day in
+                cell(day)
+            }
+        }
+        .animation(EmmaMotion.snappy, value: model.selectedDay)
+    }
+
+    private func cell(_ day: LocalDate) -> some View {
+        let isSelected = day == model.selectedDay
+        let count = model.eventsByDay[day]?.count ?? 0
+        return Button {
+            if !isSelected { EmmaHaptics.selection() }
+            onSelect(day)
+        } label: {
+            VStack(spacing: 5) {
+                Text(dependencies.dateText.weekdayShort(for: day))
+                    .font(EmmaTypography.caption(.medium))
+                    .foregroundStyle(isSelected ? EmmaTheme.daySelectedLabel : EmmaTheme.mutedSoft)
+                Text("\(day.day)")
+                    .font(EmmaTypography.heading(16))
+                    .foregroundStyle(isSelected ? EmmaTheme.daySelectedNumber : EmmaTheme.ink)
+                EventDots(events: model.eventsByDay[day] ?? [], today: model.today, highlighted: isSelected)
+            }
+            .frame(maxWidth: .infinity, minHeight: EmmaMetrics.dayCellMinHeight)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: EmmaRadii.dayCell, style: .continuous)
+                        .fill(EmmaTheme.daySelected)
+                        .matchedGeometryEffect(id: "week-selection", in: selectionSpace)
+                } else {
+                    RoundedRectangle(cornerRadius: EmmaRadii.dayCell, style: .continuous)
+                        .fill(EmmaTheme.surface)
+                }
+            }
+            .overlay {
+                if !isSelected && day == model.today {
+                    RoundedRectangle(cornerRadius: EmmaRadii.dayCell, style: .continuous)
+                        .strokeBorder(EmmaTheme.dayTodayDot, lineWidth: 1)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(dependencies.dateText.dayTitle(day)), \(EmmaPlural.events(count))")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 }
 
 // MARK: - Siatka miesiąca
 
 /// Siatka 6×7: numer dnia, kropki terminów, dziś w obwódce, wybrany dzień
-/// wypełniony. Dni spoza miesiąca są przygaszone, ale klikalne.
+/// wypełniony (pigułka przesuwa się między dniami). Dni spoza miesiąca są
+/// przygaszone, ale klikalne.
 private struct MonthGrid: View {
     @EnvironmentObject private var dependencies: AppDependencies
+    @Namespace private var selectionSpace
 
     let model: CalendarStore.Model
     let onSelect: (LocalDate) -> Void
@@ -475,6 +863,7 @@ private struct MonthGrid: View {
                     cell(day)
                 }
             }
+            .animation(EmmaMotion.snappy, value: model.selectedDay)
         }
         .padding(8)
         .background(EmmaTheme.surface)
@@ -510,6 +899,7 @@ private struct MonthGrid: View {
                 if isSelected {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(EmmaTheme.daySelected)
+                        .matchedGeometryEffect(id: "month-selection", in: selectionSpace)
                 } else if isToday {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .strokeBorder(EmmaTheme.accent, lineWidth: 1.2)

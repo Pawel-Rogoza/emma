@@ -88,7 +88,8 @@ wyłączone do 1.10). Zmiany wymagają przejścia w Xcode przed TestFlight.
    **Blokada:** bramka `design-token-diff.py` odrzuca każdy kolor spoza
    referencji prototypu, a referencja nie ma palety ciemnej — potrzebna
    decyzja właściciela (ciemna paleta w referencji albo wyjątek w bramce).
-7. **Wejście kart listy** (lekki fade + przesunięcie 6 pt przy pierwszym
+7. ~~Wejście kart listy~~ — **zrobione w 0.7.0** (`emmaAppear`, Rozmowy, Kalendarz, Emma).
+   **Wejście kart listy** (lekki fade + przesunięcie 6 pt przy pierwszym
    wczytaniu, kaskadowo po 20 ms) — tylko przy pierwszym pokazaniu, nie przy
    każdym odświeżeniu.
 8. **Hero-przejście awatara** z listy klientów do karty klienta
@@ -129,6 +130,7 @@ wyłączone do 1.10). Zmiany wymagają przejścia w Xcode przed TestFlight.
 | 0.6.0 | szybkie akcje z ikony (termin, zadanie, Emma), lupa na „Dzisiaj”, „Załatwione” z „Cofnij” wszędzie (Kalendarz, sprawa, karta), menu zadań: na jutro / o tydzień / pilne z „Cofnij”, pełne testy UI w CI | zielone |
 | 0.6.1 | gotowe odpowiedzi w języku klienta (PL/UA/RU) w wątku, „za 45 min” przy najbliższym terminie, płynne wejście blokady, liczby w kafelkach | zielone |
 | 0.6.2 | poranny skrót o 8:00 (terminy dnia + po terminie), karta zgody na powiadomienia, kolory kropek w kalendarzu (konsultacja / termin w sprawie / po terminie) | w toku |
+| 0.7.0 | Emma, Rozmowy i Kalendarz w języku „Dzisiaj” i „Klientów”: duże tytuły, kafelki, chipy z licznikami, grupy „czyj ruch” w rozmowach (nowe / do odpowiedzi / odpisane) z przesunięciami, oś dnia z „Teraz” w kalendarzu, kafelki poleceń i „Czekają na odpowiedź” u Emmy, kaskadowe wejście kart | do sprawdzenia w CI |
 
 Testy UI (XCUITest, 42 scenariusze: przepływ demo, układ z długą cyrylicą, dialogi, blokada, menu leadów) biegną teraz w CI przy każdym pushu — pierwszy pełny przebieg: **42/42 zaliczone**.
 

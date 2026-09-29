@@ -99,25 +99,25 @@ struct ClientsScreen: View {
     private func controls(_ proxy: ScrollViewProxy) -> some View {
         header
             .id(Self.topID)
-            .clientsListRow(top: EmmaSpacing.contentTop, bottom: 0, horizontal: layout.horizontalPadding)
+            .emmaListRow(top: EmmaSpacing.contentTop, bottom: 0, horizontal: layout.horizontalPadding)
 
         SegmentedFilter(
             items: AppDependencies.ClientListMode.allCases,
             selection: $dependencies.clientMode,
             title: { $0.rawValue }
         )
-        .clientsListRow(top: 14, bottom: 0, horizontal: layout.horizontalPadding)
+        .emmaListRow(top: 14, bottom: 0, horizontal: layout.horizontalPadding)
 
         if case .loaded(let model) = store.phase {
             summaryTiles(model, proxy: proxy)
-                .clientsListRow(top: 14, bottom: 0, horizontal: layout.horizontalPadding)
+                .emmaListRow(top: 14, bottom: 0, horizontal: layout.horizontalPadding)
         }
 
         SearchField(text: $search, placeholder: searchPlaceholder, isFocused: $searchFocused)
-            .clientsListRow(top: 14, bottom: 0, horizontal: layout.horizontalPadding)
+            .emmaListRow(top: 14, bottom: 0, horizontal: layout.horizontalPadding)
 
         filterChips
-            .clientsListRow(top: 8, bottom: 6, horizontal: 0)
+            .emmaListRow(top: 8, bottom: 6, horizontal: 0)
     }
 
     /// Sam tytuł, bez podpisu „BAZA KANCELARII” — kafelki pod spodem mówią więcej,
@@ -335,12 +335,12 @@ struct ClientsScreen: View {
         switch store.phase {
         case .idle, .loading:
             LoadingState("Wczytuję bazę kancelarii…")
-                .clientsListRow(top: 0, bottom: 0, horizontal: layout.horizontalPadding)
+                .emmaListRow(top: 0, bottom: 0, horizontal: layout.horizontalPadding)
         case .failed(let failure):
             LoadFailureView(failure) {
                 Task { await store.load(dependencies) }
             }
-            .clientsListRow(top: 0, bottom: 0, horizontal: layout.horizontalPadding)
+            .emmaListRow(top: 0, bottom: 0, horizontal: layout.horizontalPadding)
         case .loaded(let model):
             switch dependencies.clientMode {
             case .leads:
@@ -356,7 +356,7 @@ struct ClientsScreen: View {
     private var bottomSpacer: some View {
         Color.clear
             .frame(height: EmmaSpacing.contentBottom)
-            .clientsListRow(top: 0, bottom: 0, horizontal: 0)
+            .emmaListRow(top: 0, bottom: 0, horizontal: 0)
     }
 
     // MARK: Leady
@@ -366,7 +366,7 @@ struct ClientsScreen: View {
         let sections = leadSections(model)
         if sections.isEmpty {
             leadsEmptyState
-                .clientsListRow(top: 0, bottom: 0, horizontal: layout.horizontalPadding)
+                .emmaListRow(top: 0, bottom: 0, horizontal: layout.horizontalPadding)
         } else {
             ForEach(sections) { section in
                 if let title = section.title {
@@ -377,7 +377,7 @@ struct ClientsScreen: View {
                         emphasized: section.status == .waiting
                     )
                     .id(section.id)
-                    .clientsListRow(top: 12, bottom: 2, horizontal: layout.horizontalPadding)
+                    .emmaListRow(top: 12, bottom: 2, horizontal: layout.horizontalPadding)
                 }
                 ForEach(section.clients) { client in
                     leadRow(client, model: model)
@@ -397,7 +397,7 @@ struct ClientsScreen: View {
             onRename: { beginRename(client) },
             onDelete: { pendingDelete = client }
         )
-        .clientsListRow(top: 5.5, bottom: 5.5, horizontal: layout.horizontalPadding)
+        .emmaListRow(top: 5.5, bottom: 5.5, horizontal: layout.horizontalPadding)
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             if client.stage == .new {
                 Button {
@@ -491,7 +491,7 @@ struct ClientsScreen: View {
             RecentClientsStrip(clients: recent, horizontalPadding: layout.horizontalPadding) { client in
                 dependencies.openPerson(client.id)
             }
-            .clientsListRow(top: 6, bottom: 4, horizontal: 0)
+            .emmaListRow(top: 6, bottom: 4, horizontal: 0)
         }
         if rows.isEmpty && leads.isEmpty {
             EmptyState(
@@ -499,11 +499,11 @@ struct ClientsScreen: View {
                 title: search.isEmpty ? "Brak klientów w tym widoku" : "Nikogo nie znaleziono",
                 message: "Klient pojawia się tu po „Przyjmij sprawę” na karcie zgłoszenia."
             )
-            .clientsListRow(top: 0, bottom: 0, horizontal: layout.horizontalPadding)
+            .emmaListRow(top: 0, bottom: 0, horizontal: layout.horizontalPadding)
         } else {
             ForEach(ClientDirectory.sections(rows)) { section in
                 GroupHeader(title: section.letter, count: section.clients.count, tone: nil, emphasized: false)
-                    .clientsListRow(top: 12, bottom: 2, horizontal: layout.horizontalPadding)
+                    .emmaListRow(top: 12, bottom: 2, horizontal: layout.horizontalPadding)
                 ForEach(section.clients) { client in
                     directoryRow(client, model: model)
                 }
@@ -511,7 +511,7 @@ struct ClientsScreen: View {
             // Szukana osoba bywa jeszcze zgłoszeniem — nie każ przełączać trybu.
             if !leads.isEmpty {
                 GroupHeader(title: "Zgłoszenia", count: leads.count, tone: EmmaTheme.accent, emphasized: false)
-                    .clientsListRow(top: 12, bottom: 2, horizontal: layout.horizontalPadding)
+                    .emmaListRow(top: 12, bottom: 2, horizontal: layout.horizontalPadding)
                 ForEach(leads) { client in
                     leadRow(client, model: model)
                 }
@@ -535,7 +535,7 @@ struct ClientsScreen: View {
             isStale: model.staleClients.contains(client.id),
             onOpen: { dependencies.openPerson(client.id) }
         )
-        .clientsListRow(top: 5, bottom: 5, horizontal: layout.horizontalPadding)
+        .emmaListRow(top: 5, bottom: 5, horizontal: layout.horizontalPadding)
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             if let phoneURL {
                 Button {
@@ -613,7 +613,7 @@ struct ClientsScreen: View {
                             emphasized: group == .attention
                         )
                         .id(Self.groupID(group))
-                        .clientsListRow(top: 12, bottom: 2, horizontal: layout.horizontalPadding)
+                        .emmaListRow(top: 12, bottom: 2, horizontal: layout.horizontalPadding)
                         ForEach(cases) { legalCase in
                             caseRow(legalCase, model: model)
                         }
@@ -646,7 +646,7 @@ struct ClientsScreen: View {
             missedEvent: model.missedCaseEvents[legalCase.id],
             onOpen: { dependencies.openCase(legalCase.id) }
         )
-        .clientsListRow(top: 5, bottom: 5, horizontal: layout.horizontalPadding)
+        .emmaListRow(top: 5, bottom: 5, horizontal: layout.horizontalPadding)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             if legalCase.status.isActive {
                 Button {
@@ -670,7 +670,7 @@ struct ClientsScreen: View {
             title: search.isEmpty ? "Brak spraw w tym widoku" : "Brak pasujących spraw",
             message: "Zmień filtr lub utwórz sprawę z karty klienta."
         )
-        .clientsListRow(top: 0, bottom: 0, horizontal: layout.horizontalPadding)
+        .emmaListRow(top: 0, bottom: 0, horizontal: layout.horizontalPadding)
     }
 
     private func groupTone(_ group: CaseBoard.Group) -> Color {
@@ -778,46 +778,6 @@ private struct LeadSection: Identifiable {
     let title: String?
     let status: LeadStatus
     let clients: [Client]
-}
-
-/// Nagłówek grupy: „● CZEKAJĄ PONAD DOBĘ · 2”. Kropka w kolorze stanu;
-/// grupa wymagająca działania ma tytuł w tym samym kolorze.
-private struct GroupHeader: View {
-    let title: String
-    let count: Int
-    /// `nil` — nagłówek bez kropki (litera kartoteki).
-    let tone: Color?
-    let emphasized: Bool
-
-    var body: some View {
-        HStack(spacing: 7) {
-            if let tone {
-                Circle()
-                    .fill(tone)
-                    .frame(width: 7, height: 7)
-            }
-            Text(title.uppercased())
-                .font(EmmaTypography.caption(.semibold))
-                .tracking(0.6)
-                .foregroundStyle(emphasized ? (tone ?? EmmaTheme.mutedSoft) : EmmaTheme.mutedSoft)
-            Text("\(count)")
-                .font(EmmaTypography.caption(.medium))
-                .foregroundStyle(EmmaTheme.mutedSoft)
-            Spacer(minLength: 0)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
-    }
-}
-
-private extension View {
-    /// Wiersz listy wyglądający jak zwykły widok: bez tła, separatorów
-    /// i systemowych marginesów — karty mają własny wygląd.
-    func clientsListRow(top: CGFloat, bottom: CGFloat, horizontal: CGFloat) -> some View {
-        listRowInsets(EdgeInsets(top: top, leading: horizontal, bottom: bottom, trailing: horizontal))
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
-    }
 }
 
 // MARK: - Filtry listy

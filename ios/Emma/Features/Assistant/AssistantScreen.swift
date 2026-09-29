@@ -10,6 +10,15 @@ import SwiftUI
 // z backendem; poza Demo rozmowa idzie przez Gemini Live do prawdziwego backendu,
 // a demonstracyjne pozostają tylko te czynności, które
 // naprawdę są symulowane (np. wysyłka wiadomości).
+//
+// Przebudowa 29.09.2026 — ten sam język co „Dzisiaj” i „Klienci”:
+//   • duży tytuł „Emma” z linijką stanu (gotowa / rozmowa trwa),
+//   • kontekst jako karta z awatarem klienta w jego stałym kolorze,
+//   • cztery polecenia jako kafelki 2×2, wchodzące kaskadowo,
+//   • „Czekają na odpowiedź” — jedno dotknięcie i Emma szykuje odpowiedź
+//     w języku klienta (do sprawdzenia, nic nie wysyła),
+//   • wypowiedzi wchodzą od dołu, Emma ma przy nich swój portret, a gdy
+//     przygotowuje odpowiedź — pulsują trzy kropki.
 
 
 @MainActor
@@ -31,6 +40,11 @@ struct AssistantScreen: View {
                         } else {
                             conversation
                         }
+                        if store.voiceState.turn == .thinking {
+                            EmmaThinkingBubble()
+                                .padding(.top, 15)
+                                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        }
                         statusBlock
                         if !store.turns.isEmpty, store.pendingAction == nil {
                             smallSuggestions
@@ -46,6 +60,7 @@ struct AssistantScreen: View {
                 // Rozmowa jest kotwiczona na dole: gdy pojawia się klawiatura,
                 // karta nowej propozycji zostaje nad nią, a nie pod nią (§6).
                 .defaultScrollAnchor(.bottom)
+                .animation(EmmaMotion.smooth, value: store.voiceState.turn == .thinking)
                 .onChange(of: store.turns.count) { _, _ in
                     guard let last = store.turns.last else { return }
                     withAnimation(.easeOut(duration: 0.2)) {
@@ -84,45 +99,97 @@ struct AssistantScreen: View {
 
     // MARK: Nagłówek
 
+    /// Tytuł jak na pozostałych zakładkach i jedna linijka stanu: czy Emma
+    /// czeka, czy trwa rozmowa. Szczegóły stanu mówi dok na dole.
     private var header: some View {
-        ScreenHeader(
-            kicker: "TWÓJ ASYSTENT",
-            title: "Emma",
-        )
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Emma")
+                .font(EmmaTypography.welcome)
+                .tracking(-0.9)
+                .foregroundStyle(EmmaTheme.ink)
+                .accessibilityAddTraits(.isHeader)
+            HStack(spacing: 6) {
+                Image(systemName: "circle.fill")
+                    .font(.system(size: 7))
+                    .foregroundStyle(isLive ? EmmaTheme.pillGreenText : EmmaTheme.accent)
+                    .symbolEffect(.pulse, options: .repeating, isActive: isLive)
+                Text(headerStatus)
+                    .font(EmmaTypography.caption(.medium))
+                    .foregroundStyle(EmmaTheme.mutedSoft)
+                    .contentTransition(.opacity)
+            }
+            .animation(EmmaMotion.smooth, value: headerStatus)
+            .accessibilityElement(children: .combine)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var isLive: Bool { store.voiceState.sessionID != nil }
+
+    private var headerStatus: String {
+        guard isLive else { return "Twoja asystentka · pisz albo mów" }
+        switch store.voiceState.turn {
+        case .speaking: return "Emma mówi…"
+        case .thinking: return "Emma przygotowuje odpowiedź…"
+        case .listening: return "Emma słucha…"
+        case .waiting, .interrupted: return "Rozmowa głosowa trwa"
+        }
     }
 
     // MARK: Wybór kontekstu (`.emma-context`)
 
+    /// Kontekst jako karta: kto (awatar w stałym kolorze klienta albo
+    /// kancelaria) i „Zmień”. Wcześniej był to wąski pasek, łatwy do przeoczenia,
+    /// a od kontekstu zależy, o kim Emma mówi.
     private var contextSelector: some View {
         Button {
             dependencies.present(.emmaContextSelection(action: nil))
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: store.contextClient == nil ? "globe" : "folder")
-                    .font(.system(size: 15, weight: .regular))
-                Text(store.contextTitle)
-                    // Nazwa klienta może być cyrylicą — czcionka wg pisma.
-                    .font(EmmaTypography.body(for: store.contextTitle, size: 11))
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 11) {
+                if let client = store.contextClient {
+                    PersonAvatar(initials: client.initials, style: .identity(client.id), diameter: 34)
+                } else {
+                    Image(systemName: "building.columns")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(EmmaTheme.accent)
+                        .frame(width: 34, height: 34)
+                        .background(EmmaTheme.accentSoft, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("ROZMAWIAMY O")
+                        .font(EmmaTypography.caption(.semibold))
+                        .tracking(0.6)
+                        .foregroundStyle(EmmaTheme.mutedSoft)
+                    Text(store.contextTitle)
+                        // Nazwa klienta może być cyrylicą — czcionka wg pisma.
+                        .font(EmmaTypography.body(for: store.contextTitle, size: 14, weight: .semibold))
+                        .foregroundStyle(EmmaTheme.ink)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .contentTransition(.opacity)
+                }
                 Spacer(minLength: 8)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
+                Text("Zmień")
+                    .font(EmmaTypography.caption(.semibold))
+                    .foregroundStyle(EmmaTheme.accent)
             }
-            .foregroundStyle(EmmaTheme.contextStripText)
-            .padding(.horizontal, 11)
-            .padding(.vertical, 9)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .frame(maxWidth: .infinity, minHeight: EmmaMetrics.emmaContextMinHeight, alignment: .leading)
-            .background(EmmaTheme.contextStripBackground)
-            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.emmaContext, style: .continuous))
+            .background(EmmaTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: EmmaRadii.emmaContext, style: .continuous)
-                    .strokeBorder(EmmaTheme.contextStripBorder, lineWidth: 1)
+                RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
+                    .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
             }
+            .emmaCardShadow()
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(EmmaCardButtonStyle())
+        .animation(EmmaMotion.smooth, value: store.contextTitle)
         .accessibilityLabel("Kontekst Emmy: \(store.contextTitle)")
+        .accessibilityHint("Zmienia osobę albo sprawę, o której mówi Emma")
         .padding(.top, 12)
     }
 
@@ -136,8 +203,8 @@ struct AssistantScreen: View {
                 breathing: true,
                 state: store.voiceState.turn
             )
-                .padding(.top, 32)
-                .padding(.bottom, 23)
+                .padding(.top, 26)
+                .padding(.bottom, 20)
 
             Text(introHeading)
                 .font(EmmaTypography.heading(22))
@@ -145,7 +212,7 @@ struct AssistantScreen: View {
                 .foregroundStyle(EmmaTheme.ink)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.bottom, 10)
+                .padding(.bottom, 8)
 
             Text(introParagraph)
                 .font(EmmaTypography.emmaBody(introParagraph))
@@ -153,46 +220,172 @@ struct AssistantScreen: View {
                 .multilineTextAlignment(.center)
                 .lineSpacing(6)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.bottom, 26)
+                .padding(.bottom, 20)
 
-            VStack(spacing: 0) {
-                suggestionRow(
-                    systemImage: "speaker.wave.2",
-                    title: store.contextClient == nil ? "Opowiedz mi o dzisiejszym dniu" : "Podsumuj tę sprawę",
-                    subtitle: store.contextClient == nil
-                        ? "Konsultacje i rzeczy do załatwienia"
-                        : "Kontekst, notatki i otwarte zadania"
-                ) {
-                    await store.runExample(store.contextClient == nil ? .brief : .prepareCase)
+            waitingStrip
+
+            commandTiles
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .contain)
+    }
+
+    // MARK: Czekają na odpowiedź
+
+    /// Osoby, które czekają na odpowiedź — dotknięcie ustawia kontekst i od
+    /// razu prosi Emmę o szkic w języku klienta. Tylko w kontekście kancelarii.
+    @ViewBuilder
+    private var waitingStrip: some View {
+        let waiting = store.clients.filter(\.needsReply)
+        if store.contextClient == nil, !waiting.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("CZEKAJĄ NA ODPOWIEDŹ")
+                    .font(EmmaTypography.caption(.semibold))
+                    .tracking(0.6)
+                    .foregroundStyle(EmmaTheme.pillAmberText)
+                    .accessibilityAddTraits(.isHeader)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(waiting.enumerated()), id: \.element.id) { index, client in
+                            waitingChip(client)
+                                .emmaAppear(index)
+                        }
+                    }
+                    .padding(.vertical, 2)
                 }
-                Divider().overlay(EmmaTheme.rowSeparator)
-                suggestionRow(
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 14)
+        }
+    }
+
+    private func waitingChip(_ client: Client) -> some View {
+        Button {
+            EmmaHaptics.tap()
+            dependencies.openEmma(clientID: client.id, action: .reply, startVoice: false)
+        } label: {
+            HStack(spacing: 8) {
+                PersonAvatar(initials: client.initials, style: .identity(client.id), diameter: 30)
+                Text(client.displayName.split(separator: " ").first.map(String.init) ?? client.displayName)
+                    .font(EmmaTypography.body(for: client.displayName, size: 14, weight: .semibold))
+                    .foregroundStyle(EmmaTheme.ink)
+                    .lineLimit(1)
+                LanguageBadge(language: client.language)
+                Image(systemName: "sparkles")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(EmmaTheme.accent)
+            }
+            .padding(.leading, 5)
+            .padding(.trailing, 12)
+            .frame(minHeight: EmmaSpacing.hitTarget)
+            .background(EmmaTheme.surface, in: Capsule())
+            .overlay { Capsule().strokeBorder(EmmaTheme.cardBorder, lineWidth: 1) }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(EmmaCardButtonStyle())
+        .accessibilityLabel("Przygotuj odpowiedź do \(client.displayName)")
+    }
+
+    // MARK: Polecenia
+
+    /// Cztery polecenia jako kafelki 2×2 — duży cel dotyku, ikona w kolorze
+    /// czynności, kaskadowe wejście. Etykiety dostępności bez zmian.
+    private var commandTiles: some View {
+        let inCase = store.contextClient != nil
+        return VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                commandTile(
+                    index: 0,
+                    systemImage: inCase ? "doc.text.magnifyingglass" : "sun.max",
+                    tint: EmmaTheme.accent,
+                    title: inCase ? "Podsumuj tę sprawę" : "Opowiedz mi o dzisiejszym dniu",
+                    subtitle: inCase ? "Kontekst, notatki i otwarte zadania" : "Konsultacje i rzeczy do załatwienia"
+                ) {
+                    await store.runExample(inCase ? .prepareCase : .brief)
+                }
+                commandTile(
+                    index: 1,
                     systemImage: "bubble.left.and.bubble.right",
+                    tint: EmmaTheme.pillGreenText,
                     title: "Przygotuj odpowiedź",
                     subtitle: "W języku klienta, do sprawdzenia"
                 ) {
                     await store.runExample(.reply)
                 }
-                Divider().overlay(EmmaTheme.rowSeparator)
-                suggestionRow(
+            }
+            HStack(spacing: 10) {
+                commandTile(
+                    index: 2,
                     systemImage: "checklist",
+                    tint: EmmaTheme.pillAmberText,
                     title: "Dodaj kolejne zadanie",
                     subtitle: "Przypisz osobę i termin"
                 ) {
                     await store.runExample(.task)
                 }
-            }
-            .padding(.horizontal, 13)
-            .background(EmmaTheme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.emmaSuggestions, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: EmmaRadii.emmaSuggestions, style: .continuous)
-                    .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
+                commandTile(
+                    index: 3,
+                    systemImage: "square.and.pencil",
+                    tint: EmmaTheme.caseEmmaIcon,
+                    title: "Zapisz notatkę",
+                    subtitle: "Trafi do karty klienta"
+                ) {
+                    await store.runExample(.note)
+                }
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 8)
-        .accessibilityElement(children: .contain)
+    }
+
+    private func commandTile(
+        index: Int,
+        systemImage: String,
+        tint: Color,
+        title: String,
+        subtitle: String,
+        action: @escaping () async -> Void
+    ) -> some View {
+        Button {
+            EmmaHaptics.tap()
+            Task { await action() }
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(tint)
+                        .frame(width: 34, height: 34)
+                        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    Spacer(minLength: 0)
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(EmmaTheme.emmaSuggestionChevron)
+                }
+                Text(title)
+                    .font(EmmaTypography.ui(14, .semibold))
+                    .foregroundStyle(EmmaTheme.ink)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(subtitle)
+                    .font(EmmaTypography.caption())
+                    .foregroundStyle(EmmaTheme.emmaSuggestionSubtitle)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(13)
+            .frame(maxWidth: .infinity, minHeight: 128, alignment: .topLeading)
+            .background(EmmaTheme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
+                    .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
+            }
+            .emmaCardShadow()
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(EmmaCardButtonStyle())
+        .emmaAppear(index)
+        .accessibilityLabel("\(title). \(subtitle)")
     }
 
     private var introHeading: String {
@@ -210,56 +403,27 @@ struct AssistantScreen: View {
         return "Mogę omówić plan, sprawę lub kolejne zadanie."
     }
 
-    private func suggestionRow(
-        systemImage: String,
-        title: String,
-        subtitle: String,
-        action: @escaping () async -> Void
-    ) -> some View {
-        Button {
-            Task { await action() }
-        } label: {
-            HStack(spacing: 11) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 17, weight: .regular))
-                    .foregroundStyle(EmmaTheme.emmaSuggestionIcon)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(title)
-                        .font(EmmaTypography.caption())
-                        .foregroundStyle(EmmaTheme.ink)
-                        .multilineTextAlignment(.leading)
-                    Text(subtitle)
-                        .font(EmmaTypography.caption())
-                        .foregroundStyle(EmmaTheme.emmaSuggestionSubtitle)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(EmmaTheme.emmaSuggestionChevron)
-            }
-            .padding(.vertical, 15)
-            .frame(minHeight: EmmaSpacing.hitTarget, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(title). \(subtitle)")
-    }
-
     // MARK: Rozmowa (`emma-thread`, `emma-proposal`)
 
     private var conversation: some View {
         VStack(alignment: .leading, spacing: 15) {
             ForEach(store.turns) { turn in
-                switch turn {
-                case .message(let message):
-                    messageBubble(message)
-                case .action(let action):
-                    actionCard(action)
+                Group {
+                    switch turn {
+                    case .message(let message):
+                        messageBubble(message)
+                    case .action(let action):
+                        actionCard(action)
+                    }
                 }
+                // Nowa wypowiedź wjeżdża od dołu — widać, co właśnie doszło.
+                .transition(.asymmetric(
+                    insertion: .move(edge: .bottom).combined(with: .opacity),
+                    removal: .opacity
+                ))
             }
         }
+        .animation(EmmaMotion.smooth, value: store.turns.count)
         .padding(.top, 21)
     }
 
@@ -267,6 +431,10 @@ struct AssistantScreen: View {
         let isUser = message.role == .user
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
+                if !isUser {
+                    EmmaOrb(size: .inline)
+                        .accessibilityHidden(true)
+                }
                 Text(isUser ? "Ty" : "Emma")
                     .font(EmmaTypography.caption(.semibold))
                     .foregroundStyle(EmmaTheme.emmaTurnLabel)
@@ -392,41 +560,54 @@ struct AssistantScreen: View {
     // MARK: Skróty w rozmowie (`.small-suggestions`)
 
     private var smallSuggestions: some View {
-        HStack(spacing: 7) {
-            smallSuggestion("Notatka", systemImage: "square.and.pencil") { await store.runExample(.note) }
-            smallSuggestion("Zadanie", systemImage: "checklist") { await store.runExample(.task) }
-            smallSuggestion("Odpowiedź", systemImage: "bubble.left.and.bubble.right") { await store.runExample(.reply) }
-            Spacer(minLength: 0)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 7) {
+                smallSuggestion("Notatka", systemImage: "square.and.pencil", tint: EmmaTheme.caseEmmaIcon) {
+                    await store.runExample(.note)
+                }
+                smallSuggestion("Zadanie", systemImage: "checklist", tint: EmmaTheme.pillAmberText) {
+                    await store.runExample(.task)
+                }
+                smallSuggestion("Odpowiedź", systemImage: "bubble.left.and.bubble.right", tint: EmmaTheme.pillGreenText) {
+                    await store.runExample(.reply)
+                }
+                smallSuggestion("Mój dzień", systemImage: "sun.max", tint: EmmaTheme.accent) {
+                    await store.runExample(.brief)
+                }
+            }
+            .padding(.vertical, 2)
         }
         .padding(.top, 9)
+        .transition(.opacity)
     }
 
     private func smallSuggestion(
         _ title: String,
         systemImage: String,
+        tint: Color,
         action: @escaping () async -> Void
     ) -> some View {
         Button {
+            EmmaHaptics.tap()
             Task { await action() }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 14))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(tint)
                 Text(title)
-                    .font(EmmaTypography.caption())
+                    .font(EmmaTypography.caption(.medium))
+                    .foregroundStyle(EmmaTheme.emmaSmallSuggestionText)
             }
-            .foregroundStyle(EmmaTheme.emmaSmallSuggestionText)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 12)
             .frame(minHeight: EmmaSpacing.hitTarget)
-            .background(EmmaTheme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.emmaSmallSuggestion, style: .continuous))
+            .background(EmmaTheme.surface, in: Capsule())
             .overlay {
-                RoundedRectangle(cornerRadius: EmmaRadii.emmaSmallSuggestion, style: .continuous)
-                    .strokeBorder(EmmaTheme.emmaSmallSuggestionBorder, lineWidth: 1)
+                Capsule().strokeBorder(EmmaTheme.emmaSmallSuggestionBorder, lineWidth: 1)
             }
-            .contentShape(Rectangle())
+            .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(EmmaCardButtonStyle())
         .accessibilityLabel(title)
     }
 
@@ -438,14 +619,26 @@ struct AssistantScreen: View {
     // nie głos Emmy); WhatsApp pozostaje niepodłączony.
 
     private var demoFoot: some View {
-        Text(demoFootText)
-            .font(EmmaTypography.caption())
-            .foregroundStyle(EmmaTheme.emmaDemoFootText)
-            .multilineTextAlignment(.center)
-            .lineSpacing(4)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity)
-            .padding(.top, 19)
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(EmmaTheme.emmaDemoFootText)
+                .padding(.top, 1)
+            Text(demoFootText)
+                .font(EmmaTypography.caption())
+                .foregroundStyle(EmmaTheme.emmaDemoFootText)
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 13)
+        .padding(.vertical, 11)
+        .background {
+            RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous)
+                .strokeBorder(EmmaTheme.cardBorder, style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+        }
+        .accessibilityElement(children: .combine)
+        .padding(.top, 19)
     }
 
     private var demoFootText: String {
@@ -513,6 +706,56 @@ struct AssistantScreen: View {
             RoundedRectangle(cornerRadius: EmmaRadii.emmaComposer, style: .continuous)
                 .strokeBorder(EmmaTheme.emmaComposerBorder, lineWidth: 1)
         }
+    }
+}
+
+// MARK: - Emma myśli
+
+/// Trzy kropki „Emma przygotowuje odpowiedź” w dymku Emmy. Przy „Ogranicz
+/// ruch” kropki stoją, a stan mówi napis w nagłówku i w doku.
+private struct EmmaThinkingBubble: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 8) {
+            EmmaOrb(size: .inline)
+            TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+                let time = context.date.timeIntervalSinceReferenceDate
+                HStack(spacing: 5) {
+                    ForEach(0..<3, id: \.self) { index in
+                        Circle()
+                            .fill(EmmaTheme.emmaTurnLabel)
+                            .frame(width: 7, height: 7)
+                            .opacity(reduceMotion ? 0.6 : 0.3 + 0.7 * max(0, sin(time * 5 - Double(index) * 0.7)))
+                            .offset(y: reduceMotion ? 0 : -2 * max(0, sin(time * 5 - Double(index) * 0.7)))
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(EmmaTheme.surface)
+        .clipShape(
+            UnevenRoundedRectangle(
+                topLeadingRadius: EmmaRadii.emmaTurn,
+                bottomLeadingRadius: EmmaRadii.emmaTurnTail,
+                bottomTrailingRadius: EmmaRadii.emmaTurn,
+                topTrailingRadius: EmmaRadii.emmaTurn,
+                style: .continuous
+            )
+        )
+        .overlay {
+            UnevenRoundedRectangle(
+                topLeadingRadius: EmmaRadii.emmaTurn,
+                bottomLeadingRadius: EmmaRadii.emmaTurnTail,
+                bottomTrailingRadius: EmmaRadii.emmaTurn,
+                topTrailingRadius: EmmaRadii.emmaTurn,
+                style: .continuous
+            )
+            .strokeBorder(EmmaTheme.emmaTurnBorder, lineWidth: 1)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Emma przygotowuje odpowiedź")
     }
 }
 
