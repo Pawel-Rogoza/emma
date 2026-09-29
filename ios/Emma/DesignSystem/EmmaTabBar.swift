@@ -17,6 +17,8 @@ public struct EmmaTabBar: View {
     /// Licznik „odbić” ikony — tylko nowo wybrana zakładka podskakuje
     /// (efekt na samym `isSelected` ruszałby też ikonę, którą opuszczamy).
     @State private var bounces: [AppTab: Int] = [:]
+    /// Pigułka pod wybraną ikoną przesuwa się między zakładkami (audyt 29.09.2026).
+    @Namespace private var selectionSpace
 
     public init(selection: Binding<AppTab>, unreadCount: Int, leadCount: Int = 0) {
         self._selection = selection
@@ -30,6 +32,9 @@ public struct EmmaTabBar: View {
                 tabButton(tab)
             }
         }
+        // Liczniki pojawiają się i zmieniają sprężyście, a nie skokiem.
+        .animation(EmmaMotion.bouncy, value: unreadCount)
+        .animation(EmmaMotion.bouncy, value: leadCount)
         .padding(.horizontal, 6)
         .padding(.top, EmmaMetrics.tabBarTopPadding)
         .padding(.bottom, EmmaMetrics.tabBarBottomPadding)
@@ -70,13 +75,24 @@ public struct EmmaTabBar: View {
                             // Wybrana ikona „odbija” — drobny, ale czytelny znak,
                             // że przejście zaszło (audyt 28.09.2026).
                             .symbolEffect(.bounce, value: bounces[tab, default: 0])
-                            .frame(height: EmmaMetrics.tabEmmaChipHeight)
+                            .frame(width: 52, height: EmmaMetrics.tabEmmaChipHeight)
+                            .background {
+                                if isSelected {
+                                    Capsule()
+                                        .fill(EmmaTheme.accentSoft)
+                                        .matchedGeometryEffect(id: "tab-selection", in: selectionSpace)
+                                }
+                            }
                         if tab == .messages && unreadCount > 0 {
                             UnreadBadge(count: unreadCount, compact: true)
+                                .contentTransition(.numericText())
+                                .transition(.scale.combined(with: .opacity))
                                 .offset(x: 10, y: -4)
                         }
                         if tab == .clients && leadCount > 0 {
                             CountBadge(count: leadCount, accessibilityText: EmmaPlural.leads(leadCount))
+                                .contentTransition(.numericText())
+                                .transition(.scale.combined(with: .opacity))
                                 .offset(x: 12, y: -4)
                         }
                     }

@@ -737,10 +737,14 @@ public struct EmptyState: View {
 
     public var body: some View {
         VStack(spacing: 10) {
+            // Ikona w miękkim kółku akcentu — pusty stan to informacja, a nie
+            // błąd (audyt 29.09.2026: szara ikona wyglądała jak „nic nie działa”).
             Image(systemName: systemImage)
-                .font(.system(size: 30, weight: .light))
-                .foregroundStyle(EmmaTheme.mutedSoft)
-                .padding(.bottom, 2)
+                .font(.system(size: 26, weight: .regular))
+                .foregroundStyle(EmmaTheme.accent)
+                .frame(width: 62, height: 62)
+                .background(EmmaTheme.accentSoft, in: Circle())
+                .padding(.bottom, 4)
             Text(title)
                 .font(EmmaTypography.ui(15, .semibold))
                 .foregroundStyle(EmmaTheme.ink)
@@ -759,6 +763,7 @@ public struct EmptyState: View {
         .padding(.horizontal, 24)
         .padding(.vertical, 32)
         .accessibilityElement(children: .combine)
+        .emmaAppear()
     }
 }
 
