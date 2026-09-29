@@ -198,15 +198,18 @@ struct TodayScreen: View {
         let agenda = DayAgenda.split(model.events, now: TimeOfDay.at(dependencies.clock.now()))
         let inbox = LeadWorkflow.inbox(model.clients, now: dependencies.now)
 
-        header(model)
+        header(model, inbox: inbox)
+            .emmaAppear(0)
 
         pulse(model, inbox: inbox)
             .padding(.top, 6)
+            .emmaAppear(1)
 
         if !model.missedDeadlines.isEmpty {
             missedDeadlinesCard(model)
                 .padding(.top, 12)
                 .transition(.move(edge: .top).combined(with: .opacity))
+                .emmaAppear(2)
         }
 
         if offersNotifications {
@@ -215,26 +218,41 @@ struct TodayScreen: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
         }
 
-        leadsSection(inbox)
-
-        SectionHeader("Najbliższy termin", actionTitle: "Dodaj", compact: true) {
-            dependencies.present(.eventForm(editing: nil, clientID: nil, caseID: nil, initialDay: nil))
+        // Sekcje wchodzą kaskadowo (audyt 29.09.2026) — ten sam ruch co Rozmowy,
+        // Kalendarz i Emma. Tylko przy pierwszym pokazaniu ekranu.
+        VStack(alignment: .leading, spacing: 0) {
+            leadsSection(inbox)
         }
-        nextEventCard(agenda.next ?? model.upcomingEvents.first, model: model)
+        .emmaAppear(3)
+
+        VStack(alignment: .leading, spacing: 0) {
+            SectionHeader("Najbliższy termin", actionTitle: "Dodaj", compact: true) {
+                dependencies.present(.eventForm(editing: nil, clientID: nil, caseID: nil, initialDay: nil))
+            }
+            nextEventCard(agenda.next ?? model.upcomingEvents.first, model: model)
+        }
+        .emmaAppear(4)
 
         if !agenda.upcoming.isEmpty {
-            SectionHeader("Dalej dziś", actionTitle: "Kalendarz", compact: true) {
-                dependencies.go(to: .calendar)
+            VStack(alignment: .leading, spacing: 0) {
+                SectionHeader("Dalej dziś", actionTitle: "Kalendarz", compact: true) {
+                    dependencies.go(to: .calendar)
+                }
+                eventsCard(agenda.upcoming)
             }
-            eventsCard(agenda.upcoming)
+            .emmaAppear(5)
         }
 
-        SectionHeader("Zadania", actionTitle: "Wszystkie zadania", compact: true) {
-            dependencies.openTasks()
+        VStack(alignment: .leading, spacing: 0) {
+            SectionHeader("Zadania", actionTitle: "Wszystkie zadania", compact: true) {
+                dependencies.openTasks()
+            }
+            tasksSection(model)
         }
-        tasksSection(model)
+        .emmaAppear(6)
 
         weekStrip(model)
+            .emmaAppear(7)
 
         if !agenda.past.isEmpty {
             pastEventsSection(agenda.past)
@@ -256,7 +274,28 @@ struct TodayScreen: View {
     ///
     /// Portret jest wejściem do rozmowy — ta sama czynność, co dawny przycisk
     /// mikrofonu w karcie Emmy, ale bez zabierania wysokości pod leady i terminy.
-    private func header(_ model: TodayStore.Model) -> some View {
+    /// Jedno zdanie o dniu pod powitaniem: co jest dziś do zrobienia, zanim
+    /// wzrok zejdzie do kafelków. Pusty dzień też jest informacją.
+    private func daySummary(_ model: TodayStore.Model, inbox: LeadInbox) -> String {
+        let summary = TaskGrouping.summary(model.tasks, today: model.today)
+        var parts: [String] = []
+        if !model.missedDeadlines.isEmpty {
+            parts.append("\(model.missedDeadlines.count) po terminie")
+        }
+        if !model.events.isEmpty {
+            parts.append(EmmaPlural.label(model.events.count, "termin", "terminy", "terminów"))
+        }
+        if !inbox.needsAction.isEmpty {
+            let count = inbox.needsAction.count
+            parts.append(EmmaPlural.leads(count) + " " + EmmaPlural.form(count, "czeka", "czekają", "czeka"))
+        }
+        if summary.hasOverdue {
+            parts.append(EmmaPlural.overdueTasks(summary.overdue))
+        }
+        return parts.isEmpty ? "Spokojny dzień — nic nie goni." : parts.joined(separator: " · ")
+    }
+
+    private func header(_ model: TodayStore.Model, inbox: LeadInbox) -> some View {
         HStack(alignment: .center, spacing: 6) {
             VStack(alignment: .leading, spacing: 5) {
                 Text(dependencies.dateText.headline(for: model.today))
@@ -268,6 +307,12 @@ struct TodayScreen: View {
                     .tracking(-0.9)
                     .foregroundStyle(EmmaTheme.ink)
                     .fixedSize(horizontal: false, vertical: true)
+                Text(daySummary(model, inbox: inbox))
+                    .font(EmmaTypography.caption(.medium))
+                    .foregroundStyle(model.missedDeadlines.isEmpty ? EmmaTheme.muted : EmmaTheme.pillDangerText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.opacity)
+                    .accessibilityIdentifier("today-summary")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
