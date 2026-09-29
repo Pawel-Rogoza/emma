@@ -711,11 +711,12 @@ final class AssistantStore: ObservableObject {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
+        let replyThread = kind == .reply ? await replyThreadID(for: clientID) : nil
         let proposal = await dependencies.voice.prepareAction(
             kind: kind,
             clientID: clientID,
             caseID: clientID.flatMap { linkedCases[$0] },
-            threadID: kind == .reply ? clientID.map { DemoFixtures.threadID(for: $0) } : nil,
+            threadID: replyThread,
             text: trimmed,
             actor: dependencies.currentUser,
             presentationID: nextPresentationID(kind: kind),
@@ -735,6 +736,17 @@ final class AssistantStore: ObservableObject {
         turns.append(.action(turn))
         projectExpiredProposals()
         return turn
+    }
+
+    /// Wątek, do którego trafi odpowiedź: prawdziwy wątek klienta z repozytorium.
+    /// Audyt 29.09.2026: identyfikator był sklejany ze wzorca danych demo
+    /// („thread-client-…”), więc po podłączeniu WhatsApp odpowiedź celowałaby
+    /// w nieistniejący wątek. Wzorzec zostaje wyłącznie jako zapas, gdy klient
+    /// nie ma jeszcze żadnego wątku.
+    private func replyThreadID(for clientID: ClientID?) async -> ThreadID? {
+        guard let clientID, let dependencies else { return nil }
+        let threads = (try? await dependencies.repository.threads()) ?? []
+        return threads.first { $0.clientID == clientID }?.id ?? DemoFixtures.threadID(for: clientID)
     }
 
     func prepareReply(_ clientID: ClientID) async {
@@ -1162,8 +1174,13 @@ final class AssistantStore: ObservableObject {
         let events = ((try? await dependencies.repository.events(
             in: DateIntervalFilter(from: today.adding(days: -30), through: today.adding(days: 180))
         )) ?? [])
-            .filter { $0.clientID == clientID && $0.status != .finished }
+            // Tylko nadchodzące: szkic nie może pisać klientowi o terminie, który minął.
+            .filter { $0.clientID == clientID && $0.status != .finished && $0.day >= today }
         let event = events.min { ($0.day, $0.time) < ($1.day, $1.time) }
+        // Data dla klienta „12.09”, a nie zapis techniczny „2026-09-12”.
+        func shortDate(_ day: LocalDate) -> String {
+            String(format: "%02d.%02d", day.day, day.month)
+        }
 
         if clientID == DemoFixtures.andriiID {
             return "Доброго дня. Отримав Ваше звернення щодо затримання брата. Будь ласка, повідомте, де він перебуває, та надішліть наявні документи. Після уточнення обставин узгодимо подальший контакт."
@@ -1177,13 +1194,13 @@ final class AssistantStore: ObservableObject {
             return "Доброго дня! \(schedule) Будь ласка, надішліть документи перед розмовою."
         case .ru:
             let schedule = event.map {
-                "Вижу Вашу запись на \($0.day.isoString) в \($0.time.hhmm). "
+                "Вижу Вашу запись на \(shortDate($0.day)) в \($0.time.hhmm). "
                     + ($0.status == .confirmed ? "Встреча подтверждена." : "Время ещё ожидает подтверждения.")
             } ?? "Сообщите, пожалуйста, удобное время для разговора."
             return "Здравствуйте! Да, консультацию можно провести на русском языке. \(schedule)"
         case .pl:
             let schedule = event.map {
-                "Widzę termin \($0.day.isoString), godz. \($0.time.hhmm). "
+                "Widzę termin \(shortDate($0.day)), godz. \($0.time.hhmm). "
                     + ($0.status == .confirmed ? "Spotkanie jest potwierdzone." : "Termin oczekuje jeszcze na potwierdzenie.")
             } ?? "Proszę o podanie dogodnego terminu kontaktu."
             return "Dziękuję za wiadomość. \(schedule)"

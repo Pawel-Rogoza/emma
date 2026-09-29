@@ -39,11 +39,15 @@ final class TasksStore: ObservableObject {
         // audytu stawia to jako warunek zakończenia; ten sam wzorzec ma już
         // „Dzisiaj” (`TodayStore.load`).
         if !phase.hasLoaded { phase = .loading }
+        let requestedScope = scope
         do {
             let tasks = try await dependencies.repository.tasks(
-                filter: TaskFilter(scope: scope.filterScope)
+                filter: TaskFilter(scope: requestedScope.filterScope)
             )
             let clients = try await dependencies.repository.clients(matching: "", stage: nil)
+            // Szybkie przełączenie zakresu: wynik starszego zapytania nie może
+            // nadpisać listy nowszego (audyt 29.09.2026).
+            guard requestedScope == scope else { return }
             phase = .loaded(
                 Model(
                     tasks: tasks.sorted(by: TaskItem.isOrderedByDueDate),

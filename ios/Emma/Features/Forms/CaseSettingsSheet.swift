@@ -133,10 +133,15 @@ struct CaseSettingsSheet: View {
         updated.summary = trimmedSummary
         updated.status = status
 
-        let saved = await dependencies.perform {
+        // Błąd do formularza, nie pod arkusz (audyt 29.09.2026).
+        let outcome = await dependencies.submit(fallback: "Nie udało się zapisać sprawy.") {
             try await dependencies.repository.updateCase(updated, expectedVersion: legalCase.version)
         }
-        guard saved != nil else { return }
+        guard outcome.value != nil else {
+            errorMessage = outcome.errorMessage
+            return
+        }
+        EmmaHaptics.success()
 
         dependencies.dismissSheet()
     }

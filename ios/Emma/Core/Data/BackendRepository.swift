@@ -488,6 +488,10 @@ public struct BackendRepository: EmmaRepository, Sendable {
         if saved.title != event.title || saved.place != event.place || saved.kind != event.kind {
             throw notAvailable("zmiana nazwy, rodzaju i miejsca terminu — termin zapisano bez nich; zmień je w panelu")
         }
+        // Trasa edycji nie przyjmuje klienta — zmiana klienta nie może udawać zapisu.
+        if saved.clientID != event.clientID {
+            throw notAvailable("zmiana klienta terminu — pozostałe zmiany zapisano; klienta zmień w panelu")
+        }
         return saved
     }
 

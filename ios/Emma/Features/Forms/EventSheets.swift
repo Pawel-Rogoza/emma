@@ -376,6 +376,13 @@ struct EventFormSheet: View {
             updated.day = day
             updated.time = time
             updated.place = trimmedPlace
+            // Audyt 29.09.2026: wybór klienta w edycji był ignorowany — termin
+            // zostawał przy dawnym kliencie mimo „Zapisano zmiany”. Zmiana klienta
+            // odpina sprawę, która należała do poprzedniego.
+            if updated.clientID != selectedClient {
+                updated.clientID = selectedClient
+                updated.caseID = nil
+            }
             outcome = await dependencies.submit(fallback: "Nie udało się zapisać terminu.") {
                 try await dependencies.repository.updateEvent(updated, expectedVersion: original.version)
             }

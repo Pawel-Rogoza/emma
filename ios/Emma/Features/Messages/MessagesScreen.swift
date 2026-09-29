@@ -260,7 +260,9 @@ struct MessagesScreen: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.emmaLayout) private var layout: EmmaLayoutMetrics
     @Environment(\.openURL) private var openURL
-    @StateObject private var store = MessagesStore()
+    /// Magazyn żyje w `AppDependencies` — powrót na zakładkę pokazuje od razu
+    /// ostatni stan i zachowuje filtr.
+    @ObservedObject var store: MessagesStore
     @FocusState private var searchFocused: Bool
 
     var body: some View {
@@ -528,7 +530,7 @@ struct MessagesScreen: View {
     /// Ta sama reguła co w opcjach rozmowy: odczyt przesuwa kursor tylko do
     /// przodu, „nowa” to osobny znacznik, a nie fałszywa wiadomość (§3.3).
     private func toggleRead(_ row: MessagesStore.Row) async {
-        var updated = row.state
+        var updated = await freshState(row)
         if row.unreadCount > 0 {
             updated.readCursorSequence = ReadStatePolicy.cursorAfterOpeningThread(
                 current: updated.readCursorSequence,
@@ -546,13 +548,21 @@ struct MessagesScreen: View {
     }
 
     private func togglePin(_ row: MessagesStore.Row) async {
-        var updated = row.state
+        var updated = await freshState(row)
         updated.isPinned.toggle()
         EmmaHaptics.selection()
         let state = updated
         _ = await dependencies.perform {
             try await dependencies.repository.saveThreadPreferences(state)
         }
+    }
+
+    /// Stan wątku prosto z repozytorium. `saveReadState` zapisuje cały stan,
+    /// także szkic — stan z chwili wczytania listy mógłby przywrócić starszy
+    /// szkic, jeśli w międzyczasie ktoś pisał w wątku.
+    private func freshState(_ row: MessagesStore.Row) async -> ThreadUserState {
+        let states = (try? await dependencies.repository.readStates(userID: dependencies.currentUser.id)) ?? []
+        return states.first { $0.threadID == row.thread.id } ?? row.state
     }
 
     // MARK: Stopka i stany puste
@@ -628,6 +638,7 @@ struct MessagesScreen: View {
 }
 
 #Preview("Rozmowy") {
-    MessagesScreen()
-        .environmentObject(AppDependencies.demo())
+    let dependencies = AppDependencies.demo()
+    return MessagesScreen(store: dependencies.messagesStore)
+        .environmentObject(dependencies)
 }
