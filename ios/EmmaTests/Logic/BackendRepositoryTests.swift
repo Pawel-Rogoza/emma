@@ -699,30 +699,136 @@ final class BackendRepositoryTests: XCTestCase {
 
     // MARK: Rozmowy
 
-    func testMessageReadsAreEmptyButWritesThrow() async throws {
+    /// Starszy backend nie ma `/threads` (404 ze stroną HTML): rozmów nie ma,
+    /// ale nie jest to błąd — lista i karta klienta muszą się otworzyć.
+    func testThreadsOnOlderBackendAreEmptyNotAnError() async throws {
+        StubURLProtocol.respond { _, _ in (404, Data("<!DOCTYPE html><html>404</html>".utf8)) }
         let repository = makeRepository()
-        // Backend naprawdę nie prowadzi jeszcze wątków: pusty wynik to prawda
-        // o stanie, a nie atrapa.
         let threads = try await repository.threads()
-        let thread = try await repository.thread(id: ThreadID("thread-1"))
-        let messages = try await repository.latestMessages(threadID: ThreadID("thread-1"), limit: 10)
+        let states = try await repository.readStates(userID: UserID("user-1"))
         let unread = try await repository.unreadTotal(userID: UserID("user-1"))
         XCTAssertEqual(threads, [])
-        XCTAssertNil(thread)
-        XCTAssertEqual(messages, [])
+        XCTAssertEqual(states, [])
         XCTAssertEqual(unread, 0)
+    }
 
-        await assertNotAvailable {
-            _ = try await repository.appendOutgoing(OutgoingMessageDraft(
-                threadID: ThreadID("thread-1"),
-                text: "Treść",
-                authorID: UserID("user-1"),
-                language: .pl,
-                sentAt: Date(),
-                idempotencyKey: "idem-1"
+    func testThreadsMapClientStateAndUnread() async throws {
+        StubURLProtocol.respond(json: Data(Self.threadsJSON.utf8), status: 200)
+        let repository = makeRepository()
+
+        let threads = try await repository.threads()
+        XCTAssertEqual(threads.map(\.id.rawValue), ["thread-3"])
+        // Wątek wskazuje osobę z listy klientów (tu: lead) — tak ekran rozmów ją odnajduje.
+        XCTAssertEqual(threads.first?.clientID, ClientID("lead-9"))
+        XCTAssertEqual(threads.first?.sequenceHighWatermark, 4)
+
+        let states = try await repository.readStates(userID: UserID("user-1"))
+        XCTAssertEqual(states.first?.readCursorSequence, 2)
+        XCTAssertEqual(states.first?.isPinned, true)
+        let unread = try await repository.unreadTotal(userID: UserID("user-1"))
+        XCTAssertEqual(unread, 2)
+    }
+
+    func testMessagesMapOriginTransportAndHistory() async throws {
+        StubURLProtocol.respond { request, _ in
+            XCTAssertTrue(request.url?.path.hasSuffix("/threads/thread-3/messages") ?? false)
+            XCTAssertEqual(request.url?.query?.contains("before_sequence=0"), true)
+            return (200, Data(Self.messagesJSON.utf8))
+        }
+        let messages = try await makeRepository().messages(threadID: ThreadID("thread-3"), before: 0, limit: 30)
+
+        XCTAssertEqual(messages.count, 3)
+        // Historia z telefonu: numer ≤ 0, nadawca klient.
+        XCTAssertEqual(messages[0].sequence, -1)
+        XCTAssertEqual(messages[0].source, .whatsAppInbound)
+        // Echo z aplikacji WhatsApp Business nie ma autora w Emmie.
+        XCTAssertEqual(messages[1].source, .whatsAppBusinessEcho)
+        XCTAssertNil(messages[1].authorID)
+        XCTAssertEqual(messages[1].outgoingAuthorLabel, "WhatsApp Business")
+        XCTAssertEqual(messages[1].transport, .read)
+        // Załącznik: rodzaj z rozszerzenia kontraktu, opis zostaje w treści.
+        XCTAssertEqual(messages[2].kind, .image)
+        XCTAssertEqual(messages[2].text, "[Zdjęcie] skan paszportu")
+        XCTAssertEqual(messages[2].transport, .delivered)
+    }
+
+    func testAppendOutgoingSendsDraftWithItsIdempotencyKey() async throws {
+        let sent = #"{"id":"message-9","thread_id":"thread-3","direction":"outgoing","author_id":"user-1","author_label":null,"provider_message_id":"wamid.X","kind":"text","attachment_type":null,"text":"Dzień dobry","translation":null,"sent_at":"2026-09-30T10:00:00.000Z","sequence":5,"transport":"accepted","source":"app","origin":"api","version":2}"#
+        StubURLProtocol.respond { request, body in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Idempotency-Key"), "idem-1")
+            let json = (body.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
+            XCTAssertEqual(json["text"] as? String, "Dzień dobry")
+            XCTAssertEqual(json["author_id"] as? String, "user-1")
+            return (202, Data(sent.utf8))
+        }
+        let message = try await makeRepository().appendOutgoing(OutgoingMessageDraft(
+            threadID: ThreadID("thread-3"),
+            text: "Dzień dobry",
+            authorID: UserID("user-1"),
+            language: .pl,
+            sentAt: Date(),
+            idempotencyKey: "idem-1"
+        ))
+        XCTAssertEqual(message.transport, .accepted)
+        XCTAssertEqual(message.source, .app)
+        XCTAssertEqual(message.providerMessageID, "wamid.X")
+    }
+
+    /// Zamknięte okno 24 h: komunikat serwera trafia do użytkownika, a nie „błąd”.
+    func testAppendOutgoingReportsClosedReplyWindow() async throws {
+        StubURLProtocol.respond { _, _ in
+            (422, Data(#"{"code":"window_closed","message":"Minęło 24 godziny od ostatniej wiadomości klienta."}"#.utf8))
+        }
+        do {
+            _ = try await makeRepository().appendOutgoing(OutgoingMessageDraft(
+                threadID: ThreadID("thread-3"), text: "x", authorID: UserID("user-1"),
+                language: .pl, sentAt: Date(), idempotencyKey: "idem-2"
             ))
+            XCTFail("Oczekiwano błędu zamkniętego okna")
+        } catch let error as BackendRepositoryError {
+            XCTAssertTrue(error.safeMessage.contains("24 godziny"), error.safeMessage)
         }
     }
+
+    /// Zapis kursora bierze wersję z serwera i nigdy nie cofa kursora.
+    func testSaveReadStateUsesServerVersionAndNeverMovesBack() async throws {
+        let saved = #"{"thread_id":"thread-3","user_id":"user-1","read_cursor_sequence":4,"manual_unread":false,"is_pinned":true,"version":4}"#
+        StubURLProtocol.respond { request, body in
+            if request.httpMethod == "PUT" {
+                let json = (body.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
+                XCTAssertEqual(json["expected_version"] as? Int, 3)
+                XCTAssertEqual(json["read_cursor_sequence"] as? Int, 4)
+                return (200, Data(saved.utf8))
+            }
+            return (200, Data(Self.threadsJSON.utf8))
+        }
+        let state = ThreadUserState(userID: UserID("user-1"), threadID: ThreadID("thread-3"), readCursorSequence: 4, isPinned: true)
+        let result = try await makeRepository().saveReadState(state)
+        XCTAssertEqual(result.readCursorSequence, 4)
+    }
+
+    private static let threadsJSON = #"""
+    {"items":[{"id":"thread-3","client_id":"lead-9","client_name":"Iryna Petrenko",
+     "preview":null,"unread_count":2,"is_pinned":true,"has_draft":false,"high_watermark":4,
+     "read_cursor_sequence":2,"manual_unread":false,"read_state_version":3,
+     "reply_window_until":"2026-10-01T10:00:00.000Z","contact_phone":"+380671112233"}],
+     "unread_total":2}
+    """#
+
+    private static let messagesJSON = #"""
+    {"items":[
+     {"id":"message-1","thread_id":"thread-3","direction":"incoming","author_id":null,"author_label":null,
+      "provider_message_id":"wamid.h1","kind":"text","attachment_type":null,"text":"Stara wiadomość","translation":null,
+      "sent_at":"2026-08-01T09:00:00.000Z","sequence":-1,"transport":"delivered","source":"provider","origin":"history","version":1},
+     {"id":"message-2","thread_id":"thread-3","direction":"outgoing","author_id":null,"author_label":"WhatsApp Business",
+      "provider_message_id":"wamid.e1","kind":"text","attachment_type":null,"text":"Termin w piątek","translation":null,
+      "sent_at":"2026-09-30T08:00:00.000Z","sequence":3,"transport":"read","source":"provider","origin":"business_app","version":2},
+     {"id":"message-3","thread_id":"thread-3","direction":"incoming","author_id":null,"author_label":null,
+      "provider_message_id":"wamid.i1","kind":"attachment","attachment_type":"image","text":"[Zdjęcie] skan paszportu","translation":null,
+      "sent_at":"2026-09-30T09:00:00.000Z","sequence":4,"transport":"delivered","source":"provider","origin":"customer","version":1}
+    ],"high_watermark":4}
+    """#
 
     // MARK: Użytkownik
 

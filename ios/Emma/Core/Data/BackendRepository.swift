@@ -554,30 +554,97 @@ public struct BackendRepository: EmmaRepository, Sendable {
 
     // MARK: MessagingRepository
     //
-    // Backend naprawdę nie prowadzi jeszcze wątków, więc odczyty zwracają pusty
-    // wynik. To prawda o stanie, nie atrapa — udawany wątek byłby danymi wymyślonymi.
-    // Zapisy rzucają, bo nie ma gdzie ich zapisać.
+    // Rozmowy WhatsApp z backendu (numer kancelarii podłączony przez Dualhook).
+    // Stan osoby w wątku (kursor, przypięcie) przychodzi razem z listą rozmów,
+    // więc `readStates` nie wymaga osobnej trasy. Repozytorium jest bezstanowe:
+    // wersję stanu do zapisu bierze ze świeżej listy, a nie z pamięci podręcznej,
+    // która mogłaby być nieaktualna po zmianie na drugim urządzeniu.
 
-    public func threads() async throws -> [ConversationThread] { [] }
+    public func threads() async throws -> [ConversationThread] {
+        try await threadList()?.items.map(Self.mapThread) ?? []
+    }
 
-    public func thread(id: ThreadID) async throws -> ConversationThread? { nil }
+    /// Lista rozmów albo `nil`, gdy serwer kancelarii nie ma jeszcze tras
+    /// `/threads` (starszy backend: 404 ze stroną HTML). Wtedy rozmów po prostu
+    /// nie ma — ekran pokazuje stan pusty zamiast błędu, a karta klienta,
+    /// która też czyta rozmowy, nadal się otwiera.
+    private func threadList() async throws -> BackendThreadList? {
+        do {
+            return try await api.threads()
+        } catch BackendRepositoryError.notAvailableInBackend {
+            return nil
+        }
+    }
 
-    public func messages(threadID: ThreadID, before sequence: Int?, limit: Int) async throws -> [Message] { [] }
+    public func thread(id: ThreadID) async throws -> ConversationThread? {
+        try await threads().first { $0.id == id }
+    }
 
-    public func latestMessages(threadID: ThreadID, limit: Int) async throws -> [Message] { [] }
+    public func messages(threadID: ThreadID, before sequence: Int?, limit: Int) async throws -> [Message] {
+        try await api.messages(threadID: threadID, beforeSequence: sequence, limit: limit)
+            .items.map(Self.mapMessage)
+    }
+
+    public func latestMessages(threadID: ThreadID, limit: Int) async throws -> [Message] {
+        try await api.messages(threadID: threadID, beforeSequence: nil, limit: limit)
+            .items.map(Self.mapMessage)
+    }
 
     public func appendOutgoing(_ draft: OutgoingMessageDraft) async throws -> Message {
-        throw notAvailable("wysyłka wiadomości (POST /threads/{thread_id}/messages)")
+        let dto = try await api.sendMessage(
+            threadID: draft.threadID,
+            body: BackendOutgoingMessageBody(
+                text: draft.text,
+                authorID: draft.authorID.rawValue,
+                language: draft.language.rawValue
+            ),
+            // Klucz z wersji roboczej, nie nowy: ponowienie tego samego zamiaru
+            // nie może wysłać klientowi drugiej wiadomości.
+            idempotencyKey: draft.idempotencyKey
+        )
+        return try Self.mapMessage(dto)
     }
 
     public func saveReadState(_ state: ThreadUserState) async throws -> ThreadUserState {
-        throw notAvailable("zapis kursora odczytu (PUT /threads/{thread_id}/read-state)")
+        try await writeThreadState(state)
     }
 
-    public func readStates(userID: UserID) async throws -> [ThreadUserState] { [] }
+    public func readStates(userID: UserID) async throws -> [ThreadUserState] {
+        try await threadList()?.items.map { Self.mapUserState($0, userID: userID) } ?? []
+    }
 
     public func saveThreadPreferences(_ state: ThreadUserState) async throws -> ThreadUserState {
-        throw notAvailable("zapis preferencji wątku")
+        try await writeThreadState(state)
+    }
+
+    /// Zapis stanu osoby w wątku z wersją z serwera. Kursor nigdy nie jest
+    /// cofany: gdy serwer zna już dalszy, zostawiamy serwerowy (backend i tak
+    /// odrzuca cofnięcie). Konflikt wersji (drugie urządzenie) ponawiamy raz,
+    /// na świeżym stanie.
+    private func writeThreadState(_ state: ThreadUserState, retryOnConflict: Bool = true) async throws -> ThreadUserState {
+        guard let summary = try await api.threads().items.first(where: { $0.id == state.threadID.rawValue }) else {
+            throw BackendRepositoryError.notFound
+        }
+        let body = BackendReadStateBody(
+            readCursorSequence: max(state.readCursorSequence, summary.readCursorSequence ?? 0),
+            manualUnread: state.manualUnread,
+            isPinned: state.isPinned,
+            expectedVersion: summary.readStateVersion ?? Version.initial.value
+        )
+        do {
+            let saved = try await api.saveReadState(
+                threadID: state.threadID,
+                body: body,
+                idempotencyKey: Self.newIdempotencyKey()
+            )
+            var result = state
+            result.readCursorSequence = saved.readCursorSequence
+            result.manualUnread = saved.manualUnread
+            result.isPinned = saved.isPinned
+            return result
+        } catch BackendRepositoryError.conflict where retryOnConflict {
+            return try await writeThreadState(state, retryOnConflict: false)
+        }
     }
 
     public func saveDraft(_ draft: Draft?) async throws {
@@ -592,7 +659,103 @@ public struct BackendRepository: EmmaRepository, Sendable {
         throw notAvailable("status wiadomości od dostawcy")
     }
 
-    public func unreadTotal(userID: UserID) async throws -> Int { 0 }
+    public func unreadTotal(userID: UserID) async throws -> Int {
+        try await threadList()?.unreadTotal ?? 0
+    }
+
+    // MARK: Mapowanie rozmów
+
+    static func mapThread(_ dto: BackendThreadSummaryDTO) -> ConversationThread {
+        ConversationThread(
+            id: ThreadID(dto.id),
+            clientID: ClientID(dto.clientID),
+            sequenceHighWatermark: dto.highWatermark ?? 0
+        )
+    }
+
+    static func mapUserState(_ dto: BackendThreadSummaryDTO, userID: UserID) -> ThreadUserState {
+        ThreadUserState(
+            userID: userID,
+            threadID: ThreadID(dto.id),
+            readCursorSequence: dto.readCursorSequence ?? 0,
+            manualUnread: dto.manualUnread ?? false,
+            isPinned: dto.isPinned ?? false
+        )
+    }
+
+    static func mapMessage(_ dto: BackendMessageDTO) throws -> Message {
+        guard let sentAt = MobileAuthClient.parseISO8601(dto.sentAt) else {
+            throw BackendRepositoryError.decoding("nieprawidłowy czas wiadomości: \(dto.sentAt)")
+        }
+        let direction: MessageDirection = dto.direction == "outgoing" ? .outgoing : .incoming
+        return Message(
+            id: MessageID(dto.id),
+            threadID: ThreadID(dto.threadID),
+            direction: direction,
+            authorID: dto.authorID.map { UserID($0) },
+            authorLabel: dto.authorLabel,
+            providerMessageID: dto.providerMessageID,
+            kind: mapMessageKind(dto.kind, attachmentType: dto.attachmentType),
+            text: dto.text,
+            translation: dto.translation,
+            sentAt: sentAt,
+            sequence: dto.sequence,
+            transport: mapTransport(dto.transport),
+            source: mapMessageSource(origin: dto.origin, source: dto.source, direction: direction),
+            version: Version(dto.version)
+        )
+    }
+
+    static func mapMessageKind(_ kind: String, attachmentType: String?) -> MessageKind {
+        switch kind {
+        case "system":
+            return .system
+        case "attachment":
+            switch attachmentType {
+            case "image": return .image
+            case "video": return .video
+            case "audio": return .audio
+            case "sticker": return .sticker
+            case "location": return .location
+            default: return .document
+            }
+        default:
+            return .text
+        }
+    }
+
+    /// Tokeny transportu z kontraktu (`snake_case`) → stan w aplikacji.
+    /// Nieznany token to brak wiedzy, a nie sukces — stąd `.unknown`.
+    static func mapTransport(_ raw: String) -> MessageTransport {
+        switch raw {
+        case "local_draft": return .localDraft
+        case "pending": return .pending
+        case "sending": return .sending
+        case "accepted": return .accepted
+        case "sent": return .sent
+        case "delivered": return .delivered
+        case "read": return .read
+        case "failed": return .failed
+        default: return .unknown
+        }
+    }
+
+    /// Pochodzenie wiadomości. Echo z aplikacji WhatsApp Business (telefon
+    /// kancelarii) ma własne źródło, bo nie ma znanego autora w Emmie.
+    static func mapMessageSource(origin: String?, source: String, direction: MessageDirection) -> MessageSource {
+        switch origin {
+        case "customer":
+            return .whatsAppInbound
+        case "business_app":
+            return .whatsAppBusinessEcho
+        case "history":
+            return direction == .incoming ? .whatsAppInbound : .whatsAppBusinessEcho
+        default:
+            if source == "app" { return .app }
+            if source == "voice_action" { return .appVoice }
+            return direction == .incoming ? .whatsAppInbound : .whatsAppBusinessEcho
+        }
+    }
 
     // MARK: UserRepository
 

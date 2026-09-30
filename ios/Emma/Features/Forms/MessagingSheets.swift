@@ -83,7 +83,7 @@ struct NewConversationSheet: View {
             dependencies.showToast(
                 dependencies.configuration.usesMockServices
                     ? "Ten kontakt nie ma jeszcze wątku rozmowy w danych przykładowych."
-                    : "Rozmowy pojawią się po podłączeniu WhatsApp kancelarii."
+                    : "Z tą osobą nie ma jeszcze rozmowy WhatsApp — pojawi się, gdy napisze na numer kancelarii."
             )
         }
     }
@@ -124,10 +124,12 @@ struct ConversationOptionsSheet: View {
                 }
                 .padding(.bottom, 12)
 
-                Text("Status wiadomości jest przykładowy — WhatsApp nie jest jeszcze połączony.")
-                    .font(EmmaTypography.caption())
-                    .foregroundStyle(EmmaTheme.mutedSoft)
-                    .fixedSize(horizontal: false, vertical: true)
+                if dependencies.configuration.usesMockServices {
+                    Text("Status wiadomości jest przykładowy — WhatsApp nie jest jeszcze połączony.")
+                        .font(EmmaTypography.caption())
+                        .foregroundStyle(EmmaTheme.mutedSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .task { await load() }
@@ -241,7 +243,11 @@ struct MessageOptionsSheet: View {
             }
             .padding(.bottom, 6)
 
-            Text("Status przykładowy. WhatsApp nie jest jeszcze połączony.")
+            Text(
+                dependencies.configuration.usesMockServices
+                    ? "Status przykładowy. WhatsApp nie jest jeszcze połączony."
+                    : "Status z WhatsApp. „Przyjęta” to jeszcze nie „dostarczona”."
+            )
                 .font(EmmaTypography.caption())
                 .foregroundStyle(EmmaTheme.mutedSoft)
                 .fixedSize(horizontal: false, vertical: true)

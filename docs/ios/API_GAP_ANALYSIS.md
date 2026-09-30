@@ -65,11 +65,11 @@ podany modelowi językowemu **nie jest** zgodą — aplikacja odrzuca taką pró
 
 | Element | Stan | Uwaga |
 | --- | --- | --- |
-| Wysyłka wiadomości | Gotowe (klient) / Wymagane (backend) | w backendzie WhatsApp istnieje wyłącznie jako powiadomienie wychodzące (`sendWhatsAppLeadNotification`, fire-and-forget, bez `wamid` i statusu) |
-| Wątki i wiadomości (`/threads`) | Wymagane | brak jakiejkolwiek trasy i tabeli wątków/wiadomości klienta — `assistant_messages` to historia czatu Emmy, nie korespondencja |
-| Statusy dostarczenia | Gotowe (model) / Blocked | brak realnego dostawcy; demo mówi o tym w interfejsie |
-| Odbiór wiadomości (webhook) | Wymagane | brak webhooka; wymagany podpis `X-Hub-Signature-256` i deduplikacja po identyfikatorze dostawcy |
-| Koegzystencja z WhatsApp Business | Blocked | wymaga Solution Partnera / Tech Providera i Embedded Signup |
+| Wysyłka wiadomości | Gotowe (kod) / niezweryfikowane na numerze | `POST /threads/{id}/messages` przez Runtime API Dualhooka; okno 24 h → `window_closed`; szablony — osobny etap |
+| Wątki i wiadomości (`/threads`) | Gotowe (kod) / niezweryfikowane na numerze | `GET /threads`, `GET /threads/{id}/messages`, `PUT /threads/{id}/read-state` (backend: gałąź `feat/whatsapp-dualhook-inbox`) |
+| Statusy dostarczenia | Gotowe (kod) | ze zdarzeń `statuses` Meta, wyłącznie do przodu |
+| Odbiór wiadomości (webhook) | Gotowe (kod) / niezweryfikowane na numerze | `/api/integrations/whatsapp/webhook/<klucz>`; `X-Hub-Signature-256` nieweryfikowalny przy Dualhooku (sekret ich aplikacji) — zamiast tego sekret w ścieżce + zgodność WABA i numeru; deduplikacja po `wamid` |
+| Koegzystencja z WhatsApp Business | Odblokowane przez Dualhook | Dualhook jest Tech Providerem (Embedded Signup); runbook: backend `docs/emma/WHATSAPP_DUALHOOK.md` |
 | Zachowanie numeru właściciela | Wymóg | **nie zmieniać ani nie wyrejestrowywać używanego numeru** w trakcie implementacji |
 
 Szczegóły i ograniczenia: `docs/ios/research/whatsapp-coexistence.md`

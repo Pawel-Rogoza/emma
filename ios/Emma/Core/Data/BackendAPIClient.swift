@@ -103,6 +103,8 @@ public struct BackendAPIClient: Sendable {
         case voiceConversationToken = "api/mobile/v1/voice/conversation-token"
         case notes = "api/mobile/v1/notes"
         case actions = "api/mobile/v1/actions"
+        /// Rozmowy WhatsApp (numer kancelarii podłączony przez Dualhook).
+        case threads = "api/mobile/v1/threads"
     }
 
     /// Domyślny rozmiar strony z kontraktu (`limit`, maks. 100). Repozytorium
@@ -498,6 +500,54 @@ public struct BackendAPIClient: Sendable {
         try await sendNoContent(
             "DELETE",
             path: "\(Endpoint.voiceSessions.rawValue)/\(sessionID.rawValue)",
+            idempotencyKey: idempotencyKey
+        )
+    }
+
+    // MARK: Rozmowy WhatsApp
+
+    /// `GET /api/mobile/v1/threads` — rozmowy z licznikami dla zalogowanej osoby.
+    func threads() async throws -> BackendThreadList {
+        try await get(Endpoint.threads.rawValue, query: [])
+    }
+
+    /// `GET /api/mobile/v1/threads/{thread_id}/messages?before_sequence=&limit=`.
+    /// `before_sequence` może być ≤ 0 — tak numerowana jest historia z telefonu.
+    func messages(threadID: ThreadID, beforeSequence: Int?, limit: Int) async throws -> BackendMessagePage {
+        var query = [URLQueryItem(name: "limit", value: String(min(max(limit, 1), 100)))]
+        if let beforeSequence {
+            query.append(URLQueryItem(name: "before_sequence", value: String(beforeSequence)))
+        }
+        return try await get("\(Endpoint.threads.rawValue)/\(threadID.rawValue)/messages", query: query)
+    }
+
+    /// `POST /api/mobile/v1/threads/{thread_id}/messages` — odpowiedź klientowi.
+    /// Wraca 202 z wiadomością; `transport` mówi, czy WhatsApp ją przyjął.
+    func sendMessage(
+        threadID: ThreadID,
+        body: BackendOutgoingMessageBody,
+        idempotencyKey: String
+    ) async throws -> BackendMessageDTO {
+        try await send(
+            "POST",
+            path: "\(Endpoint.threads.rawValue)/\(threadID.rawValue)/messages",
+            body: body,
+            idempotencyKey: idempotencyKey
+        )
+    }
+
+    /// `PUT /api/mobile/v1/threads/{thread_id}/read-state` — kursor tylko do przodu.
+    /// Kontrakt nie wymaga tu klucza idempotencji (chroni wersja), ale go
+    /// wysyłamy, bo wspólna ścieżka zapisu zawsze go dokłada.
+    func saveReadState(
+        threadID: ThreadID,
+        body: BackendReadStateBody,
+        idempotencyKey: String
+    ) async throws -> BackendThreadUserStateDTO {
+        try await send(
+            "PUT",
+            path: "\(Endpoint.threads.rawValue)/\(threadID.rawValue)/read-state",
+            body: body,
             idempotencyKey: idempotencyKey
         )
     }
@@ -1310,5 +1360,130 @@ struct BackendVoiceContextBody: Encodable {
 
     enum CodingKeys: String, CodingKey {
         case contextVersion = "context_version"
+    }
+}
+
+// MARK: Rozmowy WhatsApp
+
+struct BackendMessageDTO: Decodable {
+    let id: String
+    let threadID: String
+    let direction: String
+    let authorID: String?
+    let authorLabel: String?
+    let providerMessageID: String?
+    let kind: String
+    /// Rozszerzenie kontraktu: rodzaj załącznika (image, document, audio…).
+    let attachmentType: String?
+    let text: String
+    let translation: String?
+    let sentAt: String
+    let sequence: Int
+    let transport: String
+    let source: String
+    /// Rozszerzenie kontraktu: customer, business_app, api, history.
+    let origin: String?
+    let version: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id, direction, kind, text, translation, sequence, transport, source, origin, version
+        case threadID = "thread_id"
+        case authorID = "author_id"
+        case authorLabel = "author_label"
+        case providerMessageID = "provider_message_id"
+        case attachmentType = "attachment_type"
+        case sentAt = "sent_at"
+    }
+}
+
+struct BackendThreadSummaryDTO: Decodable {
+    let id: String
+    let clientID: String
+    let clientName: String?
+    let preview: BackendMessageDTO?
+    let unreadCount: Int
+    let isPinned: Bool?
+    let highWatermark: Int?
+    // Rozszerzenia kontraktu: stan osoby w wątku bez osobnego zapytania.
+    let readCursorSequence: Int?
+    let manualUnread: Bool?
+    let readStateVersion: Int?
+    /// Do kiedy WhatsApp pozwala wysłać swobodny tekst (ISO) — `nil`, gdy okno zamknięte.
+    let replyWindowUntil: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, preview
+        case clientID = "client_id"
+        case clientName = "client_name"
+        case unreadCount = "unread_count"
+        case isPinned = "is_pinned"
+        case highWatermark = "high_watermark"
+        case readCursorSequence = "read_cursor_sequence"
+        case manualUnread = "manual_unread"
+        case readStateVersion = "read_state_version"
+        case replyWindowUntil = "reply_window_until"
+    }
+}
+
+struct BackendThreadList: Decodable {
+    let items: [BackendThreadSummaryDTO]
+    let unreadTotal: Int
+
+    enum CodingKeys: String, CodingKey {
+        case items
+        case unreadTotal = "unread_total"
+    }
+}
+
+struct BackendMessagePage: Decodable {
+    let items: [BackendMessageDTO]
+    let highWatermark: Int
+
+    enum CodingKeys: String, CodingKey {
+        case items
+        case highWatermark = "high_watermark"
+    }
+}
+
+struct BackendThreadUserStateDTO: Decodable {
+    let threadID: String
+    let userID: String
+    let readCursorSequence: Int
+    let manualUnread: Bool
+    let isPinned: Bool
+    let version: Int
+
+    enum CodingKeys: String, CodingKey {
+        case version
+        case threadID = "thread_id"
+        case userID = "user_id"
+        case readCursorSequence = "read_cursor_sequence"
+        case manualUnread = "manual_unread"
+        case isPinned = "is_pinned"
+    }
+}
+
+struct BackendOutgoingMessageBody: Encodable {
+    let text: String
+    let authorID: String
+    let language: String
+
+    enum CodingKeys: String, CodingKey {
+        case text, language
+        case authorID = "author_id"
+    }
+}
+
+struct BackendReadStateBody: Encodable {
+    let readCursorSequence: Int
+    let manualUnread: Bool
+    let isPinned: Bool
+    let expectedVersion: Int
+
+    enum CodingKeys: String, CodingKey {
+        case readCursorSequence = "read_cursor_sequence"
+        case manualUnread = "manual_unread"
+        case isPinned = "is_pinned"
+        case expectedVersion = "expected_version"
     }
 }

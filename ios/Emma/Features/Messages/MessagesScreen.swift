@@ -433,7 +433,7 @@ struct MessagesScreen: View {
                     }
                 }
             }
-            disclosure
+            disclosure(hasThreads: !model.allRows.isEmpty)
                 .emmaListRow(top: 12, bottom: EmmaSpacing.contentBottom, horizontal: layout.horizontalPadding)
         }
     }
@@ -568,14 +568,14 @@ struct MessagesScreen: View {
     // MARK: Stopka i stany puste
 
     /// Stopka mówi prawdę o źródle: w Demo wiadomości są przykładowe, a poza
-    /// Demo skrzynka jest pusta, bo numer kancelarii nie jest jeszcze podłączony.
-    private var disclosure: some View {
+    /// Demo — czy rozmowy WhatsApp kancelarii już płyną z serwera.
+    private func disclosure(hasThreads: Bool) -> some View {
         HStack(alignment: .top, spacing: 9) {
             Image(systemName: "link")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(EmmaTheme.mutedSoft)
                 .padding(.top, 1)
-            Text(disclosureText)
+            Text(disclosureText(hasThreads: hasThreads))
                 .font(EmmaTypography.caption())
                 .foregroundStyle(EmmaTheme.mutedSoft)
                 .fixedSize(horizontal: false, vertical: true)
@@ -590,10 +590,15 @@ struct MessagesScreen: View {
         .accessibilityElement(children: .combine)
     }
 
-    private var disclosureText: String {
-        dependencies.configuration.usesMockServices
-            ? "Wiadomości przykładowe · WhatsApp niepołączony"
-            : "WhatsApp niepołączony · rozmowy pojawią się po podłączeniu numeru kancelarii"
+    private func disclosureText(hasThreads: Bool) -> String {
+        if dependencies.configuration.usesMockServices {
+            return "Wiadomości przykładowe · WhatsApp niepołączony"
+        }
+        // Pusta lista nie odróżnia „niepodłączony” od „nikt jeszcze nie napisał”,
+        // więc mówimy ostrożnie, zamiast ogłaszać brak połączenia.
+        return hasThreads
+            ? "WhatsApp kancelarii · statusy dostarczenia pochodzą z WhatsApp"
+            : "Rozmowy WhatsApp pojawią się tu, gdy numer kancelarii jest podłączony i klient napisze"
     }
 
     @ViewBuilder
