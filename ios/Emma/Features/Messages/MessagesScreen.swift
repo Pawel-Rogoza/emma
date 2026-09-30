@@ -69,6 +69,8 @@ final class MessagesStore: ObservableObject {
         let state: ThreadUserState
         /// Najwyższy znany numer wiadomości (snapshot do „Oznacz jako przeczytaną”).
         let highestSequence: Int
+        /// Okno 24 h WhatsApp — ostrzeżenie na karcie, zanim wysyłka zostanie odrzucona.
+        let replyWindow: ReplyWindow
     }
 
     struct Model {
@@ -98,21 +100,50 @@ final class MessagesStore: ObservableObject {
     @Published var filter: Filter = .all
     @Published var searchText: String = ""
 
-    func load(_ dependencies: AppDependencies) async {
+    /// Ile ostatnich wiadomości wątku czytamy na liście (stan, czekanie, okno 24 h).
+    private static let messagesPerThread = 60
+
+    /// `silent` — odświeżenie w tle (co pół minuty): błąd sieci nie pokazuje
+    /// komunikatu ani ekranu błędu, lista zostaje taka, jaka była.
+    func load(_ dependencies: AppDependencies, silent: Bool = false) async {
         // Odświeżenie po zapisie nie zdejmuje listy z ekranu (jak na „Dzisiaj”).
         let wasLoaded = phase.hasLoaded
+        if silent && !wasLoaded { return }
         if !wasLoaded { phase = .loading }
         do {
             let repository = dependencies.repository
             let userID = dependencies.currentUser.id
-            let threads = try await repository.threads()
-            let states = try await repository.readStates(userID: userID)
-            let clients = try await repository.clients(matching: "", stage: nil)
+            let now = dependencies.clock.now()
+            async let threadsTask = repository.threads()
+            async let statesTask = repository.readStates(userID: userID)
+            async let clientsTask = repository.clients(matching: "", stage: nil)
+            let threads = try await threadsTask
+            let states = try await statesTask
+            let clients = try await clientsTask
+            let clientsByID = Dictionary(clients.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
+            // Wiadomości wątków pobieramy równolegle. Po kolei — przy prawdziwym
+            // WhatsApp i kilkudziesięciu rozmowach — lista wczytywała się
+            // kilka sekund, bo każdy wątek to osobne zapytanie do serwera.
+            let visible = threads.filter { clientsByID[$0.clientID] != nil }
+            let limit = Self.messagesPerThread
+            let messagesByThread = try await withThrowingTaskGroup(of: (ThreadID, [Message]).self) { group in
+                for thread in visible {
+                    group.addTask {
+                        (thread.id, try await repository.latestMessages(threadID: thread.id, limit: limit))
+                    }
+                }
+                var result: [ThreadID: [Message]] = [:]
+                for try await (threadID, messages) in group {
+                    result[threadID] = messages
+                }
+                return result
+            }
 
             var rows: [Row] = []
-            for thread in threads {
-                guard let client = clients.first(where: { $0.id == thread.clientID }) else { continue }
-                let messages = try await repository.latestMessages(threadID: thread.id, limit: 60)
+            for thread in visible {
+                guard let client = clientsByID[thread.clientID] else { continue }
+                let messages = messagesByThread[thread.id] ?? []
                 let state = states.first { $0.threadID == thread.id }
                     ?? ThreadUserState(userID: userID, threadID: thread.id)
                 let sorted = MessageOrdering.sorted(messages)
@@ -133,7 +164,12 @@ final class MessagesStore: ObservableObject {
                         status: ConversationInbox.status(lastMessage: sorted.last, unreadCount: unread),
                         waitingSince: ConversationInbox.waitingSince(sorted),
                         state: state,
-                        highestSequence: sorted.last?.sequence ?? 0
+                        highestSequence: sorted.last?.sequence ?? 0,
+                        replyWindow: ReplyWindow.state(
+                            sortedMessages: sorted,
+                            now: now,
+                            isComplete: sorted.count < limit
+                        )
                     )
                 )
             }
@@ -149,6 +185,7 @@ final class MessagesStore: ObservableObject {
                 phase = .loaded(model)
             }
         } catch {
+            guard !silent else { return }
             if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać rozmów.") {
                 dependencies.showToast(message)
             }
@@ -260,6 +297,7 @@ struct MessagesScreen: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.emmaLayout) private var layout: EmmaLayoutMetrics
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     /// Magazyn żyje w `AppDependencies` — powrót na zakładkę pokazuje od razu
     /// ostatni stan i zachowuje filtr.
     @ObservedObject var store: MessagesStore
@@ -279,6 +317,16 @@ struct MessagesScreen: View {
         .background(EmmaTheme.bg)
         .refreshable { await store.load(dependencies) }
         .task(id: dependencies.dataVersion) { await store.load(dependencies) }
+        // Nowe wiadomości WhatsApp przychodzą bez naszego udziału — lista
+        // odświeża się sama co 30 s, póki jest na ekranie i aplikacja aktywna.
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                guard !Task.isCancelled, scenePhase == .active else { continue }
+                await store.load(dependencies, silent: true)
+                dependencies.refreshUnreadTotal()
+            }
+        }
         .onChange(of: store.searchText) { _, _ in
             Task { await store.applyLocalFilter() }
         }
@@ -447,7 +495,8 @@ struct MessagesScreen: View {
             isPinned: row.isPinned,
             hasDraft: row.hasDraft,
             status: row.status,
-            waitingSince: row.waitingSince
+            waitingSince: row.waitingSince,
+            replyWindow: row.replyWindow
         ) {
             dependencies.openThread(row.thread.id)
         } onOptions: {

@@ -9,6 +9,7 @@ import SwiftUI
 public struct RootShell: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @EnvironmentObject private var auth: AuthStore
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var quickActions = HomeScreenQuickActions.shared
     /// Przy otwartej klawiaturze pasek zakładek znika (jak w aplikacjach
     /// systemowych) — wcześniej unosił się nad klawiaturą i zabierał ~70 pt
@@ -83,6 +84,16 @@ public struct RootShell: View {
             // jednego właściciela i żyje dłużej niż widok (§5.3, §12.2).
             if dependencies.tab != .emma {
                 dependencies.voice.viewDidDisappear()
+            }
+        }
+        // Wiadomości WhatsApp przychodzą bez udziału aplikacji — licznik na
+        // zakładce „Rozmowy” odświeża się co minutę, póki aplikacja jest na
+        // ekranie i odblokowana. Wcześniej zmieniał się dopiero po zapisie.
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                guard !Task.isCancelled, scenePhase == .active, auth.state == .unlocked else { continue }
+                dependencies.refreshUnreadTotal()
             }
         }
         // Skrót z ikony aplikacji — dopiero po odblokowaniu (Face ID).

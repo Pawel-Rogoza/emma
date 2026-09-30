@@ -89,4 +89,69 @@ final class ConversationInboxTests: XCTestCase {
         XCTAssertEqual(statuses[DemoFixtures.olenaThread], .awaitingReply)
         XCTAssertEqual(statuses[DemoFixtures.dmytroThread], .replied)
     }
+
+    // MARK: Okno odpowiedzi WhatsApp
+
+    func testReplyWindowRunsTwentyFourHoursFromLastClientMessage() {
+        let messages = [
+            message(1, .incoming, minutes: 0),
+            message(2, .outgoing, minutes: 5),
+            message(3, .incoming, minutes: 60)
+        ]
+        let until = base.addingTimeInterval(60 * 60 + ReplyWindow.duration)
+        // Nasza odpowiedź nie przedłuża okna — liczy się wiadomość klienta.
+        XCTAssertEqual(
+            ReplyWindow.state(sortedMessages: messages, now: base.addingTimeInterval(120 * 60), isComplete: true),
+            .open(until: until)
+        )
+        XCTAssertEqual(
+            ReplyWindow.state(sortedMessages: messages, now: until, isComplete: true),
+            .closed(since: until)
+        )
+    }
+
+    func testReplyWindowWithoutClientMessageDependsOnCompleteness() {
+        let ours = [message(1, .outgoing, minutes: 0)]
+        XCTAssertEqual(ReplyWindow.state(sortedMessages: ours, now: base, isComplete: true), .closed(since: nil))
+        XCTAssertEqual(
+            ReplyWindow.state(sortedMessages: ours, now: base, isComplete: false),
+            .unknown,
+            "Starsza wiadomość klienta może być poza wczytaną stroną — nie blokujemy wysyłki"
+        )
+        XCTAssertFalse(ReplyWindow.unknown.isClosed)
+    }
+
+    func testReplyWindowWarnsInLastThreeHours() {
+        let window = ReplyWindow.state(sortedMessages: [message(1, .incoming, minutes: 0)], now: base, isComplete: true)
+        let hour: TimeInterval = 3600
+        XCTAssertFalse(window.isClosingSoon(now: base.addingTimeInterval(20 * hour)))
+        XCTAssertTrue(window.isClosingSoon(now: base.addingTimeInterval(21 * hour)))
+        XCTAssertEqual(window.remainingText(now: base.addingTimeInterval(21 * hour)), "3 godz.")
+        XCTAssertEqual(window.remainingText(now: base.addingTimeInterval(22 * hour + 45 * 60)), "1 godz. 15 min")
+        XCTAssertEqual(window.remainingText(now: base.addingTimeInterval(23 * hour + 20 * 60)), "40 min")
+        XCTAssertNil(ReplyWindow.closed(since: nil).remainingText(now: base))
+    }
+
+    // MARK: Odświeżanie otwartego wątku
+
+    func testMergeAddsNewMessagesKeepsOlderAndNeverDowngradesStatus() {
+        let older = message(1, .incoming, minutes: 0)
+        let ours = message(2, .outgoing, minutes: 1, transport: .read)
+        // Spóźnione zdarzenie „sent” po „read” w świeżej stronie.
+        var staleStatus = ours
+        staleStatus.transport = .sent
+        let incoming = message(3, .incoming, minutes: 2)
+
+        let merged = MessageOrdering.merged([older, ours], with: [staleStatus, incoming])
+
+        XCTAssertEqual(merged.map(\.sequence), [1, 2, 3], "Starsza wiadomość spoza świeżej strony zostaje")
+        XCTAssertEqual(merged[1].transport, .read, "Status dostarczenia się nie cofa")
+    }
+
+    func testMergeTakesDeliveryProgressFromFreshPage() {
+        let sent = message(1, .outgoing, minutes: 0, transport: .sent)
+        var delivered = sent
+        delivered.transport = .delivered
+        XCTAssertEqual(MessageOrdering.merged([sent], with: [delivered]).first?.transport, .delivered)
+    }
 }

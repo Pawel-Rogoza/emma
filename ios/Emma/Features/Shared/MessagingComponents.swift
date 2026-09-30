@@ -24,6 +24,8 @@ struct ConversationRow: View {
     let hasDraft: Bool
     let status: ConversationStatus
     let waitingSince: Date?
+    /// Okno 24 h WhatsApp — ostrzeżenie pod linijką stanu, gdy się zamyka.
+    let replyWindow: ReplyWindow
     let onOpen: () -> Void
     let onOptions: () -> Void
 
@@ -55,6 +57,8 @@ struct ConversationRow: View {
                         }
 
                         statusLine
+
+                        windowLine
 
                         previewLine
                     }
@@ -168,6 +172,33 @@ struct ConversationRow: View {
         .animation(EmmaMotion.smooth, value: status)
     }
 
+    /// „WhatsApp: na odpowiedź zostało 2 godz.” albo „Minęło 24 h…” — tylko
+    /// gdy ruch jest nasz. Po 24 h od wiadomości klienta WhatsApp przyjmie już
+    /// tylko zatwierdzony szablon; lepiej wiedzieć o tym przed otwarciem wątku.
+    @ViewBuilder
+    private var windowLine: some View {
+        if let text = windowText {
+            HStack(spacing: 5) {
+                Image(systemName: replyWindow.isClosed ? "exclamationmark.circle" : "hourglass")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(text)
+                    .font(EmmaTypography.caption(.medium))
+            }
+            .foregroundStyle(replyWindow.isClosed ? EmmaTheme.danger : EmmaTheme.pillAmberText)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+            .transition(.opacity)
+        }
+    }
+
+    private var windowText: String? {
+        guard status.needsReply else { return nil }
+        if replyWindow.isClosed { return "Minęło 24 h · tylko szablon lub telefon" }
+        let now = dependencies.now
+        guard replyWindow.isClosingSoon(now: now), let left = replyWindow.remainingText(now: now) else { return nil }
+        return "WhatsApp: na odpowiedź zostało \(left)"
+    }
+
     private var showsReceipt: Bool {
         !hasDraft && (status == .replied || status == .seen) && preview?.transport.receiptGlyph != MessageTransport.ReceiptGlyph.none
     }
@@ -266,6 +297,7 @@ struct ConversationRow: View {
 
     private var accessibilityLabel: String {
         var parts = [client.displayName, statusText]
+        if let windowText { parts.append(windowText) }
         if unreadCount > 0 { parts.append(EmmaPlural.unread(unreadCount)) }
         if isPinned { parts.append("przypięta") }
         if let preview { parts.append(preview.text) }

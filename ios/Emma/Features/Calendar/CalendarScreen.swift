@@ -145,8 +145,11 @@ final class CalendarStore: ObservableObject {
 
     /// Model ekranu z wczytanych danych, bez sieci.
     private func rebuild(today: LocalDate) {
+        // Załatwione terminy zostają w kalendarzu (przygaszone, z plakietką).
+        // Wcześniej znikały — po „Załatwione” nie dało się już sprawdzić,
+        // kiedy była rozprawa. Kafelki i kropka „po terminie” liczą tylko otwarte.
         var byDay: [LocalDate: [ScheduledEvent]] = [:]
-        for event in events where event.status != .finished {
+        for event in events {
             byDay[event.day, default: []].append(event)
         }
         for day in byDay.keys {
@@ -355,7 +358,7 @@ struct CalendarScreen: View {
         switch model.mode {
         case .month:
             ZStack {
-                MonthGrid(model: model) { day in
+                MonthGrid(model: model, onAdd: addEvent) { day in
                     Task { await store.select(day, dependencies: dependencies) }
                 }
                 .id(model.visibleMonth)
@@ -586,12 +589,15 @@ struct CalendarScreen: View {
         isFirst: Bool,
         isLast: Bool
     ) -> some View {
-        let isMissed = event.kind == .caseDeadline && event.day < model.today
+        let isFinished = event.status == .finished
+        let isMissed = !isFinished && event.kind == .caseDeadline && event.day < model.today
         let isPast = !isMissed && (
-            event.day < model.today
+            isFinished
+                || event.day < model.today
                 || (event.day == model.today && !event.isAllDay && event.hasPassed(at: now))
         )
-        let tone = isMissed ? EmmaTheme.pillDangerText
+        let tone = isFinished ? EmmaTheme.pillGreenText
+            : isMissed ? EmmaTheme.pillDangerText
             : (event.kind == .caseDeadline ? EmmaTheme.pillAmberText : EmmaTheme.accent)
 
         return MeetingCard(event: event, clientName: event.clientID.flatMap { model.clientNames[$0] }) {
@@ -644,7 +650,9 @@ struct CalendarScreen: View {
         isMissed: Bool,
         isNext: Bool
     ) -> some View {
-        if isMissed {
+        if event.status == .finished {
+            StatusPill("Załatwione", kind: .green)
+        } else if isMissed {
             let urgency = CaseUrgency(nextEvent: nil, missedEvent: event.day, overdueTasks: 0, today: model.today)
             if let text = urgency.countdownText {
                 StatusPill(text.prefix(1).uppercased() + text.dropFirst(), kind: .danger)
@@ -687,9 +695,16 @@ struct CalendarScreen: View {
     // MARK: Tydzień
 
     private func weekStrip(_ model: CalendarStore.Model) -> some View {
-        WeekStrip(model: model) { day in
+        WeekStrip(model: model, onAdd: addEvent) { day in
             Task { await store.select(day, dependencies: dependencies) }
         }
+    }
+
+    /// Nowy termin na konkretny dzień — z przytrzymania dnia w siatce,
+    /// bez wybierania go najpierw i szukania „+”.
+    private func addEvent(on day: LocalDate) {
+        EmmaHaptics.tap()
+        dependencies.present(.eventForm(editing: nil, clientID: nil, caseID: nil, initialDay: day))
     }
 
     // MARK: Lista
@@ -697,6 +712,12 @@ struct CalendarScreen: View {
     @ViewBuilder
     private func agendaList(_ model: CalendarStore.Model) -> some View {
         let days = model.eventsByDay.keys.filter { $0 >= model.today }.sorted()
+        // Lista pokazywała tylko przyszłość — przegapiony termin w sprawie był
+        // widoczny wyłącznie w kafelku. Teraz stoi na samej górze, z „Załatwione”
+        // pod przytrzymaniem.
+        if !model.pulse.missed.isEmpty {
+            missedSection(model)
+        }
         if days.isEmpty {
             EmptyState(
                 systemImage: "calendar",
@@ -724,6 +745,41 @@ struct CalendarScreen: View {
                     .emmaAppear(firstIndex[day] ?? 0)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func missedSection(_ model: CalendarStore.Model) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 13, weight: .semibold))
+            Text("Po terminie · \(model.pulse.missed.count)")
+                .font(EmmaTypography.ui(15, .semibold))
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(EmmaTheme.pillDangerText)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+        .emmaAppear(0)
+
+        ForEach(Array(model.pulse.missed.enumerated()), id: \.element.id) { index, event in
+            MeetingCard(event: event, clientName: event.clientID.flatMap { model.clientNames[$0] }) {
+                dependencies.present(.eventDetail(event.id))
+            }
+            .overlay(alignment: .topTrailing) {
+                let urgency = CaseUrgency(nextEvent: nil, missedEvent: event.day, overdueTasks: 0, today: model.today)
+                if let text = urgency.countdownText {
+                    StatusPill(text.prefix(1).uppercased() + text.dropFirst(), kind: .danger)
+                        .padding(10)
+                }
+            }
+            .eventContextMenu(event, dependencies: dependencies) {
+                dependencies.present(.eventDetail(event.id))
+            }
+            .padding(.bottom, EmmaSpacing.cardGap)
+            .emmaAppear(index + 1)
         }
     }
 
@@ -779,6 +835,7 @@ private struct WeekStrip: View {
     @Namespace private var selectionSpace
 
     let model: CalendarStore.Model
+    let onAdd: (LocalDate) -> Void
     let onSelect: (LocalDate) -> Void
 
     var body: some View {
@@ -826,8 +883,16 @@ private struct WeekStrip: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            Button {
+                onAdd(day)
+            } label: {
+                Label("Nowy termin tego dnia", systemImage: "calendar.badge.plus")
+            }
+        }
         .accessibilityLabel("\(dependencies.dateText.dayTitle(day)), \(EmmaPlural.events(count))")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityAction(named: "Nowy termin tego dnia") { onAdd(day) }
     }
 }
 
@@ -841,6 +906,7 @@ private struct MonthGrid: View {
     @Namespace private var selectionSpace
 
     let model: CalendarStore.Model
+    let onAdd: (LocalDate) -> Void
     let onSelect: (LocalDate) -> Void
 
     private let weekdays = ["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"]
@@ -908,8 +974,16 @@ private struct MonthGrid: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            Button {
+                onAdd(day)
+            } label: {
+                Label("Nowy termin tego dnia", systemImage: "calendar.badge.plus")
+            }
+        }
         .accessibilityLabel("\(dependencies.dateText.dayTitle(day)), \(EmmaPlural.events(count))")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityAction(named: "Nowy termin tego dnia") { onAdd(day) }
     }
 }
 
@@ -923,9 +997,11 @@ private struct EventDots: View {
     let today: LocalDate
     let highlighted: Bool
 
-    /// 0 — po terminie, 1 — termin w sprawie, 2 — konsultacja; najważniejsze najpierw.
+    /// 0 — po terminie, 1 — termin w sprawie, 2 — konsultacja, 3 — załatwione;
+    /// najważniejsze najpierw.
     private var ranks: [Int] {
         events.map { event in
+            if event.status == .finished { return 3 }
             guard event.kind == .caseDeadline else { return 2 }
             return event.status != .finished && event.day < today ? 0 : 1
         }
@@ -936,7 +1012,8 @@ private struct EventDots: View {
         switch rank {
         case 0: return EmmaTheme.pillDangerText
         case 1: return EmmaTheme.pillAmberText
-        default: return EmmaTheme.accent
+        case 2: return EmmaTheme.accent
+        default: return EmmaTheme.mutedSoft.opacity(0.6)
         }
     }
 

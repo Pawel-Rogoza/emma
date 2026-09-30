@@ -351,6 +351,25 @@ public enum MessageOrdering {
         return newStatus.progressRank >= current.progressRank ? newStatus : current
     }
 
+    /// Dołączenie świeżo pobranej strony do historii otwartego wątku (odświeżanie
+    /// na żywo). Wiadomość znana już po `id` bierze nowszą wersję — przychodzą
+    /// zmiany statusu dostarczenia — ale jej status nigdy się nie cofa; starsze
+    /// wiadomości spoza świeżej strony zostają. Wynik w kolejności `sorted`.
+    public static func merged(_ existing: [Message], with fresh: [Message]) -> [Message] {
+        var byID = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
+        for message in fresh {
+            guard let known = byID[message.id] else {
+                byID[message.id] = message
+                continue
+            }
+            guard message.version >= known.version else { continue }
+            var updated = message
+            updated.transport = applyingStatus(message.transport, to: known.transport)
+            byID[message.id] = updated
+        }
+        return sorted(Array(byID.values))
+    }
+
     /// Sortowanie listy rozmów: przypięte na górze, potem ostatnia wiadomość,
     /// z deterministycznym rozstrzygnięciem remisów (§3.3 pkt 6).
     public static func conversationSortKey(

@@ -67,3 +67,59 @@ public enum ConversationInbox {
         now.timeIntervalSince(since) >= 3600
     }
 }
+
+// MARK: - Okno odpowiedzi WhatsApp
+//
+// Meta pozwala wysłać zwykły tekst tylko przez 24 godziny od ostatniej
+// wiadomości klienta; później przyjmuje wyłącznie zatwierdzony szablon (backend
+// odrzuca wysyłkę kodem `window_closed`). Wcześniej aplikacja dowiadywała się
+// o tym dopiero po naciśnięciu „Wyślij”. Teraz lista i wątek mówią o tym
+// zawczasu: ile zostało do zamknięcia okna i kiedy trzeba już zadzwonić.
+
+public enum ReplyWindow: Equatable, Sendable {
+    /// Można odpisać zwykłym tekstem do podanej chwili.
+    case open(until: Date)
+    /// Okno minęło (`since`) albo klient nigdy nie napisał (`nil`).
+    case closed(since: Date?)
+    /// We wczytanym fragmencie nie ma wiadomości klienta, a starsze nie są
+    /// znane — nie zgadujemy i nie blokujemy wysyłki.
+    case unknown
+
+    /// Czas okna obsługowego Meta.
+    public static let duration: TimeInterval = 24 * 60 * 60
+    /// Od kiedy ostrzegamy, że okno się zamyka.
+    public static let warningLead: TimeInterval = 3 * 60 * 60
+
+    /// Stan okna z wiadomości posortowanych jak `MessageOrdering.sorted`.
+    /// `isComplete` — czy wczytano całą historię wątku (wtedy brak wiadomości
+    /// klienta znaczy „nigdy nie napisał”, a nie „nie wiemy”).
+    public static func state(sortedMessages: [Message], now: Date, isComplete: Bool) -> ReplyWindow {
+        guard let lastCustomer = sortedMessages.last(where: { !$0.isOutgoing && $0.kind != .system }) else {
+            return isComplete ? .closed(since: nil) : .unknown
+        }
+        let until = lastCustomer.sentAt.addingTimeInterval(duration)
+        return until > now ? .open(until: until) : .closed(since: until)
+    }
+
+    public var isClosed: Bool {
+        if case .closed = self { return true }
+        return false
+    }
+
+    /// Okno otwarte, ale zamknie się w ciągu `warningLead`.
+    public func isClosingSoon(now: Date) -> Bool {
+        guard case .open(let until) = self else { return false }
+        return until.timeIntervalSince(now) <= Self.warningLead
+    }
+
+    /// „2 godz. 15 min”, „40 min”, „chwilę” — ile zostało do zamknięcia okna.
+    public func remainingText(now: Date) -> String? {
+        guard case .open(let until) = self else { return nil }
+        let minutes = Int(until.timeIntervalSince(now) / 60)
+        if minutes < 1 { return "chwilę" }
+        if minutes < 60 { return "\(minutes) min" }
+        let hours = minutes / 60
+        let rest = minutes % 60
+        return rest == 0 || hours >= 3 ? "\(hours) godz." : "\(hours) godz. \(rest) min"
+    }
+}

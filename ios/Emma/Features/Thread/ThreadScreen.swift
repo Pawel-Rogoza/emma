@@ -29,6 +29,8 @@ final class ThreadStore: ObservableObject {
         var firstUnreadID: MessageID?
         var draft: Draft
         var loadEarlierAvailable: Bool
+        /// Okno 24 h WhatsApp: po nim zwykła wiadomość zostanie odrzucona.
+        var replyWindow: ReplyWindow
     }
 
     @Published private(set) var phase: LoadPhase<Model> = .idle
@@ -109,7 +111,12 @@ final class ThreadStore: ObservableObject {
                     messages: sorted,
                     firstUnreadID: firstUnread,
                     draft: draft,
-                    loadEarlierAvailable: sorted.count >= pageSize
+                    loadEarlierAvailable: sorted.count >= pageSize,
+                    replyWindow: ReplyWindow.state(
+                        sortedMessages: sorted,
+                        now: dependencies.clock.now(),
+                        isComplete: sorted.count < pageSize
+                    )
                 )
             )
         } catch {
@@ -131,10 +138,56 @@ final class ThreadStore: ObservableObject {
             guard var updated = phase.value else { return }
             updated.messages = MessageOrdering.sorted(older + updated.messages)
             updated.loadEarlierAvailable = older.count >= pageSize
+            updated.replyWindow = ReplyWindow.state(
+                sortedMessages: updated.messages,
+                now: dependencies.clock.now(),
+                isComplete: !updated.loadEarlierAvailable
+            )
             phase = .loaded(updated)
         } catch {
             dictationNotice = ScreenLoad.message(for: error, fallback: "Nie udało się wczytać starszych wiadomości.")
         }
+    }
+
+    // MARK: Odświeżanie na żywo
+
+    /// Dociąga najnowsze wiadomości otwartego wątku (co kilkanaście sekund).
+    /// Wcześniej odpowiedź klienta pojawiała się dopiero po wyjściu i ponownym
+    /// wejściu w rozmowę. Nie pokazuje szkieletu ładowania, nie rusza pola
+    /// wiadomości ani separatora „Nowe wiadomości”; błąd sieci po prostu czeka
+    /// na następną próbę. Nowa wiadomość przesuwa kursor odczytu — rozmowa
+    /// jest otwarta, więc klient jest „przeczytany”.
+    func refreshLatest(_ dependencies: AppDependencies) async {
+        guard !isSending, let threadID = phase.value?.thread.id else { return }
+        guard let fresh = try? await dependencies.repository.latestMessages(threadID: threadID, limit: pageSize) else {
+            return
+        }
+        // Model czytany na nowo — w trakcie odczytu mogło zmienić się pole.
+        guard var model = phase.value, !isSending else { return }
+        let merged = MessageOrdering.merged(model.messages, with: fresh)
+        let window = ReplyWindow.state(
+            sortedMessages: merged,
+            now: dependencies.clock.now(),
+            isComplete: !model.loadEarlierAvailable
+        )
+        guard merged != model.messages || window != model.replyWindow else { return }
+        model.messages = merged
+        model.replyWindow = window
+        phase = .loaded(model)
+
+        let highest = merged.map(\.sequence).max() ?? 0
+        guard highest > snapshotSequence, var threadState = state else { return }
+        snapshotSequence = highest
+        // Szkic w drodze najpierw — zapis stanu nie może przywrócić starszego.
+        await flushDraft()
+        threadState = state ?? threadState
+        threadState.readCursorSequence = ReadStatePolicy.cursorAfterOpeningThread(
+            current: threadState.readCursorSequence,
+            snapshotSequenceAtOpen: highest
+        )
+        threadState.manualUnread = false
+        state = (try? await dependencies.repository.saveReadState(threadState)) ?? threadState
+        dependencies.refreshUnreadTotal()
     }
 
     // MARK: Szkic
@@ -197,7 +250,8 @@ final class ThreadStore: ObservableObject {
         // (każda próba ma własny klucz idempotencji).
         guard !isSending, var model = phase.value else { return }
         let text = model.draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        // Po 24 h WhatsApp i tak odrzuci zwykłą wiadomość — nie udajemy wysyłki.
+        guard !text.isEmpty, !model.replyWindow.isClosed else { return }
         isSending = true
         defer { isSending = false }
 
@@ -316,7 +370,12 @@ struct ThreadScreen: View {
 
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.emmaLayout) private var layout: EmmaLayoutMetrics
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
     @StateObject private var store = ThreadStore()
+
+    /// Co ile sekund otwarty wątek pyta o nowe wiadomości.
+    private static let liveRefreshSeconds: UInt64 = 15
 
     var body: some View {
         VStack(spacing: 0) {
@@ -340,6 +399,14 @@ struct ThreadScreen: View {
         .navigationBarBackButtonHidden(true)
         .emmaPreservesSwipeBack()
         .task(id: dependencies.dataVersion) { await store.load(dependencies, threadID: threadID) }
+        // Odpowiedź klienta pojawia się w otwartej rozmowie sama.
+        .task(id: threadID) {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.liveRefreshSeconds * 1_000_000_000)
+                guard !Task.isCancelled, scenePhase == .active else { continue }
+                await store.refreshLatest(dependencies)
+            }
+        }
         .onDisappear {
             Task { await store.teardown(dependencies) }
         }
@@ -515,6 +582,8 @@ struct ThreadScreen: View {
     @ViewBuilder
     private func composer(_ model: ThreadStore.Model) -> some View {
         VStack(spacing: 8) {
+            replyWindowNotice(model)
+
             Button {
                 dependencies.openEmma(clientID: model.client.id, action: .reply)
             } label: {
@@ -575,7 +644,7 @@ struct ThreadScreen: View {
 
             // Gotowe odpowiedzi w języku klienta — tylko przy pustym szkicu,
             // żeby nie zasłaniały pisanej wiadomości (audyt 28.09.2026).
-            if model.draft.text.isEmpty && model.draft.quote == nil {
+            if model.draft.text.isEmpty && model.draft.quote == nil && !model.replyWindow.isClosed {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         ForEach(QuickReplies.templates(for: model.client.language)) { reply in
@@ -678,6 +747,7 @@ struct ThreadScreen: View {
         // Gotowe odpowiedzi i cytat pojawiają się płynnie, a nie skokiem.
         .animation(EmmaMotion.smooth, value: model.draft.text.isEmpty)
         .animation(EmmaMotion.smooth, value: model.draft.quote != nil)
+        .animation(EmmaMotion.smooth, value: model.replyWindow)
         .background(EmmaTheme.chatDockBackground)
         .overlay(alignment: .top) {
             Rectangle().fill(EmmaTheme.chatHeaderBorder).frame(height: 0.5)
@@ -685,7 +755,74 @@ struct ThreadScreen: View {
     }
 
     private func hasSendableDraft(_ model: ThreadStore.Model) -> Bool {
-        !model.draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !model.replyWindow.isClosed
+            && !model.draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    // MARK: Okno 24 h WhatsApp
+
+    /// Po 24 h od ostatniej wiadomości klienta WhatsApp przyjmuje tylko
+    /// zatwierdzony szablon. Zamiast odrzuconej wysyłki — jasna informacja
+    /// i telefon pod ręką; tekst można dalej przygotować w polu. Ostatnie
+    /// 3 godziny okna — spokojne ostrzeżenie z odliczaniem.
+    @ViewBuilder
+    private func replyWindowNotice(_ model: ThreadStore.Model) -> some View {
+        if case .closed(let since) = model.replyWindow {
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: "exclamationmark.bubble.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(EmmaTheme.pillDangerText)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(since == nil ? "Klient jeszcze nie pisał na WhatsApp" : "Minęło 24 h od wiadomości klienta")
+                        .font(EmmaTypography.caption(.semibold))
+                        .foregroundStyle(EmmaTheme.ink)
+                    Text("WhatsApp przyjmie teraz tylko zatwierdzony szablon. Zadzwoń albo poczekaj, aż klient napisze.")
+                        .font(EmmaTypography.caption())
+                        .foregroundStyle(EmmaTheme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if let phoneURL = model.client.phone.flatMap(ContactLinks.phoneURL) {
+                    Button {
+                        EmmaHaptics.tap()
+                        openURL(phoneURL)
+                    } label: {
+                        Label("Zadzwoń", systemImage: "phone.fill")
+                            .font(EmmaTypography.caption(.semibold))
+                            .foregroundStyle(EmmaTheme.primaryButtonText)
+                            .padding(.horizontal, 12)
+                            .frame(minHeight: 34)
+                            .background(EmmaTheme.primaryButton, in: Capsule())
+                            .frame(minHeight: EmmaSpacing.hitTarget)
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(EmmaCardButtonStyle())
+                    .accessibilityLabel("Zadzwoń do \(model.client.displayName)")
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(EmmaTheme.pillDangerBackground)
+            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous))
+            .accessibilityElement(children: .contain)
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+        } else {
+            TimelineView(.periodic(from: .now, by: 60)) { _ in
+                let now = dependencies.now
+                if model.replyWindow.isClosingSoon(now: now),
+                   let left = model.replyWindow.remainingText(now: now) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "hourglass")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("Okno odpowiedzi WhatsApp zamyka się za \(left)")
+                            .font(EmmaTypography.caption(.medium))
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundStyle(EmmaTheme.pillAmberText)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
     }
 }
 
