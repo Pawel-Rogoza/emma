@@ -94,6 +94,21 @@ final class MessagesStore: ObservableObject {
         var repliedCount: Int {
             allRows.filter { !$0.status.needsReply }.count
         }
+
+        /// Rozmowa każdego klienta (przy kilku wątkach — ta, która jest wyżej
+        /// na liście) — do znaczników w kartotece.
+        var rowsByClient: [ClientID: Row] {
+            Dictionary(allRows.map { ($0.client.id, $0) }, uniquingKeysWith: { lhs, rhs in
+                lhs.sortKey < rhs.sortKey ? lhs : rhs
+            })
+        }
+
+        /// Rozmowy z nowymi wiadomościami — najdłużej czekający klient najpierw.
+        var unreadRows: [Row] {
+            allRows
+                .filter { $0.unreadCount > 0 }
+                .sorted { ($0.waitingSince ?? .distantFuture) < ($1.waitingSince ?? .distantFuture) }
+        }
     }
 
     @Published private(set) var phase: LoadPhase<Model> = .idle
@@ -108,8 +123,9 @@ final class MessagesStore: ObservableObject {
     func load(_ dependencies: AppDependencies, silent: Bool = false) async {
         // Odświeżenie po zapisie nie zdejmuje listy z ekranu (jak na „Dzisiaj”).
         let wasLoaded = phase.hasLoaded
-        if silent && !wasLoaded { return }
-        if !wasLoaded { phase = .loading }
+        // Ciche pierwsze wczytanie (z „Dzisiaj” i „Klientów”) nie pokazuje
+        // szkieletu ani błędu — tamte ekrany po prostu nie dostaną znaczników.
+        if !wasLoaded && !silent { phase = .loading }
         do {
             let repository = dependencies.repository
             let userID = dependencies.currentUser.id

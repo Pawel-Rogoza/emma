@@ -24,51 +24,102 @@ struct ClientDirectoryCard: View {
     var isStale = false
     let onOpen: () -> Void
 
+    /// Rozmowa WhatsApp klienta (z listy „Rozmowy”) — „2 nowe”, „czeka 3 godz.”.
+    var conversation: MessagesStore.Row? = nil
+    var onOpenConversation: ((ThreadID) -> Void)? = nil
+
+    // Level up 30.09.2026: telefon był tylko pod przesunięciem, którego nikt
+    // nie odkrywa. Teraz karta ma widoczny przycisk „Zadzwoń” zamiast strzałki,
+    // a aktywność WhatsApp (nowe wiadomości, czekanie na odpowiedź) jest w linii
+    // stanu — bez wchodzenia w Rozmowy.
     var body: some View {
-        Button(action: onOpen) {
-            HStack(alignment: .center, spacing: 12) {
-                PersonAvatar(initials: client.initials, style: .identity(client.id), diameter: 44)
+        HStack(spacing: 0) {
+            Button(action: onOpen) {
+                HStack(alignment: .center, spacing: 12) {
+                    PersonAvatar(initials: client.initials, style: .identity(client.id), diameter: 44)
+                        .overlay(alignment: .topTrailing) {
+                            if let unread = conversation?.unreadCount, unread > 0 {
+                                UnreadBadge(count: unread, compact: true)
+                                    .offset(x: 5, y: -4)
+                                    .transition(.scale.combined(with: .opacity))
+                            }
+                        }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 7) {
-                        Text(client.displayName)
-                            .font(EmmaTypography.personName)
-                            .foregroundStyle(EmmaTheme.ink)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 7) {
+                            Text(client.displayName)
+                                .font(EmmaTypography.personName)
+                                .foregroundStyle(EmmaTheme.ink)
+                                .lineLimit(1)
+                            LanguageBadge(language: client.language)
+                        }
+                        Text(casesText)
+                            .font(EmmaTypography.body(for: casesText, size: 13))
+                            .foregroundStyle(EmmaTheme.muted)
                             .lineLimit(1)
-                        LanguageBadge(language: client.language)
+                        if hasMeta {
+                            metaLine
+                        }
                     }
-                    Text(casesText)
-                        .font(EmmaTypography.body(for: casesText, size: 13))
-                        .foregroundStyle(EmmaTheme.muted)
-                        .lineLimit(1)
-                    if hasMeta {
-                        metaLine
-                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .padding(EdgeInsets(top: 13, leading: 14, bottom: 13, trailing: 6))
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("client-card")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityText)
+            .accessibilityHint("Otwiera kartę klienta. Przesuń, aby zadzwonić albo umówić termin.")
+            .accessibilityAddTraits(.isButton)
 
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(EmmaTheme.mutedSoft)
-            }
-            .padding(EdgeInsets(top: 13, leading: 14, bottom: 13, trailing: 14))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(EmmaTheme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
-                    .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
-            }
-            .emmaCardShadow()
-            .contentShape(Rectangle())
+            trailingAction
         }
-        .buttonStyle(EmmaCardButtonStyle())
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(EmmaTheme.surface)
+        // Nowa wiadomość od klienta — pasek z lewej jak na karcie rozmowy.
+        .overlay(alignment: .leading) {
+            if (conversation?.unreadCount ?? 0) > 0 {
+                Rectangle().fill(EmmaTheme.unreadBadge).frame(width: 3)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
+                .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
+        }
+        .emmaCardShadow()
         .contextMenu { menu }
-        .accessibilityIdentifier("client-card")
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityText)
-        .accessibilityHint("Otwiera kartę klienta. Przesuń, aby zadzwonić albo umówić termin.")
-        .accessibilityAddTraits(.isButton)
+        .animation(EmmaMotion.bouncy, value: conversation?.unreadCount)
+    }
+
+    /// Telefon jednym dotknięciem; bez numeru — zwykła strzałka.
+    @ViewBuilder
+    private var trailingAction: some View {
+        if let phoneURL = client.phone.flatMap(ContactLinks.phoneURL) {
+            Button {
+                EmmaHaptics.tap()
+                openURL(phoneURL)
+            } label: {
+                Image(systemName: "phone.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(EmmaTheme.accent)
+                    .frame(width: 38, height: 38)
+                    .background(EmmaTheme.accentSoft, in: Circle())
+                    .frame(width: 54)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(EmmaCardButtonStyle())
+            .accessibilityLabel("Zadzwoń do \(client.displayName)")
+        } else {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(EmmaTheme.mutedSoft)
+                .padding(.trailing, 14)
+                .accessibilityHidden(true)
+        }
     }
 
     // MARK: Treść
@@ -93,11 +144,30 @@ struct ClientDirectoryCard: View {
     }
 
     private var hasMeta: Bool {
-        missedEvent != nil || nextEvent != nil || overdueTaskCount > 0 || isStale
+        missedEvent != nil || nextEvent != nil || overdueTaskCount > 0 || isStale || conversationText != nil
+    }
+
+    /// „2 nowe wiadomości” albo „Czeka 3 godz.” — tylko gdy ruch jest nasz.
+    private var conversationText: String? {
+        guard let conversation, conversation.status.needsReply else { return nil }
+        if conversation.unreadCount > 0 {
+            return EmmaPlural.label(conversation.unreadCount, "nowa wiadomość", "nowe wiadomości", "nowych wiadomości")
+        }
+        guard let since = conversation.waitingSince else { return "Czeka na odpowiedź" }
+        return "Czeka \(ConversationInbox.waitingText(since: since, now: dependencies.now))"
     }
 
     private var metaLine: some View {
         HStack(spacing: 10) {
+            if let conversationText {
+                Label {
+                    Text(conversationText)
+                        .font(EmmaTypography.caption(.semibold))
+                } icon: {
+                    Image(systemName: "bubble.left.fill").font(.system(size: 11, weight: .semibold))
+                }
+                .foregroundStyle((conversation?.unreadCount ?? 0) > 0 ? EmmaTheme.unreadBadge : EmmaTheme.pillAmberText)
+            }
             if let missedEvent {
                 Label {
                     Text("Minął: \(dependencies.dateText.dayLabel(missedEvent.day))")
@@ -148,6 +218,13 @@ struct ClientDirectoryCard: View {
 
     @ViewBuilder
     private var menu: some View {
+        if let conversation, let onOpenConversation {
+            Button {
+                onOpenConversation(conversation.thread.id)
+            } label: {
+                Label("Otwórz rozmowę", systemImage: "bubble.left.and.bubble.right")
+            }
+        }
         Button {
             dependencies.present(.eventForm(editing: nil, clientID: client.id, caseID: nil, initialDay: nil))
         } label: {
@@ -174,6 +251,7 @@ struct ClientDirectoryCard: View {
 
     private var accessibilityText: String {
         var parts = [client.displayName, client.language.displayName, casesText]
+        if let conversationText { parts.append(conversationText) }
         if let missedEvent {
             parts.append("minął termin \(missedEvent.title), \(dependencies.dateText.dayLabel(missedEvent.day))")
         } else if let nextEvent {

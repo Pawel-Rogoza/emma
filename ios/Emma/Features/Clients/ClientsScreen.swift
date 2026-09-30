@@ -38,6 +38,8 @@ struct ClientsScreen: View {
     /// Magazyn żyje w `AppDependencies`, więc powrót na zakładkę nie mruga
     /// stanem ładowania, a lista od razu pokazuje ostatni stan.
     @ObservedObject var store: ClientsStore
+    /// Rozmowy WhatsApp — znaczniki „2 nowe” i „czeka” na kartach kartoteki.
+    @ObservedObject var messages: MessagesStore
 
     @State private var search = ""
     @FocusState private var searchFocused: Bool
@@ -63,8 +65,12 @@ struct ClientsScreen: View {
             .environment(\.defaultMinListRowHeight, 0)
         }
         .background(EmmaTheme.bg)
-        .refreshable { await store.load(dependencies) }
+        .refreshable {
+            await store.load(dependencies)
+            await messages.load(dependencies, silent: true)
+        }
         .task(id: dependencies.dataVersion) { await store.load(dependencies) }
+        .task { await messages.load(dependencies, silent: true) }
         .onAppear {
             consumePendingFilter()
             consumePendingSearch()
@@ -488,6 +494,7 @@ struct ClientsScreen: View {
         }
         let leads = matchingLeads(model)
         let recent = recentClients(model)
+        let conversations = messages.phase.value?.rowsByClient ?? [:]
         if search.isEmpty && clientFilter == .all && !recent.isEmpty {
             RecentClientsStrip(clients: recent, horizontalPadding: layout.horizontalPadding) { client in
                 dependencies.openPerson(client.id)
@@ -506,7 +513,7 @@ struct ClientsScreen: View {
                 GroupHeader(title: section.letter, count: section.clients.count, tone: nil, emphasized: false)
                     .emmaListRow(top: 12, bottom: 2, horizontal: layout.horizontalPadding)
                 ForEach(Array(section.clients.enumerated()), id: \.element.id) { offset, client in
-                    directoryRow(client, model: model)
+                    directoryRow(client, model: model, conversation: conversations[client.id])
                         .emmaAppear(offset)
                 }
             }
@@ -525,7 +532,7 @@ struct ClientsScreen: View {
     /// Wiersz kartoteki. Przesunięcia dają dwie rzeczy, które adwokat robi
     /// z listą klientów najczęściej: zadzwonić i umówić termin — bez
     /// otwierania karty i bez szukania menu pod przytrzymaniem.
-    private func directoryRow(_ client: Client, model: ClientsModel) -> some View {
+    private func directoryRow(_ client: Client, model: ClientsModel, conversation: MessagesStore.Row?) -> some View {
         let phoneURL = client.phone.flatMap(ContactLinks.phoneURL)
         let whatsAppURL = client.phone.flatMap(ContactLinks.whatsAppURL)
         return ClientDirectoryCard(
@@ -535,7 +542,9 @@ struct ClientsScreen: View {
             missedEvent: model.missedClientEvents[client.id],
             overdueTaskCount: model.clientOverdueTaskCounts[client.id] ?? 0,
             isStale: model.staleClients.contains(client.id),
-            onOpen: { dependencies.openPerson(client.id) }
+            onOpen: { dependencies.openPerson(client.id) },
+            conversation: conversation,
+            onOpenConversation: { dependencies.openThread($0) }
         )
         .emmaListRow(top: 5, bottom: 5, horizontal: layout.horizontalPadding)
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
@@ -930,6 +939,6 @@ struct ListFilterChips<Item: Hashable>: View {
 
 #Preview("Klienci") {
     let dependencies = AppDependencies.demo()
-    return ClientsScreen(store: dependencies.clientsStore)
+    return ClientsScreen(store: dependencies.clientsStore, messages: dependencies.messagesStore)
         .environmentObject(dependencies)
 }

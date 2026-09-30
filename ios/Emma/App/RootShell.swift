@@ -122,9 +122,9 @@ public struct RootShell: View {
     private var content: some View {
         switch dependencies.tab {
         case .today:
-            TabContent(tab: .today) { TodayScreen(store: dependencies.todayStore) }
+            TabContent(tab: .today) { TodayScreen(store: dependencies.todayStore, messages: dependencies.messagesStore) }
         case .clients:
-            TabContent(tab: .clients) { ClientsScreen(store: dependencies.clientsStore) }
+            TabContent(tab: .clients) { ClientsScreen(store: dependencies.clientsStore, messages: dependencies.messagesStore) }
         case .emma:
             TabContent(tab: .emma) { AssistantScreen() }
         case .messages:

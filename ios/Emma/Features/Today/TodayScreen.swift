@@ -128,6 +128,8 @@ struct TodayScreen: View {
     /// Magazyn żyje w `AppDependencies` — powrót na zakładkę pokazuje od razu
     /// ostatni stan dnia zamiast „Przygotowuję dzień…”.
     @ObservedObject var store: TodayStore
+    /// Rozmowy WhatsApp — karta „Napisali” z imionami i początkiem wiadomości.
+    @ObservedObject var messages: MessagesStore
     /// Termin czekający na potwierdzenie usunięcia. Usunięcie jest nieodwracalne
     /// (demo nie ma kosza), więc pytamy — ale dopiero po wybraniu z menu.
     @State private var eventPendingDeletion: ScheduledEvent?
@@ -156,8 +158,14 @@ struct TodayScreen: View {
         }
         .background(EmmaTheme.bg)
         .scrollIndicators(.hidden)
-        .refreshable { await store.load(dependencies) }
+        .refreshable {
+            await store.load(dependencies)
+            await messages.load(dependencies, silent: true)
+        }
         .task(id: dependencies.dataVersion) { await store.load(dependencies) }
+        // Przy każdym wejściu na „Dzisiaj” — przeczytana w międzyczasie rozmowa
+        // znika z „Napisali”, a nowa się pojawia.
+        .task { await messages.load(dependencies, silent: true) }
         .task { offersNotifications = await dependencies.reminders.shouldOfferPermission() }
         .confirmationDialog(
             "Usunąć termin?",
@@ -236,7 +244,15 @@ struct TodayScreen: View {
 
         // Pod najbliższym terminem, nie nad nim — termin i kafelki zostają
         // w pierwszym widoku (test `testNextEventAndTaskEntryAreAboveTheFold`).
-        if dependencies.unreadTotal > 0 {
+        if let rows = messages.phase.value?.unreadRows, !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                SectionHeader("Napisali", actionTitle: "Rozmowy", compact: true) {
+                    openUnreadConversations()
+                }
+                writersCard(rows)
+            }
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        } else if dependencies.unreadTotal > 0 {
             unreadMessagesBar(dependencies.unreadTotal)
                 .padding(.top, 12)
                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -413,12 +429,100 @@ struct TodayScreen: View {
     /// Klient napisał na WhatsApp — pasek nad planem dnia, jedno dotknięcie
     /// otwiera Rozmowy z filtrem „Nowe”. Bez niego wiadomość było widać tylko
     /// po liczniku na zakładce.
+    private func openUnreadConversations() {
+        EmmaHaptics.tap()
+        messages.searchText = ""
+        messages.filter = .unread
+        dependencies.go(to: .messages)
+    }
+
+    /// „Napisali”: do trzech osób z nowymi wiadomościami — kto, co napisał
+    /// i jak długo czeka. Dotknięcie otwiera od razu tę rozmowę, a nie listę.
+    private func writersCard(_ rows: [MessagesStore.Row]) -> some View {
+        let shown = Array(rows.prefix(3))
+        return VStack(spacing: 0) {
+            ForEach(Array(shown.enumerated()), id: \.element.id) { index, row in
+                if index > 0 {
+                    Divider().overlay(EmmaTheme.rowSeparator).padding(.leading, 62)
+                }
+                writerRow(row)
+            }
+            if rows.count > shown.count {
+                Divider().overlay(EmmaTheme.rowSeparator)
+                Button {
+                    openUnreadConversations()
+                } label: {
+                    Text("Jeszcze \(rows.count - shown.count) · wszystkie nowe")
+                        .font(EmmaTypography.caption(.semibold))
+                        .foregroundStyle(EmmaTheme.accent)
+                        .frame(maxWidth: .infinity, minHeight: EmmaSpacing.hitTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .background(EmmaTheme.surface)
+        .overlay(alignment: .leading) {
+            Rectangle().fill(EmmaTheme.unreadBadge).frame(width: 3)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
+                .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
+        }
+        .emmaCardShadow()
+        .animation(EmmaMotion.smooth, value: rows.map(\.id))
+    }
+
+    private func writerRow(_ row: MessagesStore.Row) -> some View {
+        let preview = row.preview?.text ?? ""
+        return Button {
+            EmmaHaptics.tap()
+            dependencies.openThread(row.thread.id)
+        } label: {
+            HStack(alignment: .top, spacing: 11) {
+                PersonAvatar(initials: row.client.initials, style: .identity(row.client.id), diameter: 38)
+                    .overlay(alignment: .topTrailing) {
+                        UnreadBadge(count: row.unreadCount, compact: true)
+                            .offset(x: 5, y: -4)
+                    }
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(row.client.displayName)
+                            .font(EmmaTypography.ui(14, .semibold))
+                            .foregroundStyle(EmmaTheme.ink)
+                            .lineLimit(1)
+                        LanguageBadge(language: row.client.language)
+                        Spacer(minLength: 4)
+                        if let since = row.waitingSince {
+                            Text("czeka \(ConversationInbox.waitingText(since: since, now: dependencies.now))")
+                                .font(EmmaTypography.caption(.medium))
+                                .foregroundStyle(
+                                    ConversationInbox.isWaitingLong(since: since, now: dependencies.now)
+                                        ? EmmaTheme.pillAmberText : EmmaTheme.mutedSoft
+                                )
+                                .fixedSize()
+                        }
+                    }
+                    Text(preview)
+                        .font(EmmaTypography.body(for: preview, size: 13))
+                        .foregroundStyle(EmmaTheme.muted)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Otwiera rozmowę")
+    }
+
     private func unreadMessagesBar(_ count: Int) -> some View {
         Button {
-            EmmaHaptics.tap()
-            dependencies.messagesStore.searchText = ""
-            dependencies.messagesStore.filter = .unread
-            dependencies.go(to: .messages)
+            openUnreadConversations()
         } label: {
             HStack(spacing: 11) {
                 Image(systemName: "bubble.left.and.text.bubble.right.fill")
@@ -1054,6 +1158,6 @@ private struct TaskEntry: Identifiable {
 
 #Preview("Dzisiaj") {
     let dependencies = AppDependencies.demo()
-    return TodayScreen(store: dependencies.todayStore)
+    return TodayScreen(store: dependencies.todayStore, messages: dependencies.messagesStore)
         .environmentObject(dependencies)
 }
