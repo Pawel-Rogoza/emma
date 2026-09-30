@@ -693,6 +693,7 @@ struct EventDetailSheet: View {
     let eventID: EventID
 
     @EnvironmentObject private var dependencies: AppDependencies
+    @Environment(\.openURL) private var openURL
     @State private var phase: LoadPhase<ScheduledEvent> = .idle
     @State private var client: Client?
     @State private var reminder: ReminderOffset = .standard
@@ -739,12 +740,35 @@ struct EventDetailSheet: View {
 
         FormCard {
             if !event.place.isEmpty {
-                FormRow(systemImage: "mappin.and.ellipse", title: "Miejsce") {
-                    Text(event.place)
-                        .font(EmmaTypography.ui(15))
-                        .foregroundStyle(EmmaTheme.ink)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.trailing)
+                // Sąd czy komisariat — jedno dotknięcie do nawigacji w Mapach.
+                if let mapsURL = ContactLinks.mapsURL(event.place) {
+                    Button {
+                        openURL(mapsURL)
+                    } label: {
+                        FormRow(systemImage: "mappin.and.ellipse", title: "Miejsce") {
+                            HStack(spacing: 6) {
+                                Text(event.place)
+                                    .font(EmmaTypography.ui(15))
+                                    .foregroundStyle(EmmaTheme.accent)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.trailing)
+                                Image(systemName: "arrow.triangle.turn.up.right.diamond")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(EmmaTheme.accent)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Otwiera nawigację w Mapach")
+                } else {
+                    FormRow(systemImage: "mappin.and.ellipse", title: "Miejsce") {
+                        Text(event.place)
+                            .font(EmmaTypography.ui(15))
+                            .foregroundStyle(EmmaTheme.ink)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.trailing)
+                    }
                 }
                 FormDivider()
             }

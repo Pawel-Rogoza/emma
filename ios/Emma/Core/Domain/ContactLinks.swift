@@ -50,4 +50,27 @@ public enum ContactLinks {
         guard parts[0].allSatisfy(localAllowed.contains), parts[1].allSatisfy(domainAllowed.contains) else { return nil }
         return URL(string: "mailto:\(trimmed)")
     }
+
+    /// Nawigacja do miejsca terminu w Mapach Apple („Sąd Rejonowy, sala 214”).
+    /// `nil` dla miejsc, do których się nie jedzie: kancelaria (to „u siebie”),
+    /// rozmowa online i telefoniczna, pusty tekst. Sala („sala 214”, „s. 12”)
+    /// nie pomaga Mapom, więc wycinamy ją z zapytania.
+    public static func mapsURL(_ place: String) -> URL? {
+        let trimmed = place.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowered = trimmed.lowercased()
+        let notAPlace = ["kancelaria", "online", "telefonicznie", "telefon", "zoom", "teams", "wideo"]
+        guard trimmed.count >= 3, !notAPlace.contains(lowered) else { return nil }
+        let withoutRoom = trimmed
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { part in
+                let lower = part.lowercased()
+                return !(lower.hasPrefix("sala") || lower.hasPrefix("s.") || lower.hasPrefix("pok.") || lower.hasPrefix("pokój"))
+            }
+            .joined(separator: ", ")
+        let query = withoutRoom.isEmpty ? trimmed : withoutRoom
+        var components = URLComponents(string: "https://maps.apple.com/")
+        components?.queryItems = [URLQueryItem(name: "q", value: query)]
+        return components?.url
+    }
 }

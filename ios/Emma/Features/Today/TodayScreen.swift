@@ -124,6 +124,7 @@ struct TodayScreen: View {
 
     @EnvironmentObject private var dependencies: AppDependencies
     @Environment(\.emmaLayout) private var layout: EmmaLayoutMetrics
+    @Environment(\.openURL) private var openURL
     /// Magazyn żyje w `AppDependencies` — powrót na zakładkę pokazuje od razu
     /// ostatni stan dnia zamiast „Przygotowuję dzień…”.
     @ObservedObject var store: TodayStore
@@ -233,6 +234,14 @@ struct TodayScreen: View {
         }
         .emmaAppear(4)
 
+        // Pod najbliższym terminem, nie nad nim — termin i kafelki zostają
+        // w pierwszym widoku (test `testNextEventAndTaskEntryAreAboveTheFold`).
+        if dependencies.unreadTotal > 0 {
+            unreadMessagesBar(dependencies.unreadTotal)
+                .padding(.top, 12)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+
         if !agenda.upcoming.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
                 SectionHeader("Dalej dziś", actionTitle: "Kalendarz", compact: true) {
@@ -291,6 +300,9 @@ struct TodayScreen: View {
         }
         if summary.hasOverdue {
             parts.append(EmmaPlural.overdueTasks(summary.overdue))
+        }
+        if dependencies.unreadTotal > 0 {
+            parts.append(EmmaPlural.label(dependencies.unreadTotal, "nowa wiadomość", "nowe wiadomości", "nowych wiadomości"))
         }
         return parts.isEmpty ? "Spokojny dzień — nic nie goni." : parts.joined(separator: " · ")
     }
@@ -394,6 +406,58 @@ struct TodayScreen: View {
         }
         .accessibilityLabel("Porozmawiaj z Emmą")
         .accessibilityHint("Zaczyna rozmowę głosową. Przytrzymaj, aby napisać do Emmy.")
+    }
+
+    // MARK: Nowe wiadomości
+
+    /// Klient napisał na WhatsApp — pasek nad planem dnia, jedno dotknięcie
+    /// otwiera Rozmowy z filtrem „Nowe”. Bez niego wiadomość było widać tylko
+    /// po liczniku na zakładce.
+    private func unreadMessagesBar(_ count: Int) -> some View {
+        Button {
+            EmmaHaptics.tap()
+            dependencies.messagesStore.searchText = ""
+            dependencies.messagesStore.filter = .unread
+            dependencies.go(to: .messages)
+        } label: {
+            HStack(spacing: 11) {
+                Image(systemName: "bubble.left.and.text.bubble.right.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(EmmaTheme.unreadBadge)
+                    .frame(width: 34, height: 34)
+                    .background(EmmaTheme.unreadDivider, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(EmmaPlural.label(count, "nowa wiadomość", "nowe wiadomości", "nowych wiadomości"))
+                        .font(EmmaTypography.ui(14, .semibold))
+                        .foregroundStyle(EmmaTheme.ink)
+                        .contentTransition(.numericText())
+                    Text("WhatsApp · dotknij, aby odpisać")
+                        .font(EmmaTypography.caption())
+                        .foregroundStyle(EmmaTheme.muted)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(EmmaTheme.mutedSoft)
+            }
+            .padding(.horizontal, 13)
+            .padding(.vertical, 10)
+            .background(EmmaTheme.surface)
+            // Pasek z lewej jak na karcie nieprzeczytanej rozmowy — przycięty razem z kartą.
+            .overlay(alignment: .leading) {
+                Rectangle().fill(EmmaTheme.unreadBadge).frame(width: 3)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
+                    .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
+            }
+            .emmaCardShadow()
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(EmmaCardButtonStyle())
+        .animation(EmmaMotion.bouncy, value: count)
+        .accessibilityHint("Otwiera nieprzeczytane rozmowy")
     }
 
     // MARK: Zgoda na powiadomienia
@@ -652,9 +716,34 @@ struct TodayScreen: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     if !event.place.isEmpty {
-                        Label(event.place, systemImage: "mappin.and.ellipse")
-                            .font(EmmaTypography.caption())
-                            .foregroundStyle(EmmaTheme.mutedSoft)
+                        // Rozprawa w sądzie — „Prowadź” otwiera nawigację w Mapach.
+                        if let mapsURL = ContactLinks.mapsURL(event.place) {
+                            Button {
+                                EmmaHaptics.tap()
+                                openURL(mapsURL)
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Label(event.place, systemImage: "mappin.and.ellipse")
+                                        .font(EmmaTypography.caption())
+                                        .foregroundStyle(EmmaTheme.muted)
+                                        .lineLimit(1)
+                                    Text("Prowadź")
+                                        .font(EmmaTypography.caption(.semibold))
+                                        .foregroundStyle(EmmaTheme.accent)
+                                    Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(EmmaTheme.accent)
+                                }
+                                .frame(minHeight: 28)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("\(event.place), prowadź w Mapach")
+                        } else {
+                            Label(event.place, systemImage: "mappin.and.ellipse")
+                                .font(EmmaTypography.caption())
+                                .foregroundStyle(EmmaTheme.mutedSoft)
+                        }
                     }
 
                     // Linki do powiązanych rekordów: osoba i sprawa jednym dotknięciem.

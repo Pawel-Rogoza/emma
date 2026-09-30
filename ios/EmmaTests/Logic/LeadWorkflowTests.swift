@@ -197,4 +197,22 @@ final class LeadWorkflowTests: XCTestCase {
         XCTAssertEqual(DemoFixtures.andrii.phone, "+48 600 100 200")
         XCTAssertNotNil(DemoFixtures.maria.email)
     }
+
+    // MARK: Nawigacja do miejsca terminu
+
+    func testMapsLinkSkipsPlacesYouDoNotDriveTo() {
+        XCTAssertNil(ContactLinks.mapsURL(""))
+        XCTAssertNil(ContactLinks.mapsURL("Kancelaria"))
+        XCTAssertNil(ContactLinks.mapsURL("Online"))
+        XCTAssertNil(ContactLinks.mapsURL("telefonicznie"))
+    }
+
+    func testMapsLinkDropsCourtroomFromQuery() throws {
+        let url = try XCTUnwrap(ContactLinks.mapsURL("Sąd Rejonowy dla Warszawy-Mokotowa, sala 214"))
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?.first { $0.name == "q" }?.value
+        XCTAssertEqual(query, "Sąd Rejonowy dla Warszawy-Mokotowa")
+        XCTAssertEqual(url.host, "maps.apple.com")
+        XCTAssertNotNil(ContactLinks.mapsURL("Sąd"), "Samo „Sąd” to nadal miejsce do wyszukania")
+    }
 }
