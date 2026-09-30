@@ -45,6 +45,9 @@ struct EventFormSheet: View {
     @State private var confirmsDelete = false
     /// Czy użytkownik sam zmienił nazwę — wtedy wybór klienta jej nie nadpisuje.
     @State private var titleEdited = false
+    /// Kalkulator terminu procesowego: czynność i dzień, od którego biegnie termin.
+    @State private var deadlineRule: DeadlineRule?
+    @State private var deadlineFrom = Date()
 
     private static let placeSuggestions = ["Kancelaria", "Online", "Telefonicznie", "Sąd"]
 
@@ -55,6 +58,10 @@ struct EventFormSheet: View {
             }
 
             whatSection
+            if kind == .caseDeadline {
+                deadlineSection
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
             whenSection
             whoSection
             whereSection
@@ -137,7 +144,8 @@ struct EventFormSheet: View {
                 title = defaultTitle(for: candidate)
                 titleEdited = false
             }
-            kind = candidate
+            // Sekcja „Policz termin” wjeżdża płynnie przy „Termin w sprawie”.
+            withAnimation(EmmaMotion.smooth) { kind = candidate }
         } label: {
             Label(candidate.displayTitle, systemImage: systemImage)
                 .font(EmmaTypography.ui(14, isSelected ? .semibold : .medium))
@@ -178,6 +186,128 @@ struct EventFormSheet: View {
             }
             .padding(.top, 4)
         }
+    }
+
+    // MARK: Termin procesowy
+
+    /// „Apelacja — 14 dni od doręczenia wyroku” → data terminu policzona sama,
+    /// z przesunięciem z soboty i dni ustawowo wolnych. Wybór czynności
+    /// ustawia datę w sekcji „Kiedy”; tam wciąż można ją zmienić ręcznie.
+    private var deadlineSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            FormSectionLabel("Policz termin")
+            FormCard {
+                FormRow(systemImage: "building.columns", title: "Czynność") {
+                    Menu {
+                        Button("Bez liczenia") { deadlineRule = nil }
+                        ForEach(ProceduralDeadlines.common) { rule in
+                            Button("\(rule.title) · \(rule.spanText)") { deadlineRule = rule }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(deadlineRule.map { "\($0.title) · \($0.spanText)" } ?? "Wybierz")
+                                .font(EmmaTypography.ui(15, .medium))
+                                .foregroundStyle(EmmaTheme.accent)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(EmmaTheme.accent)
+                        }
+                    }
+                    .accessibilityIdentifier("event-deadline-rule")
+                }
+                if deadlineRule != nil {
+                    FormDivider()
+                    FormRow(
+                        systemImage: deadlineRule?.isHourly == true ? "person.badge.clock" : "envelope.open",
+                        title: deadlineRule?.isHourly == true ? "Zatrzymanie" : "Liczone od"
+                    ) {
+                        // Zatrzymanie liczy się co do godziny — stąd także godzina.
+                        DatePicker(
+                            "Liczone od",
+                            selection: $deadlineFrom,
+                            displayedComponents: deadlineRule?.isHourly == true ? [.date, .hourAndMinute] : .date
+                        )
+                            .labelsHidden()
+                            .accessibilityIdentifier("event-deadline-from")
+                    }
+                }
+            }
+            if let rule = deadlineRule {
+                deadlineExplanation(rule)
+                    .padding(.top, 6)
+                    .padding(.horizontal, 4)
+            } else {
+                Text("Wybierz czynność — Emma policzy ostatni dzień z sobotami i świętami.")
+                    .font(EmmaTypography.caption())
+                    .foregroundStyle(EmmaTheme.mutedSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 6)
+                    .padding(.horizontal, 4)
+            }
+        }
+        .animation(EmmaMotion.snappy, value: deadlineRule)
+        .onChange(of: deadlineRule) { old, rule in
+            if rule == nil {
+                if !titleEdited { title = defaultTitle(for: kind) }
+                return
+            }
+            // Zatrzymanie trwa teraz — domyślnie liczymy od bieżącej chwili.
+            if rule?.isHourly == true, old?.isHourly != true {
+                deadlineFrom = dependencies.now
+            }
+            applyDeadline()
+        }
+        .onChange(of: deadlineFrom) { _, _ in applyDeadline() }
+    }
+
+    private func deadlineExplanation(_ rule: DeadlineRule) -> some View {
+        var lines: [String] = []
+        var shifted = false
+        switch rule.span {
+        case .days(let days):
+            let result = ProceduralDeadlines.due(from: FirmDateTime.day(of: deadlineFrom), days: days)
+            lines.append("Ostatni dzień: \(dependencies.dateText.dayTitle(result.due)).")
+            lines.append("\(rule.spanText) \(rule.startsFrom) (\(rule.legalBasis)).")
+            if let reason = result.shiftReason {
+                shifted = true
+                lines.append("\(result.nominal.day) \(Self.monthGenitive(result.nominal.month)) to \(reason) — termin przesunięty na najbliższy dzień roboczy.")
+            }
+            lines.append("Sprawdź datę z pouczeniem.")
+        case .hours(let hours):
+            let end = ProceduralDeadlines.due(from: deadlineFrom, hours: hours)
+            lines.append("Koniec: \(dependencies.dateText.dayTitle(FirmDateTime.day(of: end))), \(FirmDateTime.time(of: end).hhmm).")
+            lines.append("\(rule.spanText) \(rule.startsFrom) (\(rule.legalBasis)).")
+            lines.append("Zegar biegnie też w weekend i święta.")
+            shifted = true
+        }
+        return Text(lines.joined(separator: " "))
+            .font(EmmaTypography.caption())
+            .foregroundStyle(shifted ? EmmaTheme.pillAmberText : EmmaTheme.muted)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("event-deadline-explanation")
+    }
+
+    private static func monthGenitive(_ month: Int) -> String {
+        ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca",
+         "sierpnia", "września", "października", "listopada", "grudnia"][max(0, min(11, month - 1))]
+    }
+
+    /// Ustawia datę terminu z kalkulatora i nazwę („Apelacja — Jan Kowalski”),
+    /// dopóki użytkownik nie wpisał własnej.
+    private func applyDeadline() {
+        // Bez wybranej czynności nic nie liczymy — edycja istniejącego terminu
+        // nie może zmienić jego daty ani nazwy.
+        guard let rule = deadlineRule else { return }
+        switch rule.span {
+        case .days(let days):
+            let result = ProceduralDeadlines.due(from: FirmDateTime.day(of: deadlineFrom), days: days)
+            start = FirmDateTime.date(day: result.due, time: FirmDateTime.time(of: start))
+        case .hours(let hours):
+            start = ProceduralDeadlines.due(from: deadlineFrom, hours: hours)
+        }
+        if !titleEdited { title = defaultTitle(for: kind) }
     }
 
     private func dayChip(_ label: String, offset: Int) -> some View {
@@ -293,7 +423,7 @@ struct EventFormSheet: View {
     }
 
     private func defaultTitle(for kind: EventKind) -> String {
-        let base = kind == .consultation ? "Konsultacja" : "Termin w sprawie"
+        let base = kind == .consultation ? "Konsultacja" : (deadlineRule?.title ?? "Termin w sprawie")
         guard let selectedClient, let name = clients.first(where: { $0.id == selectedClient })?.displayName else {
             return base
         }
@@ -308,6 +438,8 @@ struct EventFormSheet: View {
         selectedClient = clientID
         let day = initialDay ?? dependencies.today
         start = FirmDateTime.date(day: day, time: Self.suggestedTime(for: day, dependencies: dependencies))
+        // Termin procesowy zwykle liczy się od dzisiejszego doręczenia.
+        deadlineFrom = FirmDateTime.date(day: dependencies.today, time: FirmDateTime.time(of: start))
         reminder = dependencies.reminders.preferences.defaultOffset
         title = defaultTitle(for: kind)
 
