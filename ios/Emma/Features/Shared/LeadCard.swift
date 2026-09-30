@@ -122,6 +122,9 @@ struct LeadCard: View {
     private let onReopen: (() async -> Void)?
     private let onRename: (() -> Void)?
     private let onDelete: (() -> Void)?
+    /// Rozmowa WhatsApp zgłoszenia — nowy numer, który sam napisał, jest leadem.
+    private let conversation: MessagesStore.Row?
+    private let onOpenConversation: ((ThreadID) -> Void)?
 
     /// Natychmiastowe „odhaczenie”, zanim wróci zapis — odpowiedź na dotknięcie
     /// nie może czekać na sieć.
@@ -134,8 +137,12 @@ struct LeadCard: View {
         onMarkHandled: (() async -> Void)? = nil,
         onReopen: (() async -> Void)? = nil,
         onRename: (() -> Void)? = nil,
-        onDelete: (() -> Void)? = nil
+        onDelete: (() -> Void)? = nil,
+        conversation: MessagesStore.Row? = nil,
+        onOpenConversation: ((ThreadID) -> Void)? = nil
     ) {
+        self.conversation = conversation
+        self.onOpenConversation = onOpenConversation
         self.client = client
         self.nextEvent = nextEvent
         self.onOpen = onOpen
@@ -202,6 +209,26 @@ struct LeadCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            // Co klient napisał na WhatsApp — zanim adwokat oddzwoni, wie, o co chodzi.
+            if let message = customerMessage {
+                HStack(alignment: .top, spacing: 9) {
+                    RoundedRectangle(cornerRadius: 1, style: .continuous)
+                        .fill(EmmaTheme.quoteRule)
+                        .frame(width: 2)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(conversationLabel)
+                            .font(EmmaTypography.caption(.semibold))
+                            .foregroundStyle((conversation?.unreadCount ?? 0) > 0 ? EmmaTheme.unreadBadge : EmmaTheme.mutedSoft)
+                        Text(message)
+                            .font(EmmaTypography.body(for: message, size: 13))
+                            .foregroundStyle(EmmaTheme.ink)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
             if let footer = footerLine(topic) {
                 HStack(spacing: 6) {
                     Image(systemName: footer.systemImage)
@@ -232,6 +259,25 @@ struct LeadCard: View {
         }
         .emmaCardShadow()
         .contentShape(Rectangle())
+    }
+
+    /// Ostatnia wiadomość klienta (nie nasza odpowiedź).
+    private var customerMessage: String? {
+        guard let preview = conversation?.preview, !preview.isOutgoing else { return nil }
+        let text = preview.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
+    /// „WhatsApp · 2 nowe · czeka 20 min”.
+    private var conversationLabel: String {
+        var parts = ["WhatsApp"]
+        if let unread = conversation?.unreadCount, unread > 0 {
+            parts.append(EmmaPlural.label(unread, "nowa", "nowe", "nowych"))
+        }
+        if let since = conversation?.waitingSince {
+            parts.append("czeka \(ConversationInbox.waitingText(since: since, now: dependencies.now))")
+        }
+        return parts.joined(separator: " · ")
     }
 
     private struct Footer {
@@ -279,6 +325,13 @@ struct LeadCard: View {
     /// Menu po przytrzymaniu: wszystko, co backend przyjmuje dla zgłoszenia.
     @ViewBuilder
     private func contextMenuItems(_ status: LeadStatus) -> some View {
+        if let conversation, let onOpenConversation {
+            Button {
+                onOpenConversation(conversation.thread.id)
+            } label: {
+                Label("Odpisz na WhatsApp", systemImage: "arrowshape.turn.up.left")
+            }
+        }
         if status.needsAction, onMarkHandled != nil {
             Button {
                 toggleHandled(status)
@@ -345,6 +398,9 @@ struct LeadCard: View {
             LeadWorkflow.badgeText(for: client, now: dependencies.now, today: dependencies.today),
             client.language.displayName
         ]
+        if let message = customerMessage {
+            parts.append("\(conversationLabel): \(message)")
+        }
         if let footer = footerLine(topic) {
             parts.append(footer.text)
         }

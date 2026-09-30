@@ -289,10 +289,19 @@ struct TodayScreen: View {
     /// Powitanie według pory dnia w strefie kancelarii.
     private var greeting: String {
         let hour = TimeOfDay.at(dependencies.clock.now()).hour
+        let base: String
         switch hour {
-        case 5..<18: return "Dzień dobry"
-        default: return "Dobry wieczór"
+        case 5..<18: base = "Dzień dobry"
+        default: base = "Dobry wieczór"
         }
+        // „Dzień dobry, Tomasz” — imię z sesji, bez tytułu („Mec.”, „adw.”).
+        let titles: Set<String> = ["mec.", "mecenas", "adw.", "adwokat", "r.pr.", "radca"]
+        let words = dependencies.currentUser.displayName.split(separator: " ").map(String.init)
+        // Konto kancelarii („Kancelaria Rogoża”) to nie osoba — samo powitanie.
+        guard words.first?.lowercased() != "kancelaria" else { return base }
+        let firstName = words.first { !titles.contains($0.lowercased()) }
+        guard let firstName, firstName.count >= 2, firstName.count <= 14 else { return base }
+        return "\(base), \(firstName)"
     }
 
     /// Nagłówek dnia: data, powitanie, portret Emmy i profil kancelarii.

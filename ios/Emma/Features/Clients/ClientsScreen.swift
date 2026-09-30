@@ -402,7 +402,9 @@ struct ClientsScreen: View {
             onMarkHandled: { await LeadActions.markInContact(client, dependencies: dependencies) },
             onReopen: { await LeadActions.reopen(client, dependencies: dependencies) },
             onRename: { beginRename(client) },
-            onDelete: { pendingDelete = client }
+            onDelete: { pendingDelete = client },
+            conversation: messages.phase.value?.rowsByClient[client.id],
+            onOpenConversation: { dependencies.openThread($0) }
         )
         .emmaListRow(top: 5.5, bottom: 5.5, horizontal: layout.horizontalPadding)
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
