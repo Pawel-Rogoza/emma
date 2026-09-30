@@ -294,7 +294,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
         return try Self.mapLegalCase(dto)
     }
 
-    /// `PATCH /cases/{id}` — nazwa i status. Zakresu backend nie prowadzi,
+    /// `PATCH /cases/{id}` — nazwa, status, sygnatura akt i sąd. Zakresu backend nie prowadzi,
     /// więc go nie wysyłamy (formularz poza Demo go nie pokazuje).
     public func updateCase(_ legalCase: LegalCase, expectedVersion: Version) async throws -> LegalCase {
         do {
@@ -303,7 +303,9 @@ public struct BackendRepository: EmmaRepository, Sendable {
                 body: BackendCaseUpdateBody(
                     expectedVersion: expectedVersion.value,
                     title: legalCase.title,
-                    status: BackendAPIClient.caseStatusToken(legalCase.status)
+                    status: BackendAPIClient.caseStatusToken(legalCase.status),
+                    signature: legalCase.courtSignature?.trimmingCharacters(in: .whitespacesAndNewlines),
+                    court: legalCase.court?.trimmingCharacters(in: .whitespacesAndNewlines)
                 ),
                 idempotencyKey: Self.newIdempotencyKey()
             )
@@ -1022,7 +1024,9 @@ extension BackendRepository {
             status: try mapCaseStatus(dto.status),
             summary: dto.summary ?? "",
             createdAt: dto.createdAt,
-            version: Version(dto.version)
+            version: Version(dto.version),
+            courtSignature: dto.signature,
+            court: dto.court
         )
     }
 

@@ -932,9 +932,12 @@ struct BackendLegalCaseDTO: Decodable {
     let summary: String?
     let createdAt: LocalDate
     let version: Int
+    /// Rozszerzenie kontraktu (backend 30.09.2026): sygnatura akt i sąd osobno.
+    let signature: String?
+    let court: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, number, title, status, summary, version
+        case id, number, title, status, summary, version, signature, court
         case clientID = "client_id"
         case createdAt = "created_at"
     }
@@ -1156,9 +1159,12 @@ struct BackendCaseUpdateBody: Encodable {
     let expectedVersion: Int
     let title: String?
     let status: String?
+    /// `nil` — bez zmiany; pusty tekst czyści pole na serwerze.
+    var signature: String? = nil
+    var court: String? = nil
 
     enum CodingKeys: String, CodingKey {
-        case title, status
+        case title, status, signature, court
         case expectedVersion = "expected_version"
     }
 }

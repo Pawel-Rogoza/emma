@@ -155,7 +155,7 @@ struct CaseScreen: View {
     @ViewBuilder
     private func loaded(_ model: CaseStore.Model) -> some View {
         DetailHeader(
-            caption: model.legalCase.number,
+            caption: model.legalCase.referenceNumber,
             title: "Prowadzona sprawa",
             onBack: { dependencies.back() }
         ) {
@@ -229,6 +229,55 @@ struct CaseScreen: View {
     // MARK: Sekcje
 
     @ViewBuilder
+    /// „Sąd Rejonowy dla Warszawy-Śródmieścia · II K 123/26” — przytrzymanie
+    /// kopiuje sygnaturę (do pisma, maila, e-Sądu). Bez sygnatury — zachęta
+    /// do jej wpisania, bo po niej sprawy szuka się w sądzie i w kartotece.
+    @ViewBuilder
+    private func courtLine(_ legalCase: LegalCase) -> some View {
+        let parts = [legalCase.courtText, legalCase.signatureText].compactMap { $0 }
+        if !parts.isEmpty {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "building.columns")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(EmmaTheme.mutedSoft)
+                Text(parts.joined(separator: " · "))
+                    .font(EmmaTypography.caption(.medium))
+                    .foregroundStyle(EmmaTheme.muted)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .contextMenu {
+                if let signature = legalCase.signatureText {
+                    Button {
+                        UIPasteboard.general.string = signature
+                        EmmaHaptics.success()
+                        dependencies.showToast("Skopiowano sygnaturę \(signature)")
+                    } label: {
+                        Label("Kopiuj sygnaturę", systemImage: "doc.on.doc")
+                    }
+                }
+                Button {
+                    dependencies.present(.caseSettings(legalCase.id))
+                } label: {
+                    Label("Zmień sygnaturę lub sąd", systemImage: "pencil")
+                }
+            }
+            .accessibilityElement(children: .combine)
+        } else if legalCase.status.isActive {
+            Button {
+                dependencies.present(.caseSettings(legalCase.id))
+            } label: {
+                Label("Dodaj sygnaturę akt i sąd", systemImage: "plus.circle")
+                    .font(EmmaTypography.caption(.medium))
+                    .foregroundStyle(EmmaTheme.accent)
+                    .frame(minHeight: EmmaSpacing.hitTarget, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.vertical, -10)
+        }
+    }
+
     private func caseTitle(_ model: CaseStore.Model) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
@@ -245,6 +294,8 @@ struct CaseScreen: View {
                 .tracking(-0.8)
                 .foregroundStyle(EmmaTheme.ink)
                 .fixedSize(horizontal: false, vertical: true)
+
+            courtLine(model.legalCase)
 
             HStack(spacing: 8) {
                 Button {

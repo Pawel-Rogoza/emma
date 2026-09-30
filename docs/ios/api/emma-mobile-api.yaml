@@ -303,7 +303,7 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
     patch:
       tags: [Zapis]
-      summary: Zmiana nazwy i statusu sprawy
+      summary: Zmiana nazwy, statusu, sygnatury akt i sądu sprawy
       description: |
         Status zapisuje się tylko przy prawdziwej zmianie (sprawa „wygrana” nie
         staje się zwykłą „zamkniętą”). Panel nie prowadzi pola „zakres sprawy”
@@ -322,6 +322,8 @@ paths:
                 expected_version: { $ref: "#/components/schemas/Version" }
                 title: { type: string, minLength: 3 }
                 status: { type: string, enum: [in_progress, awaiting_client, closed] }
+                signature: { type: [string, "null"], maxLength: 80, description: "Pusty tekst lub `null` czyści sygnaturę." }
+                court: { type: [string, "null"], maxLength: 200 }
       responses:
         "200":
           description: Sprawa po zmianie
@@ -1365,6 +1367,12 @@ components:
         summary: { type: string }
         created_at: { $ref: "#/components/schemas/LocalDate" }
         version: { $ref: "#/components/schemas/Version" }
+        signature:
+          type: [string, "null"]
+          description: "Sygnatura akt sądowych (np. `II K 123/26`); `null`, gdy nie wpisano. Rozszerzenie 30.09.2026."
+        court:
+          type: [string, "null"]
+          description: "Sąd lub organ prowadzący. Rozszerzenie 30.09.2026."
 
     ScheduledEvent:
       type: object

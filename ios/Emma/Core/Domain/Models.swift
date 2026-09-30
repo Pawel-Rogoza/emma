@@ -143,6 +143,11 @@ public struct LegalCase: Identifiable, Hashable, Codable, Sendable {
     public var summary: String
     public var createdAt: LocalDate
     public var version: Version
+    /// Sygnatura akt sądowych („II K 123/26”) — karnista szuka sprawy po niej.
+    /// `nil` — nieznana (np. starszy serwer), pusty tekst — sprawa bez sygnatury.
+    public var courtSignature: String?
+    /// Sąd lub organ prowadzący („Sąd Rejonowy dla Warszawy-Śródmieścia”).
+    public var court: String?
 
     public init(
         id: CaseID,
@@ -152,7 +157,9 @@ public struct LegalCase: Identifiable, Hashable, Codable, Sendable {
         status: CaseStatus,
         summary: String,
         createdAt: LocalDate,
-        version: Version = .initial
+        version: Version = .initial,
+        courtSignature: String? = nil,
+        court: String? = nil
     ) {
         self.id = id
         self.number = number
@@ -162,7 +169,31 @@ public struct LegalCase: Identifiable, Hashable, Codable, Sendable {
         self.summary = summary
         self.createdAt = createdAt
         self.version = version
+        self.courtSignature = courtSignature
+        self.court = court
     }
+
+    /// Sygnatura, jeśli jest wpisana.
+    public var signatureText: String? {
+        courtSignature.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
+    }
+
+    /// Sąd, jeśli jest wpisany.
+    public var courtText: String? {
+        court.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
+    }
+
+    /// Numer do pokazania: sygnatura akt, a bez niej numer kancelarii.
+    public var referenceNumber: String { signatureText ?? number }
+
+    /// Teksty, po których da się znaleźć sprawę (wyszukiwarka kartoteki).
+    public var searchableTexts: [String] {
+        [title, number] + [signatureText, courtText].compactMap { $0 }
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 // MARK: - Termin / konsultacja

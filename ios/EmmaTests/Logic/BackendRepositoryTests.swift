@@ -553,6 +553,47 @@ final class BackendRepositoryTests: XCTestCase {
         XCTAssertEqual(created.status, .inProgress)
     }
 
+    func testCaseSignatureAndCourtAreReadAndSaved() async throws {
+        let caseJSON = #"{"id":"case-41","number":"II K 123/26","title":"Pobicie","client_id":"client-12","status":"in_progress","summary":"","created_at":"2026-09-11","version":4,"signature":"II K 123/26","court":"Sąd Rejonowy dla Warszawy-Śródmieścia"}"#
+        StubURLProtocol.respond { request, body in
+            XCTAssertEqual(request.httpMethod, "PATCH")
+            let json = (body.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
+            XCTAssertEqual(json["signature"] as? String, "II K 123/26", "Sygnatura bez spacji na brzegach")
+            XCTAssertEqual(json["court"] as? String, "Sąd Rejonowy dla Warszawy-Śródmieścia")
+            return (200, Data(caseJSON.utf8))
+        }
+        var legalCase = LegalCase(
+            id: CaseID("case-41"), number: "KR/2026/041", title: "Pobicie", clientID: ClientID("client-12"),
+            status: .inProgress, summary: "", createdAt: LocalDate(year: 2026, month: 9, day: 11), version: Version(3)
+        )
+        legalCase.courtSignature = " II K 123/26 "
+        legalCase.court = "Sąd Rejonowy dla Warszawy-Śródmieścia"
+        let saved = try await makeRepository().updateCase(legalCase, expectedVersion: Version(3))
+        XCTAssertEqual(saved.signatureText, "II K 123/26")
+        XCTAssertEqual(saved.referenceNumber, "II K 123/26")
+        XCTAssertEqual(saved.courtText, "Sąd Rejonowy dla Warszawy-Śródmieścia")
+        XCTAssertTrue(saved.searchableTexts.contains("Sąd Rejonowy dla Warszawy-Śródmieścia"))
+    }
+
+    func testCaseUpdateWithoutKnownSignatureDoesNotClearIt() async throws {
+        // Sprawa ze starszego serwera nie zna sygnatury (`nil`) — zmiana nazwy
+        // nie może wysłać pustej sygnatury i wyczyścić jej w panelu.
+        let caseJSON = #"{"id":"case-41","number":"KR/2026/041","title":"Nowa nazwa","client_id":"client-12","status":"in_progress","summary":"","created_at":"2026-09-11","version":2}"#
+        StubURLProtocol.respond { _, body in
+            let json = (body.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
+            XCTAssertNil(json["signature"])
+            XCTAssertNil(json["court"])
+            return (200, Data(caseJSON.utf8))
+        }
+        let legalCase = LegalCase(
+            id: CaseID("case-41"), number: "KR/2026/041", title: "Nowa nazwa", clientID: ClientID("client-12"),
+            status: .inProgress, summary: "", createdAt: LocalDate(year: 2026, month: 9, day: 11)
+        )
+        let saved = try await makeRepository().updateCase(legalCase, expectedVersion: .initial)
+        XCTAssertNil(saved.signatureText)
+        XCTAssertEqual(saved.referenceNumber, "KR/2026/041")
+    }
+
     func testBackendErrorMessageReachesTheScreen() {
         let failure = ScreenLoad.failure(
             for: BackendRepositoryError.server(status: 422, message: "Tytuł jest za krótki."),

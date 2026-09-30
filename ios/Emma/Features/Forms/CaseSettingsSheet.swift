@@ -15,6 +15,8 @@ struct CaseSettingsSheet: View {
     @State private var title = ""
     @State private var summary = ""
     @State private var status: CaseStatus = .inProgress
+    @State private var signature = ""
+    @State private var court = ""
     @State private var errorMessage: String?
     @State private var isSaving = false
     @State private var didPrefill = false
@@ -46,6 +48,24 @@ struct CaseSettingsSheet: View {
                 TextField("", text: $title)
                     .emmaFieldStyle()
                     .accessibilityLabel("Nazwa sprawy")
+            }
+
+            // Sygnatura akt — po niej karnista szuka sprawy („II K 123/26”).
+            LabeledField("Sygnatura akt", help: "Pojawi się w nagłówku sprawy i w wyszukiwarce kartoteki.") {
+                TextField("np. II K 123/26", text: $signature)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .emmaFieldStyle()
+                    .accessibilityLabel("Sygnatura akt")
+                    .accessibilityIdentifier("case-signature")
+            }
+
+            LabeledField("Sąd lub organ") {
+                TextField("np. Sąd Rejonowy dla Warszawy-Śródmieścia", text: $court)
+                    .textInputAutocapitalization(.sentences)
+                    .emmaFieldStyle()
+                    .accessibilityLabel("Sąd lub organ")
+                    .accessibilityIdentifier("case-court")
             }
 
             LabeledField("Status") {
@@ -106,6 +126,8 @@ struct CaseSettingsSheet: View {
                 title = legalCase.title
                 summary = legalCase.summary
                 status = legalCase.status
+                signature = legalCase.signatureText ?? ""
+                court = legalCase.courtText ?? ""
                 didPrefill = true
             }
             phase = .loaded(legalCase)
@@ -132,6 +154,16 @@ struct CaseSettingsSheet: View {
         updated.title = trimmedTitle
         updated.summary = trimmedSummary
         updated.status = status
+        // Pole nieznane serwerowi (`nil`) i nieruszone zostaje `nil` — zapis nie
+        // może wyczyścić sygnatury, której aplikacja nie dostała.
+        let trimmedSignature = signature.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedCourt = court.trimmingCharacters(in: .whitespacesAndNewlines)
+        if legalCase.courtSignature != nil || !trimmedSignature.isEmpty {
+            updated.courtSignature = trimmedSignature
+        }
+        if legalCase.court != nil || !trimmedCourt.isEmpty {
+            updated.court = trimmedCourt
+        }
 
         // Błąd do formularza, nie pod arkusz (audyt 29.09.2026).
         let outcome = await dependencies.submit(fallback: "Nie udało się zapisać sprawy.") {

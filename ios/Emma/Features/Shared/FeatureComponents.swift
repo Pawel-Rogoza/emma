@@ -292,7 +292,7 @@ struct CaseCard: View {
 
             Spacer(minLength: 6)
 
-            Text(legalCase.number)
+            Text(legalCase.referenceNumber)
                 .font(EmmaTypography.caption())
                 .tracking(0.3)
                 .foregroundStyle(EmmaTheme.mutedSoft)

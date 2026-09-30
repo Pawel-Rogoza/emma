@@ -571,7 +571,7 @@ struct ClientsScreen: View {
     private func matchesSearch(_ client: Client, _ model: ClientsModel) -> Bool {
         if Self.personMatches(search, client) { return true }
         let cases = model.casesByClient[client.id] ?? []
-        return SearchText.matches(search, in: cases.flatMap { [$0.title, $0.number] })
+        return SearchText.matches(search, in: cases.flatMap(\.searchableTexts))
     }
 
     /// Zgłoszenia pasujące do wyszukiwania w trybie „Klienci”.
@@ -687,7 +687,7 @@ struct ClientsScreen: View {
 
     private func matchesSearch(_ legalCase: LegalCase, _ model: ClientsModel) -> Bool {
         let client = model.clientsByID[legalCase.clientID]
-        return SearchText.matches(search, in: [legalCase.title, legalCase.number, client?.displayName ?? ""])
+        return SearchText.matches(search, in: legalCase.searchableTexts + [client?.displayName ?? ""])
             || SearchText.matchesPhone(search, phone: client?.phone)
     }
 
