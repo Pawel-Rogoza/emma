@@ -121,6 +121,92 @@ struct QuickChip: View {
     }
 }
 
+/// Chipy zawijane do kolejnej linii — wybór jednym dotknięciem bez przewijania
+/// w bok (rodzaj sprawy, etap, rola klienta).
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+    var lineSpacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        let rows = arrange(subviews, width: width)
+        let height = rows.reduce(0) { $0 + $1.height } + lineSpacing * CGFloat(max(rows.count - 1, 0))
+        let used = rows.map(\.width).max() ?? 0
+        return CGSize(width: proposal.width ?? used, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(subviews, width: bounds.width) {
+            var x = bounds.minX
+            for index in row.indices {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += row.height + lineSpacing
+        }
+    }
+
+    private struct Row {
+        var indices: [Int] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    private func arrange(_ subviews: Subviews, width: CGFloat) -> [Row] {
+        var rows: [Row] = []
+        var current = Row()
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let needed = current.indices.isEmpty ? size.width : current.width + spacing + size.width
+            if needed > width, !current.indices.isEmpty {
+                rows.append(current)
+                current = Row()
+            }
+            current.width = current.indices.isEmpty ? size.width : current.width + spacing + size.width
+            current.height = max(current.height, size.height)
+            current.indices.append(index)
+        }
+        if !current.indices.isEmpty { rows.append(current) }
+        return rows
+    }
+}
+
+/// Chip wyboru z ikoną. Ponowne dotknięcie wybranego odznacza go (pole
+/// profilu sprawy może zostać nieustalone).
+struct ChoiceChip: View {
+    let title: String
+    var systemImage: String? = nil
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            EmmaHaptics.selection()
+            action()
+        } label: {
+            HStack(spacing: 5) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                Text(title)
+                    .font(EmmaTypography.ui(14, isSelected ? .semibold : .medium))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isSelected ? EmmaTheme.primaryButtonText : EmmaTheme.secondaryButtonText)
+            .padding(.horizontal, 13)
+            .frame(minHeight: 38)
+            .background(isSelected ? EmmaTheme.primaryButton : EmmaTheme.secondaryButton, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(EmmaCardButtonStyle())
+        .animation(EmmaMotion.snappy, value: isSelected)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+}
+
 // MARK: - Data i godzina w strefie kancelarii
 
 /// Zamiana `LocalDate` + `TimeOfDay` ↔ `Date` dla systemowych kontrolek.

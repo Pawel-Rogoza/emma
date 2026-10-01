@@ -217,7 +217,7 @@ final class MessagesStore: ObservableObject {
             .filter(activeFilter.includes)
             .filter { row in
                 // Treść wiadomości też jest przeszukiwana: nazwisko bywa tylko w treści.
-                SearchText.matches(query, in: [row.client.displayName, row.preview?.text ?? ""])
+                SearchText.matches(query, in: [row.client.displayName, row.preview?.previewText ?? ""])
                     || SearchText.matchesPhone(query, phone: row.client.phone)
             }
             // „Mniejszy” klucz = wyżej na liście (przypięte, potem najnowsze).

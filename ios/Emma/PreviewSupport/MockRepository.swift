@@ -232,7 +232,8 @@ public actor MockRepository:
         return legalCase
     }
 
-    public func updateCase(_ legalCase: LegalCase, expectedVersion: Version) async throws -> LegalCase {
+    /// Demo trzyma całą sprawę, więc wyczyszczone pole jest już `nil` w `legalCase`.
+    public func updateCase(_ legalCase: LegalCase, expectedVersion: Version, clearing: Set<CaseProfileField>) async throws -> LegalCase {
         await pause()
         guard let index = dataset.cases.firstIndex(where: { $0.id == legalCase.id }) else {
             throw DomainError.notFound(resource: "case", id: legalCase.id.rawValue)

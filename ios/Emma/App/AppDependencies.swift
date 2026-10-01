@@ -31,11 +31,25 @@ public struct EventDraftSeed: Equatable, Sendable {
     public var title: String?
     public var day: LocalDate?
     public var time: TimeOfDay?
+    /// Termin procesowy liczony od doręczenia (np. dokument z WhatsApp,
+    /// licznik aresztu): formularz otwiera się na „Termin w sprawie”
+    /// z sekcją „Policz termin” i tą datą jako „Liczone od”.
+    public var deadlineFrom: LocalDate?
+    /// Czynność do wybrania w kalkulatorze (`DeadlineRule.id`).
+    public var deadlineRuleID: String?
 
-    public init(title: String? = nil, day: LocalDate? = nil, time: TimeOfDay? = nil) {
+    public init(
+        title: String? = nil,
+        day: LocalDate? = nil,
+        time: TimeOfDay? = nil,
+        deadlineFrom: LocalDate? = nil,
+        deadlineRuleID: String? = nil
+    ) {
         self.title = title
         self.day = day
         self.time = time
+        self.deadlineFrom = deadlineFrom
+        self.deadlineRuleID = deadlineRuleID
     }
 }
 

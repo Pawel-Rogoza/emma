@@ -264,7 +264,7 @@ struct LeadCard: View {
     /// Ostatnia wiadomość klienta (nie nasza odpowiedź).
     private var customerMessage: String? {
         guard let preview = conversation?.preview, !preview.isOutgoing else { return nil }
-        let text = preview.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = preview.previewText.trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? nil : text
     }
 

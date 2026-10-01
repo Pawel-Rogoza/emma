@@ -91,7 +91,16 @@ public protocol CaseRepository: Sendable {
     func legalCase(id: CaseID) async throws -> LegalCase?
     func caseForClient(_ clientID: ClientID) async throws -> LegalCase?
     func createCase(_ draft: NewCaseDraft) async throws -> LegalCase
-    func updateCase(_ legalCase: LegalCase, expectedVersion: Version) async throws -> LegalCase
+    /// `clearing` — pola profilu, które użytkownik wyczyścił. Brak wartości
+    /// (`nil`) w samej sprawie znaczy „bez zmiany”, bo starszy serwer pól
+    /// profilu nie zna; wyczyszczenie trzeba więc nazwać wprost.
+    func updateCase(_ legalCase: LegalCase, expectedVersion: Version, clearing: Set<CaseProfileField>) async throws -> LegalCase
+}
+
+extension CaseRepository {
+    public func updateCase(_ legalCase: LegalCase, expectedVersion: Version) async throws -> LegalCase {
+        try await updateCase(legalCase, expectedVersion: expectedVersion, clearing: [])
+    }
 }
 
 public protocol TaskRepository: Sendable {

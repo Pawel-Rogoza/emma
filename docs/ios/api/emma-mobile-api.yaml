@@ -324,6 +324,22 @@ paths:
                 status: { type: string, enum: [in_progress, awaiting_client, closed] }
                 signature: { type: [string, "null"], maxLength: 80, description: "Pusty tekst lub `null` czyści sygnaturę." }
                 court: { type: [string, "null"], maxLength: 200 }
+                kind:
+                  type: [string, "null"]
+                  enum: [criminal, enforcement, residence, deportation, other, "", null]
+                  description: "Rozszerzenie 01.10.2026. Pusty tekst czyści pole; brak klucza — bez zmiany."
+                stage:
+                  type: [string, "null"]
+                  enum: [pre_trial, first_instance, appeal, cassation, admin_first, admin_appeal, admin_court, "", null]
+                client_role:
+                  type: [string, "null"]
+                  enum: [suspect, accused, convicted, victim, "", null]
+                custody_until:
+                  type: [string, "null"]
+                  description: "`YYYY-MM-DD` — koniec tymczasowego aresztowania; pusty tekst czyści."
+                legal_stay_until:
+                  type: [string, "null"]
+                  description: "`YYYY-MM-DD` — koniec legalnego pobytu klienta; pusty tekst czyści."
       responses:
         "200":
           description: Sprawa po zmianie
@@ -1373,6 +1389,24 @@ components:
         court:
           type: [string, "null"]
           description: "Sąd lub organ prowadzący. Rozszerzenie 30.09.2026."
+        kind:
+          type: [string, "null"]
+          enum: [criminal, enforcement, residence, deportation, other, null]
+          description: "Rodzaj sprawy. Rozszerzenie 01.10.2026 (profil sprawy). Nieznany token aplikacja traktuje jak `null`."
+        stage:
+          type: [string, "null"]
+          enum: [pre_trial, first_instance, appeal, cassation, admin_first, admin_appeal, admin_court, null]
+          description: "Etap postępowania. Rozszerzenie 01.10.2026."
+        client_role:
+          type: [string, "null"]
+          enum: [suspect, accused, convicted, victim, null]
+          description: "Rola klienta w sprawie karnej. Rozszerzenie 01.10.2026."
+        custody_until:
+          type: [string, "null"]
+          description: "`YYYY-MM-DD` — koniec tymczasowego aresztowania. Aplikacja odlicza dni i przypomina 14/7/3/1/0 dni wcześniej. Rozszerzenie 01.10.2026."
+        legal_stay_until:
+          type: [string, "null"]
+          description: "`YYYY-MM-DD` — koniec legalnego pobytu klienta (wiza, karta pobytu). Rozszerzenie 01.10.2026."
 
     ScheduledEvent:
       type: object

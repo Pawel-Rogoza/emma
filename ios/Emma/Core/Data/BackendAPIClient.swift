@@ -935,11 +935,21 @@ struct BackendLegalCaseDTO: Decodable {
     /// Rozszerzenie kontraktu (backend 30.09.2026): sygnatura akt i sąd osobno.
     let signature: String?
     let court: String?
+    /// Rozszerzenie kontraktu (01.10.2026): profil sprawy i pilnowane daty.
+    /// Starszy serwer ich nie wysyła — wtedy wszystkie są `nil`.
+    let kind: String?
+    let stage: String?
+    let clientRole: String?
+    let custodyUntil: String?
+    let legalStayUntil: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, number, title, status, summary, version, signature, court
+        case id, number, title, status, summary, version, signature, court, kind, stage
         case clientID = "client_id"
         case createdAt = "created_at"
+        case clientRole = "client_role"
+        case custodyUntil = "custody_until"
+        case legalStayUntil = "legal_stay_until"
     }
 }
 
@@ -1162,10 +1172,20 @@ struct BackendCaseUpdateBody: Encodable {
     /// `nil` — bez zmiany; pusty tekst czyści pole na serwerze.
     var signature: String? = nil
     var court: String? = nil
+    /// Profil sprawy: token albo pusty tekst (czyści pole); `nil` — bez zmiany.
+    var kind: String? = nil
+    var stage: String? = nil
+    var clientRole: String? = nil
+    /// Data `YYYY-MM-DD` albo pusty tekst (czyści datę); `nil` — bez zmiany.
+    var custodyUntil: String? = nil
+    var legalStayUntil: String? = nil
 
     enum CodingKeys: String, CodingKey {
-        case title, status, signature, court
+        case title, status, signature, court, kind, stage
         case expectedVersion = "expected_version"
+        case clientRole = "client_role"
+        case custodyUntil = "custody_until"
+        case legalStayUntil = "legal_stay_until"
     }
 }
 
@@ -1381,6 +1401,8 @@ struct BackendMessageDTO: Decodable {
     let kind: String
     /// Rozszerzenie kontraktu: rodzaj załącznika (image, document, audio…).
     let attachmentType: String?
+    /// Rozszerzenie kontraktu (01.10.2026): nazwa pliku załącznika.
+    let attachmentName: String?
     let text: String
     let translation: String?
     let sentAt: String
@@ -1398,6 +1420,7 @@ struct BackendMessageDTO: Decodable {
         case authorLabel = "author_label"
         case providerMessageID = "provider_message_id"
         case attachmentType = "attachment_type"
+        case attachmentName = "attachment_name"
         case sentAt = "sent_at"
     }
 }

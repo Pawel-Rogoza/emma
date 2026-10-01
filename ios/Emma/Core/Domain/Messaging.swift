@@ -102,6 +102,42 @@ public enum MessageKind: String, Codable, Sendable {
     case sticker
     case location
     case system
+
+    /// Plik od klienta (zdjęcie wezwania, PDF wyroku, nagranie głosowe).
+    public var isAttachment: Bool {
+        switch self {
+        case .text, .system: return false
+        default: return true
+        }
+    }
+
+    public var displayName: String {
+        switch self {
+        case .text: return "Wiadomość"
+        case .image: return "Zdjęcie"
+        case .document: return "Dokument"
+        case .audio: return "Nagranie głosowe"
+        case .video: return "Film"
+        case .sticker: return "Naklejka"
+        case .location: return "Lokalizacja"
+        case .system: return "Informacja"
+        }
+    }
+
+    public var systemImage: String {
+        switch self {
+        case .image: return "photo"
+        case .document: return "doc.text"
+        case .audio: return "waveform"
+        case .video: return "video"
+        case .sticker: return "face.smiling"
+        case .location: return "mappin.and.ellipse"
+        case .text, .system: return "text.bubble"
+        }
+    }
+
+    /// Zdjęcie albo dokument mogą być doręczonym pismem — od nich liczy się termin.
+    public var mayBeLegalDocument: Bool { self == .image || self == .document }
 }
 
 /// Cytat wiadomości. Zniknięcie cytowanej wiadomości **nie** kieruje odpowiedzi
@@ -132,6 +168,10 @@ public struct Message: Identifiable, Hashable, Codable, Sendable {
     public var providerMessageID: String?
     public var kind: MessageKind
     public var text: String
+    /// Nazwa pliku załącznika („postanowienie.pdf”), gdy dostawca ją podaje.
+    /// Sam plik zostaje w WhatsApp Business (research 24.09.2026, §9 wariant 1):
+    /// Emma nie pobiera dokumentów przez relay dostawcy.
+    public var attachmentName: String?
     public var translation: String?
     public var quote: QuotedReference?
     /// Znacznik czasu dostawcy. Sam w sobie **nie wystarcza** do liczenia nieprzeczytanych (§3.3 pkt 2).
@@ -151,6 +191,7 @@ public struct Message: Identifiable, Hashable, Codable, Sendable {
         providerMessageID: String? = nil,
         kind: MessageKind = .text,
         text: String,
+        attachmentName: String? = nil,
         translation: String? = nil,
         quote: QuotedReference? = nil,
         sentAt: Date,
@@ -167,6 +208,7 @@ public struct Message: Identifiable, Hashable, Codable, Sendable {
         self.providerMessageID = providerMessageID
         self.kind = kind
         self.text = text
+        self.attachmentName = attachmentName
         self.translation = translation
         self.quote = quote
         self.sentAt = sentAt
@@ -185,6 +227,49 @@ public struct Message: Identifiable, Hashable, Codable, Sendable {
     }
 
     public var isOutgoing: Bool { direction == .outgoing }
+}
+
+// MARK: - Załączniki
+
+extension Message {
+
+    /// Podpis pod plikiem bez powtórzenia nazwy pliku (część dostawców wkłada
+    /// nazwę do treści).
+    public var caption: String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != attachmentName else { return nil }
+        return trimmed
+    }
+
+    /// „Dokument · postanowienie.pdf”, „Zdjęcie”.
+    public var attachmentLabel: String? {
+        guard kind.isAttachment else { return nil }
+        guard let name = attachmentName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+            return kind.displayName
+        }
+        return "\(kind.displayName) · \(name)"
+    }
+
+    /// Tekst do list (Rozmowy, „Dzisiaj”, karta zgłoszenia): plik bez treści
+    /// nie może wyglądać jak pusta wiadomość.
+    public var previewText: String {
+        guard let label = attachmentLabel else { return text }
+        if let caption { return "\(label): \(caption)" }
+        return label
+    }
+
+    /// Notatka do akt: kto, co i kiedy przesłał — z treścią podpisu, żeby
+    /// po latach było wiadomo, o jaki dokument chodziło.
+    public func caseNoteText(clientName: String, dateText: String) -> String {
+        var line = "Od: \(clientName) (WhatsApp, \(dateText)) — \((attachmentLabel ?? kind.displayName).lowercasedFirst)."
+        if let caption { line += " Podpis: „\(caption)”." }
+        line += " Plik w WhatsApp Business."
+        return line
+    }
+}
+
+private extension String {
+    var lowercasedFirst: String { prefix(1).lowercased() + dropFirst() }
 }
 
 // MARK: - Wątek

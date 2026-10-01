@@ -106,11 +106,42 @@ final class EventReminderScheduler {
         let missed = past.filter { $0.kind == .caseDeadline && $0.status != .finished }.count
         let mornings = MorningBrief.items(events: events, missedDeadlines: missed, today: today, now: dependencies.now)
 
+        // Areszt i legalny pobyt: tylko daty z najbliższych 30 dni, żeby kilka
+        // spraw nie wyczerpało systemowego limitu 64 powiadomień.
+        let cases = (try? await dependencies.repository.cases(status: nil)) ?? []
+        let watches = cases
+            .flatMap { CaseWatch.items(for: $0, today: today) }
+            .filter { $0.daysLeft >= 0 && $0.daysLeft <= CaseWatch.showOnTodayDays }
+        let dateText = dependencies.dateText
+        let watchItems = CaseWatchReminderPlan.items(
+            watches: watches,
+            clientNames: names,
+            dateText: { dateText.dayTitle($0) },
+            now: dependencies.now
+        ).prefix(12)
+
         let pending = await center.pendingNotificationRequests()
         let ours = pending
             .map(\.identifier)
-            .filter { $0.hasPrefix(EventReminderPlan.identifierPrefix) || $0.hasPrefix(MorningBrief.identifierPrefix) }
+            .filter(Self.isOurs)
         center.removePendingNotificationRequests(withIdentifiers: ours)
+
+        for item in watchItems {
+            let content = UNMutableNotificationContent()
+            content.title = item.title
+            content.body = item.body
+            content.sound = .default
+            content.userInfo = [Self.caseIDKey: item.caseID.rawValue]
+            let components = Calendar(identifier: .gregorian).dateComponents(
+                [.timeZone, .year, .month, .day, .hour, .minute, .second],
+                from: item.fireAt
+            )
+            try? await center.add(UNNotificationRequest(
+                identifier: item.identifier,
+                content: content,
+                trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+            ))
+        }
 
         for morning in mornings {
             let content = UNMutableNotificationContent()
@@ -156,15 +187,13 @@ final class EventReminderScheduler {
         refreshTask?.cancel()
         refreshTask = nil
         let center = UNUserNotificationCenter.current()
-        let prefixes = [EventReminderPlan.identifierPrefix, MorningBrief.identifierPrefix]
-        let isOurs: (String) -> Bool = { id in prefixes.contains { id.hasPrefix($0) } }
         let pending = await center.pendingNotificationRequests()
             .map(\.identifier)
-            .filter(isOurs)
+            .filter(Self.isOurs)
         center.removePendingNotificationRequests(withIdentifiers: pending)
         let delivered = await center.deliveredNotifications()
             .map(\.request.identifier)
-            .filter(isOurs)
+            .filter(Self.isOurs)
         center.removeDeliveredNotifications(withIdentifiers: delivered)
     }
 
@@ -177,6 +206,14 @@ final class EventReminderScheduler {
     }
 
     nonisolated static let eventIDKey = "eventID"
+    nonisolated static let caseIDKey = "caseID"
+
+    /// Powiadomienia Emmy (terminy, poranny skrót, areszt i pobyt) — sprzątanie
+    /// nie rusza niczego innego.
+    nonisolated static func isOurs(_ identifier: String) -> Bool {
+        [EventReminderPlan.identifierPrefix, MorningBrief.identifierPrefix, CaseWatchReminderPlan.identifierPrefix]
+            .contains { identifier.hasPrefix($0) }
+    }
 }
 
 // MARK: - Dotknięcie powiadomienia
@@ -198,6 +235,11 @@ final class EventNotificationRouter: NSObject, UNUserNotificationCenterDelegate,
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
+        // Areszt / legalny pobyt — otwiera sprawę.
+        if let caseRaw = response.notification.request.content.userInfo[EventReminderScheduler.caseIDKey] as? String {
+            await MainActor.run { dependencies?.openCase(CaseID(caseRaw)) }
+            return
+        }
         guard let raw = response.notification.request.content.userInfo[EventReminderScheduler.eventIDKey] as? String else {
             // Poranny skrót nie wskazuje terminu — otwiera „Dzisiaj”.
             if response.notification.request.identifier.hasPrefix(MorningBrief.identifierPrefix) {

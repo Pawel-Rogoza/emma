@@ -46,6 +46,10 @@ final class TodayStore: ObservableObject {
         /// najdawniejsze najpierw. Audyt 28.09.2026: przegapiony termin procesowy
         /// to dla adwokata najgorsza wiadomość dnia, a ekran go nie pokazywał.
         var missedDeadlines: [ScheduledEvent] = []
+        /// Areszt i legalny pobyt kończące się w ciągu 30 dni (albo świeżo
+        /// minione) — najbliższe najpierw.
+        var watches: [CaseWatch] = []
+        var caseTitles: [CaseID: String] = [:]
     }
 
     @Published private(set) var phase: LoadPhase<Model> = .idle
@@ -103,7 +107,12 @@ final class TodayStore: ObservableObject {
                         uniquingKeysWith: { first, _ in first }
                     ),
                     clients: clients,
-                    missedDeadlines: missed
+                    missedDeadlines: missed,
+                    watches: CaseWatch.upcoming(cases: cases, today: today),
+                    caseTitles: Dictionary(
+                        cases.map { ($0.id, $0.title) },
+                        uniquingKeysWith: { first, _ in first }
+                    )
                 )
             // Odświeżenie po zapisie (np. obsłużony lead) jest animowane.
             if phase.hasLoaded {
@@ -221,6 +230,15 @@ struct TodayScreen: View {
                 .emmaAppear(2)
         }
 
+        ForEach(model.watches) { watch in
+            CaseWatchCard(watch: watch, subtitle: watchSubtitle(watch, model: model)) {
+                dependencies.openCase(watch.caseID)
+            }
+            .padding(.top, 12)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .emmaAppear(2)
+        }
+
         if offersNotifications {
             notificationsOffer
                 .padding(.top, 12)
@@ -241,6 +259,13 @@ struct TodayScreen: View {
             nextEventCard(agenda.next ?? model.upcomingEvents.first, model: model)
         }
         .emmaAppear(4)
+
+        // Po rozprawie — pod najbliższym terminem, żeby nie spychać go z pierwszego widoku.
+        if let hearing = DayAgenda.debrief(agenda) {
+            debriefCard(hearing, model: model)
+                .padding(.top, 12)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+        }
 
         // Pod najbliższym terminem, nie nad nim — termin i kafelki zostają
         // w pierwszym widoku (test `testNextEventAndTaskEntryAreAboveTheFold`).
@@ -304,6 +329,13 @@ struct TodayScreen: View {
         return "\(base), \(firstName)"
     }
 
+    /// „Jan Kowalski · Rozbój” pod tytułem karty aresztu.
+    private func watchSubtitle(_ watch: CaseWatch, model: TodayStore.Model) -> String {
+        [model.clientNames[watch.clientID], model.caseTitles[watch.caseID]]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+    }
+
     /// Nagłówek dnia: data, powitanie, portret Emmy i profil kancelarii.
     ///
     /// Portret jest wejściem do rozmowy — ta sama czynność, co dawny przycisk
@@ -315,6 +347,11 @@ struct TodayScreen: View {
         var parts: [String] = []
         if !model.missedDeadlines.isEmpty {
             parts.append("\(model.missedDeadlines.count) po terminie")
+        }
+        // „Areszt Kowalskiego za 5 dni” zasługuje na zdanie o dniu tylko w ostatnim tygodniu.
+        for watch in model.watches where watch.severity >= .critical {
+            let name = model.clientNames[watch.clientID] ?? Client.unknownDisplayName
+            parts.append("\(watch.kind.displayName.lowercased()): \(name) \(watch.countdownText)")
         }
         if !model.events.isEmpty {
             parts.append(EmmaPlural.label(model.events.count, "termin", "terminy", "terminów"))
@@ -433,6 +470,72 @@ struct TodayScreen: View {
         .accessibilityHint("Zaczyna rozmowę głosową. Przytrzymaj, aby napisać do Emmy.")
     }
 
+    // MARK: Po rozprawie
+
+    /// „Jak poszło?” — notatka, kolejny termin i „Załatwione” jednym dotknięciem.
+    private func debriefCard(_ event: ScheduledEvent, model: TodayStore.Model) -> some View {
+        let clientName = event.clientID.flatMap { model.clientNames[$0] }
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "building.columns.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(EmmaTheme.accent)
+                    .frame(width: 32, height: 32)
+                    .background(EmmaTheme.accentSoft, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Jak poszło?")
+                        .font(EmmaTypography.ui(14, .semibold))
+                        .foregroundStyle(EmmaTheme.ink)
+                    Text([event.title, event.time.hhmm].joined(separator: " · "))
+                        .font(EmmaTypography.caption())
+                        .foregroundStyle(EmmaTheme.muted)
+                        .lineLimit(1)
+                }
+            }
+            HStack(spacing: 6) {
+                if let clientID = event.clientID {
+                    debriefButton("Notatka", systemImage: "square.and.pencil") {
+                        dependencies.present(.note(clientID: clientID, caseID: event.caseID))
+                    }
+                }
+                debriefButton("Kolejny termin", systemImage: "calendar.badge.plus") {
+                    dependencies.present(.eventForm(editing: nil, clientID: event.clientID, caseID: event.caseID, initialDay: nil))
+                }
+                debriefButton("Załatwione", systemImage: "checkmark") {
+                    Task { await EventActions.finish(event, dependencies: dependencies) }
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(EmmaTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
+                .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
+        }
+        .emmaCardShadow()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Po terminie \(event.title)\(clientName.map { ", \($0)" } ?? "")")
+    }
+
+    private func debriefButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button {
+            EmmaHaptics.tap()
+            action()
+        } label: {
+            Label(title, systemImage: systemImage)
+                .font(EmmaTypography.caption(.semibold))
+                .foregroundStyle(EmmaTheme.secondaryButtonText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .frame(maxWidth: .infinity, minHeight: 36)
+                .background(EmmaTheme.secondaryButton, in: RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(EmmaCardButtonStyle())
+    }
+
     // MARK: Nowe wiadomości
 
     /// Klient napisał na WhatsApp — pasek nad planem dnia, jedno dotknięcie
@@ -484,7 +587,7 @@ struct TodayScreen: View {
     }
 
     private func writerRow(_ row: MessagesStore.Row) -> some View {
-        let preview = row.preview?.text ?? ""
+        let preview = row.preview?.previewText ?? ""
         return Button {
             EmmaHaptics.tap()
             dependencies.openThread(row.thread.id)

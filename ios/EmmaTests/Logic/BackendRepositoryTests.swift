@@ -575,6 +575,50 @@ final class BackendRepositoryTests: XCTestCase {
         XCTAssertTrue(saved.searchableTexts.contains("Sąd Rejonowy dla Warszawy-Śródmieścia"))
     }
 
+    func testCaseProfileIsReadSavedAndCleared() async throws {
+        let caseJSON = #"{"id":"case-41","number":"KR/2026/041","title":"Rozbój","client_id":"client-12","status":"in_progress","summary":"","created_at":"2026-09-11","version":5,"kind":"criminal","stage":"pre_trial","client_role":"suspect","custody_until":"2026-11-12","legal_stay_until":null}"#
+        StubURLProtocol.respond { _, body in
+            let json = (body.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
+            XCTAssertEqual(json["kind"] as? String, "criminal")
+            XCTAssertEqual(json["stage"] as? String, "pre_trial")
+            XCTAssertEqual(json["client_role"] as? String, "suspect")
+            XCTAssertEqual(json["custody_until"] as? String, "2026-11-12")
+            XCTAssertEqual(json["legal_stay_until"] as? String, "", "Wyczyszczona data idzie jako pusty tekst")
+            return (200, Data(caseJSON.utf8))
+        }
+        let legalCase = LegalCase(
+            id: CaseID("case-41"), number: "KR/2026/041", title: "Rozbój", clientID: ClientID("client-12"),
+            status: .inProgress, summary: "", createdAt: LocalDate(year: 2026, month: 9, day: 11), version: Version(4),
+            kind: .criminal, stage: .preTrial, clientRole: .suspect,
+            custodyUntil: LocalDate(year: 2026, month: 11, day: 12)
+        )
+        let saved = try await makeRepository().updateCase(legalCase, expectedVersion: Version(4), clearing: [.legalStayUntil])
+        XCTAssertEqual(saved.kind, .criminal)
+        XCTAssertEqual(saved.stage, .preTrial)
+        XCTAssertEqual(saved.clientRole, .suspect)
+        XCTAssertEqual(saved.custodyUntil, LocalDate(year: 2026, month: 11, day: 12))
+        XCTAssertNil(saved.legalStayUntil)
+    }
+
+    func testCaseUpdateWithoutProfileSendsNoProfileFields() async throws {
+        // Starszy serwer nie zna profilu — zwykły zapis nie może wysłać pól,
+        // których nie rozumie (mógłby odpowiedzieć 422).
+        let caseJSON = #"{"id":"case-41","number":"KR/2026/041","title":"Nowa","client_id":"client-12","status":"in_progress","summary":"","created_at":"2026-09-11","version":2,"kind":"spaceship"}"#
+        StubURLProtocol.respond { _, body in
+            let json = (body.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]) ?? [:]
+            for key in ["kind", "stage", "client_role", "custody_until", "legal_stay_until"] {
+                XCTAssertNil(json[key], key)
+            }
+            return (200, Data(caseJSON.utf8))
+        }
+        let legalCase = LegalCase(
+            id: CaseID("case-41"), number: "KR/2026/041", title: "Nowa", clientID: ClientID("client-12"),
+            status: .inProgress, summary: "", createdAt: LocalDate(year: 2026, month: 9, day: 11)
+        )
+        let saved = try await makeRepository().updateCase(legalCase, expectedVersion: .initial)
+        XCTAssertNil(saved.kind, "Nieznany token to brak wiedzy, nie błąd")
+    }
+
     func testCaseUpdateWithoutKnownSignatureDoesNotClearIt() async throws {
         // Sprawa ze starszego serwera nie zna sygnatury (`nil`) — zmiana nazwy
         // nie może wysłać pustej sygnatury i wyczyścić jej w panelu.

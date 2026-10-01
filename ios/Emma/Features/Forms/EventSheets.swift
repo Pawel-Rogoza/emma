@@ -48,6 +48,10 @@ struct EventFormSheet: View {
     /// Kalkulator terminu procesowego: czynność i dzień, od którego biegnie termin.
     @State private var deadlineRule: DeadlineRule?
     @State private var deadlineFrom = Date()
+    /// Czynności w kolejności dla etapu sprawy (najpierw te, które na nim biegną).
+    @State private var deadlineRules: [DeadlineRule] = ProceduralDeadlines.common
+    /// Czynność z ziarna formularza — wybierana po wczytaniu listy dla sprawy.
+    @State private var pendingRuleID: String?
 
     private static let placeSuggestions = ["Kancelaria", "Online", "Telefonicznie", "Sąd"]
 
@@ -200,7 +204,7 @@ struct EventFormSheet: View {
                 FormRow(systemImage: "building.columns", title: "Czynność") {
                     Menu {
                         Button("Bez liczenia") { deadlineRule = nil }
-                        ForEach(ProceduralDeadlines.common) { rule in
+                        ForEach(deadlineRules) { rule in
                             Button("\(rule.title) · \(rule.spanText)") { deadlineRule = rule }
                         }
                     } label: {
@@ -266,8 +270,8 @@ struct EventFormSheet: View {
         var lines: [String] = []
         var shifted = false
         switch rule.span {
-        case .days(let days):
-            let result = ProceduralDeadlines.due(from: FirmDateTime.day(of: deadlineFrom), days: days)
+        case .days, .months:
+            guard let result = ProceduralDeadlines.due(from: FirmDateTime.day(of: deadlineFrom), rule: rule) else { break }
             lines.append("Ostatni dzień: \(dependencies.dateText.dayTitle(result.due)).")
             lines.append("\(rule.spanText) \(rule.startsFrom) (\(rule.legalBasis)).")
             if let reason = result.shiftReason {
@@ -301,8 +305,8 @@ struct EventFormSheet: View {
         // nie może zmienić jego daty ani nazwy.
         guard let rule = deadlineRule else { return }
         switch rule.span {
-        case .days(let days):
-            let result = ProceduralDeadlines.due(from: FirmDateTime.day(of: deadlineFrom), days: days)
+        case .days, .months:
+            guard let result = ProceduralDeadlines.due(from: FirmDateTime.day(of: deadlineFrom), rule: rule) else { return }
             start = FirmDateTime.date(day: result.due, time: FirmDateTime.time(of: start))
         case .hours(let hours):
             start = ProceduralDeadlines.due(from: deadlineFrom, hours: hours)
@@ -454,6 +458,23 @@ struct EventFormSheet: View {
             let seededDay = seed.day ?? FirmDateTime.day(of: start)
             let seededTime = seed.time ?? FirmDateTime.time(of: start)
             start = FirmDateTime.date(day: seededDay, time: seededTime)
+            if let from = seed.deadlineFrom {
+                kind = .caseDeadline
+                deadlineFrom = FirmDateTime.date(day: from, time: FirmDateTime.time(of: start))
+            }
+            pendingRuleID = seed.deadlineRuleID
+        }
+
+        // Sprawa podpowiada czynności dla swojego etapu, a jej sąd — miejsce.
+        if eventID == nil, let caseID, let legalCase = try? await dependencies.repository.legalCase(id: caseID) {
+            deadlineRules = ProceduralDeadlines.suggested(kind: legalCase.kind, stage: legalCase.stage)
+            if place.isEmpty, let court = legalCase.courtText {
+                place = court
+            }
+        }
+        if let pendingRuleID, let rule = deadlineRules.first(where: { $0.id == pendingRuleID }) {
+            kind = .caseDeadline
+            deadlineRule = rule
         }
 
         guard let eventID else { return }

@@ -294,9 +294,13 @@ public struct BackendRepository: EmmaRepository, Sendable {
         return try Self.mapLegalCase(dto)
     }
 
-    /// `PATCH /cases/{id}` — nazwa, status, sygnatura akt i sąd. Zakresu backend nie prowadzi,
+    /// `PATCH /cases/{id}` — nazwa, status, sygnatura akt, sąd i profil sprawy. Zakresu backend nie prowadzi,
     /// więc go nie wysyłamy (formularz poza Demo go nie pokazuje).
-    public func updateCase(_ legalCase: LegalCase, expectedVersion: Version) async throws -> LegalCase {
+    public func updateCase(_ legalCase: LegalCase, expectedVersion: Version, clearing: Set<CaseProfileField>) async throws -> LegalCase {
+        // Pusty tekst czyści pole na serwerze (jak przy sygnaturze).
+        func value(_ field: CaseProfileField, _ current: String?) -> String? {
+            clearing.contains(field) ? "" : current
+        }
         do {
             let dto = try await api.updateCase(
                 id: legalCase.id.rawValue,
@@ -305,7 +309,12 @@ public struct BackendRepository: EmmaRepository, Sendable {
                     title: legalCase.title,
                     status: BackendAPIClient.caseStatusToken(legalCase.status),
                     signature: legalCase.courtSignature?.trimmingCharacters(in: .whitespacesAndNewlines),
-                    court: legalCase.court?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    court: legalCase.court?.trimmingCharacters(in: .whitespacesAndNewlines),
+                    kind: value(.kind, legalCase.kind?.rawValue),
+                    stage: value(.stage, legalCase.stage?.rawValue),
+                    clientRole: value(.clientRole, legalCase.clientRole?.rawValue),
+                    custodyUntil: value(.custodyUntil, legalCase.custodyUntil?.isoString),
+                    legalStayUntil: value(.legalStayUntil, legalCase.legalStayUntil?.isoString)
                 ),
                 idempotencyKey: Self.newIdempotencyKey()
             )
@@ -699,6 +708,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
             providerMessageID: dto.providerMessageID,
             kind: mapMessageKind(dto.kind, attachmentType: dto.attachmentType),
             text: dto.text,
+            attachmentName: dto.attachmentName,
             translation: dto.translation,
             sentAt: sentAt,
             sequence: dto.sequence,
@@ -1026,7 +1036,13 @@ extension BackendRepository {
             createdAt: dto.createdAt,
             version: Version(dto.version),
             courtSignature: dto.signature,
-            court: dto.court
+            court: dto.court,
+            // Nieznany token (nowszy serwer) to brak wiedzy, nie błąd sprawy.
+            kind: dto.kind.flatMap(CaseKind.init(rawValue:)),
+            stage: dto.stage.flatMap(CaseStage.init(rawValue:)),
+            clientRole: dto.clientRole.flatMap(ClientRole.init(rawValue:)),
+            custodyUntil: dto.custodyUntil.flatMap(LocalDate.init(iso:)),
+            legalStayUntil: dto.legalStayUntil.flatMap(LocalDate.init(iso:))
         )
     }
 

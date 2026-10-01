@@ -536,7 +536,8 @@ struct ThreadScreen: View {
                         MessageBubble(
                             message: message,
                             senderLabel: message.outgoingAuthorLabel,
-                            showsAuthor: true
+                            showsAuthor: true,
+                            attachmentActions: attachmentActions(for: message, model: model)
                         ) {
                             // Najpierw zapis pisanego tekstu: arkusz dopisuje cytat
                             // do szkicu z repozytorium i nie może go potem zgubić.
@@ -574,6 +575,54 @@ struct ThreadScreen: View {
                     proxy.scrollTo(last, anchor: .bottom)
                 }
             }
+        }
+    }
+
+    // MARK: Pliki od klienta
+
+    /// Zdjęcie wezwania czy PDF postanowienia: do akt jednym dotknięciem,
+    /// a termin liczony od dnia, w którym plik przyszedł (doręczenie).
+    private func attachmentActions(for message: Message, model: ThreadStore.Model) -> AttachmentActions? {
+        guard message.kind.isAttachment, !message.isOutgoing else { return nil }
+        let day = AppDependencies.localDate(from: message.sentAt)
+        let client = model.client
+        let caseID = model.legalCase?.id
+        var openInWhatsApp: (() -> Void)?
+        if let url = client.phone.flatMap(ContactLinks.whatsAppURL) {
+            openInWhatsApp = { openURL(url) }
+        }
+        var countDeadline: (() -> Void)?
+        if message.kind.mayBeLegalDocument {
+            countDeadline = {
+                dependencies.pendingEventDraft = EventDraftSeed(deadlineFrom: day)
+                dependencies.present(.eventForm(editing: nil, clientID: client.id, caseID: caseID, initialDay: nil))
+            }
+        }
+        return AttachmentActions(
+            openInWhatsApp: openInWhatsApp,
+            addToCase: {
+                Task { await addAttachmentNote(message, day: day, client: client, caseID: caseID) }
+            },
+            countDeadline: countDeadline
+        )
+    }
+
+    private func addAttachmentNote(_ message: Message, day: LocalDate, client: Client, caseID: CaseID?) async {
+        let text = message.caseNoteText(clientName: client.displayName, dateText: dependencies.dateText.dayTitle(day))
+        let outcome = await dependencies.submit(fallback: "Nie udało się dodać notatki.") {
+            try await dependencies.repository.addNote(NewNoteDraft(
+                clientID: client.id,
+                caseID: caseID,
+                text: text,
+                authorID: dependencies.currentUser.id,
+                createdAt: dependencies.today
+            ))
+        }
+        if outcome.value != nil {
+            EmmaHaptics.success()
+            dependencies.showToast(caseID == nil ? "Dodano do notatek klienta" : "Dodano do akt sprawy")
+        } else if let message = outcome.errorMessage {
+            dependencies.showToast(message)
         }
     }
 

@@ -37,4 +37,12 @@ public enum DayAgenda {
         let past = ordered.filter { $0.hasPassed(at: now) }
         return Split(next: remaining.first, upcoming: Array(remaining.dropFirst()), past: past)
     }
+
+    /// „Po rozprawie”: ostatni dzisiejszy termin w sprawie, który już się
+    /// skończył, a nikt go nie zamknął. Po wyjściu z sądu adwokat ma trzy
+    /// rzeczy do zrobienia — notatka, kolejny termin, zamknięcie — i chce je
+    /// zrobić od razu, zanim szczegóły wylecą z głowy.
+    public static func debrief(_ split: Split) -> ScheduledEvent? {
+        split.past.last { $0.kind == .caseDeadline && $0.status != .finished }
+    }
 }

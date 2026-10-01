@@ -283,7 +283,7 @@ struct ConversationRow: View {
 
     private var previewText: String {
         if hasDraft { return "Szkic w toku" }
-        return preview?.text ?? "Rozpocznij rozmowę"
+        return preview?.previewText ?? "Rozpocznij rozmowę"
     }
 
     private var previewLabel: String {
@@ -300,7 +300,7 @@ struct ConversationRow: View {
         if let windowText { parts.append(windowText) }
         if unreadCount > 0 { parts.append(EmmaPlural.unread(unreadCount)) }
         if isPinned { parts.append("przypięta") }
-        if let preview { parts.append(preview.text) }
+        if let preview { parts.append(preview.previewText) }
         return parts.joined(separator: ", ")
     }
 
@@ -343,11 +343,23 @@ struct ReceiptMark: View {
 
 // MARK: Dymek wiadomości
 
+/// Czynności przy pliku od klienta. Sam plik zostaje w WhatsApp Business —
+/// Emma zna jego rodzaj i nazwę, a do akt trafia notatka z datą.
+struct AttachmentActions {
+    /// Otwiera rozmowę w WhatsApp (tam jest plik). `nil` — brak numeru.
+    var openInWhatsApp: (() -> Void)?
+    /// Notatka „Od: … — dokument · wyrok.pdf” w sprawie klienta.
+    var addToCase: () -> Void
+    /// Formularz terminu liczonego od dnia, w którym przyszedł plik.
+    var countDeadline: (() -> Void)?
+}
+
 struct MessageBubble: View {
 
     let message: Message
     let senderLabel: String
     let showsAuthor: Bool
+    var attachmentActions: AttachmentActions? = nil
     let onOptions: () -> Void
 
     @EnvironmentObject private var dependencies: AppDependencies
@@ -361,11 +373,22 @@ struct MessageBubble: View {
                     quoteView(quote)
                 }
 
-                Text(message.text)
-                    .font(EmmaTypography.bubbleText(message.text))
-                    .foregroundStyle(EmmaTheme.ink)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
+                if message.kind.isAttachment {
+                    attachmentChip
+                    if let caption = message.caption {
+                        Text(caption)
+                            .font(EmmaTypography.bubbleText(caption))
+                            .foregroundStyle(EmmaTheme.ink)
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } else {
+                    Text(message.text)
+                        .font(EmmaTypography.bubbleText(message.text))
+                        .foregroundStyle(EmmaTheme.ink)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 HStack(spacing: 6) {
                     if message.isOutgoing && showsAuthor {
@@ -406,6 +429,68 @@ struct MessageBubble: View {
             if !message.isOutgoing { Spacer(minLength: 44) }
         }
         .accessibilityElement(children: .contain)
+    }
+
+    // MARK: Plik
+
+    /// „Dokument · wyrok.pdf” z ikoną. Dotknięcie — menu czynności; bez
+    /// czynności (np. plik wysłany przez kancelarię) — sama etykieta.
+    @ViewBuilder
+    private var attachmentChip: some View {
+        if let actions = attachmentActions {
+            Menu {
+                if let open = actions.openInWhatsApp {
+                    Button(action: open) {
+                        Label("Otwórz w WhatsApp", systemImage: "arrow.up.forward.app")
+                    }
+                }
+                Button(action: actions.addToCase) {
+                    Label("Dołącz do akt sprawy", systemImage: "tray.and.arrow.down")
+                }
+                if let count = actions.countDeadline {
+                    Button(action: count) {
+                        Label("Policz termin od doręczenia", systemImage: "calendar.badge.clock")
+                    }
+                }
+            } label: {
+                attachmentLabel(interactive: true)
+            }
+            .accessibilityHint("Otwiera czynności: WhatsApp, akta sprawy, termin")
+        } else {
+            attachmentLabel(interactive: false)
+        }
+    }
+
+    private func attachmentLabel(interactive: Bool) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: message.kind.systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(EmmaTheme.accent)
+                .frame(width: 34, height: 34)
+                .background(EmmaTheme.accentSoft, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(message.attachmentName ?? message.kind.displayName)
+                    .font(EmmaTypography.ui(14, .semibold))
+                    .foregroundStyle(EmmaTheme.ink)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                Text(interactive ? "\(message.kind.displayName) · w WhatsApp" : message.kind.displayName)
+                    .font(EmmaTypography.caption())
+                    .foregroundStyle(EmmaTheme.muted)
+            }
+            if interactive {
+                Spacer(minLength: 4)
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(EmmaTheme.accent)
+            }
+        }
+        .padding(8)
+        .frame(minWidth: 200, alignment: .leading)
+        .background(EmmaTheme.quoteBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 
     /// Narożnik po stronie nadawcy jest mniejszy — jak w referencji (`.chat-message`).

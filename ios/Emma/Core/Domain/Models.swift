@@ -148,6 +148,15 @@ public struct LegalCase: Identifiable, Hashable, Codable, Sendable {
     public var courtSignature: String?
     /// Sąd lub organ prowadzący („Sąd Rejonowy dla Warszawy-Śródmieścia”).
     public var court: String?
+    /// Profil sprawy (`CaseProfile.swift`). `nil` — nie ustalono albo serwer
+    /// jeszcze tego pola nie zna.
+    public var kind: CaseKind?
+    public var stage: CaseStage?
+    public var clientRole: ClientRole?
+    /// Koniec tymczasowego aresztowania klienta.
+    public var custodyUntil: LocalDate?
+    /// Koniec legalnego pobytu klienta (wiza, karta pobytu, ruch bezwizowy).
+    public var legalStayUntil: LocalDate?
 
     public init(
         id: CaseID,
@@ -159,7 +168,12 @@ public struct LegalCase: Identifiable, Hashable, Codable, Sendable {
         createdAt: LocalDate,
         version: Version = .initial,
         courtSignature: String? = nil,
-        court: String? = nil
+        court: String? = nil,
+        kind: CaseKind? = nil,
+        stage: CaseStage? = nil,
+        clientRole: ClientRole? = nil,
+        custodyUntil: LocalDate? = nil,
+        legalStayUntil: LocalDate? = nil
     ) {
         self.id = id
         self.number = number
@@ -171,6 +185,11 @@ public struct LegalCase: Identifiable, Hashable, Codable, Sendable {
         self.version = version
         self.courtSignature = courtSignature
         self.court = court
+        self.kind = kind
+        self.stage = stage
+        self.clientRole = clientRole
+        self.custodyUntil = custodyUntil
+        self.legalStayUntil = legalStayUntil
     }
 
     /// Sygnatura, jeśli jest wpisana.
@@ -188,7 +207,7 @@ public struct LegalCase: Identifiable, Hashable, Codable, Sendable {
 
     /// Teksty, po których da się znaleźć sprawę (wyszukiwarka kartoteki).
     public var searchableTexts: [String] {
-        [title, number] + [signatureText, courtText].compactMap { $0 }
+        [title, number] + [signatureText, courtText, kind?.displayName].compactMap { $0 }
     }
 }
 

@@ -177,6 +177,17 @@ struct CaseScreen: View {
             .padding(.bottom, 12)
             .emmaAppear(1)
 
+        // Areszt albo koniec legalnego pobytu — licznik dni nad wszystkim,
+        // co da się odłożyć na jutro.
+        ForEach(CaseWatch.items(for: model.legalCase, today: model.today)) { watch in
+            CaseWatchCard(watch: watch) {
+                dependencies.present(.caseSettings(model.legalCase.id))
+            }
+            .contextMenu { watchMenu(watch, model: model) }
+            .padding(.bottom, 12)
+            .emmaAppear(1)
+        }
+
         emmaCard(model)
             .padding(.bottom, 14)
             .emmaAppear(2)
@@ -220,6 +231,26 @@ struct CaseScreen: View {
         }
     }
 
+    /// Koniec aresztu do kalendarza (z przypomnieniem jak każdy termin) albo
+    /// zmiana daty, gdy sąd przedłużył areszt.
+    @ViewBuilder
+    private func watchMenu(_ watch: CaseWatch, model: CaseStore.Model) -> some View {
+        Button {
+            dependencies.pendingEventDraft = EventDraftSeed(
+                title: "Koniec: \(watch.kind.displayName.lowercased()) — \(model.client.displayName)",
+                day: watch.until
+            )
+            dependencies.present(.eventForm(editing: nil, clientID: model.client.id, caseID: model.legalCase.id, initialDay: watch.until))
+        } label: {
+            Label("Dodaj do kalendarza", systemImage: "calendar.badge.plus")
+        }
+        Button {
+            dependencies.present(.caseSettings(model.legalCase.id))
+        } label: {
+            Label("Zmień datę", systemImage: "pencil")
+        }
+    }
+
     private func selectTab(_ tab: CaseStore.Tab) {
         guard store.tab != tab else { return }
         EmmaHaptics.selection()
@@ -227,6 +258,27 @@ struct CaseScreen: View {
     }
 
     // MARK: Sekcje
+
+    /// „Karna · Przygotowawcze · Podejrzany” — dotknięcie otwiera ustawienia,
+    /// gdzie etap zmienia się jednym chipem.
+    @ViewBuilder
+    private func profileLine(_ legalCase: LegalCase) -> some View {
+        if let profile = legalCase.profileText {
+            Button {
+                dependencies.present(.caseSettings(legalCase.id))
+            } label: {
+                Label(profile, systemImage: legalCase.kind?.systemImage ?? "folder")
+                    .font(EmmaTypography.caption(.semibold))
+                    .foregroundStyle(EmmaTheme.pillNeutralText)
+                    .padding(.horizontal, 10)
+                    .frame(minHeight: 28)
+                    .background(EmmaTheme.pillNeutralBackground, in: Capsule())
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(EmmaCardButtonStyle())
+            .accessibilityHint("Zmień rodzaj, etap lub rolę klienta")
+        }
+    }
 
     /// „Sąd Rejonowy dla Warszawy-Śródmieścia · II K 123/26” — przytrzymanie
     /// kopiuje sygnaturę (do pisma, maila, e-Sądu). Bez sygnatury — zachęta
@@ -266,7 +318,7 @@ struct CaseScreen: View {
             Button {
                 dependencies.present(.caseSettings(legalCase.id))
             } label: {
-                Label("Dodaj sygnaturę akt i sąd", systemImage: "plus.circle")
+                Label(legalCase.kind == nil ? "Dodaj sygnaturę, rodzaj i etap sprawy" : "Dodaj sygnaturę akt i sąd", systemImage: "plus.circle")
                     .font(EmmaTypography.caption(.medium))
                     .foregroundStyle(EmmaTheme.accent)
                     .frame(minHeight: EmmaSpacing.hitTarget, alignment: .leading)
@@ -293,6 +345,8 @@ struct CaseScreen: View {
                 .tracking(-0.8)
                 .foregroundStyle(EmmaTheme.ink)
                 .fixedSize(horizontal: false, vertical: true)
+
+            profileLine(model.legalCase)
 
             courtLine(model.legalCase)
 

@@ -95,6 +95,10 @@ public struct DeadlineRule: Identifiable, Hashable, Sendable {
 
     public enum Span: Hashable, Sendable {
         case days(Int)
+        /// Termin miesięczny: koniec w dniu, który datą odpowiada dniowi
+        /// zdarzenia, a gdy go nie ma — w ostatnim dniu miesiąca
+        /// (art. 123 § 2 k.p.k., art. 57 § 3 k.p.a.).
+        case months(Int)
         case hours(Int)
     }
 
@@ -125,6 +129,7 @@ public struct DeadlineRule: Identifiable, Hashable, Sendable {
     public var spanText: String {
         switch span {
         case .days(let days): return EmmaPlural.days(days)
+        case .months(let months): return EmmaPlural.label(months, "miesiąc", "miesiące", "miesięcy")
         case .hours(let hours): return "\(hours) h"
         }
     }
@@ -155,6 +160,21 @@ public enum ProceduralDeadlines {
             startsFrom: "od doręczenia wyroku z uzasadnieniem", legalBasis: "art. 524 § 1 k.p.k."
         ),
         DeadlineRule(
+            id: "kpk-zazalenie-areszt", title: "Zażalenie na areszt", span: .days(7),
+            startsFrom: "od ogłoszenia lub doręczenia postanowienia o środku zapobiegawczym",
+            legalBasis: "art. 252 § 1 i art. 460 k.p.k."
+        ),
+        DeadlineRule(
+            id: "kpk-zazalenie-umorzenie", title: "Zażalenie na umorzenie", span: .days(7),
+            startsFrom: "od doręczenia postanowienia o umorzeniu lub odmowie wszczęcia",
+            legalBasis: "art. 306 § 1 i art. 460 k.p.k."
+        ),
+        DeadlineRule(
+            id: "kpk-subsydiarny", title: "Subsydiarny akt oskarżenia", span: .months(1),
+            startsFrom: "od doręczenia zawiadomienia o ponownym umorzeniu lub odmowie",
+            legalBasis: "art. 55 § 1 k.p.k."
+        ),
+        DeadlineRule(
             id: "kpk-przywrocenie", title: "Wniosek o przywrócenie terminu", span: .days(7),
             startsFrom: "od ustania przeszkody", legalBasis: "art. 126 § 1 k.p.k."
         ),
@@ -179,8 +199,44 @@ public enum ProceduralDeadlines {
         DeadlineRule(
             id: "ppsa-skarga", title: "Skarga do WSA", span: .days(30),
             startsFrom: "od doręczenia rozstrzygnięcia", legalBasis: "art. 53 § 1 p.p.s.a."
+        ),
+        DeadlineRule(
+            id: "ppsa-skarga-kasacyjna", title: "Skarga kasacyjna do NSA", span: .days(30),
+            startsFrom: "od doręczenia wyroku z uzasadnieniem", legalBasis: "art. 177 § 1 p.p.s.a."
         )
     ]
+
+    /// Czynności w kolejności, w jakiej przydają się na danym etapie: najpierw
+    /// te, które na nim naprawdę biegną, potem reszta. Bez profilu — lista
+    /// ogólna. Nic nie znika: adwokat zawsze może wybrać inną czynność.
+    public static func suggested(kind: CaseKind?, stage: CaseStage?) -> [DeadlineRule] {
+        let first: [String]
+        switch (kind, stage) {
+        case (_, .preTrial?):
+            first = ["kpk-zatrzymanie-48", "kpk-zatrzymanie-72", "kpk-zazalenie-areszt",
+                     "kpk-zazalenie-umorzenie", "kpk-subsydiarny", "kpk-zazalenie"]
+        case (_, .firstInstance?) where kind != .enforcement:
+            first = ["kpk-uzasadnienie", "kpk-apelacja", "kpk-sprzeciw", "kpk-zazalenie-areszt", "kpk-zazalenie"]
+        case (_, .appeal?) where kind != .enforcement:
+            first = ["kpk-uzasadnienie", "kpk-kasacja", "kpk-zazalenie-areszt"]
+        case (_, .cassation?):
+            first = ["kpk-kasacja", "kpk-przywrocenie"]
+        case (.enforcement?, _):
+            first = ["kpk-zazalenie", "kpk-przywrocenie"]
+        case (_, .adminFirst?), (_, .adminAppeal?):
+            first = ["kpa-odwolanie", "kpa-zazalenie", "ppsa-skarga"]
+        case (_, .adminCourt?):
+            first = ["ppsa-skarga", "ppsa-skarga-kasacyjna"]
+        case (.residence?, _), (.deportation?, _):
+            first = ["kpa-odwolanie", "kpa-zazalenie", "ppsa-skarga", "ppsa-skarga-kasacyjna"]
+        case (.criminal?, _):
+            first = ["kpk-zazalenie", "kpk-apelacja", "kpk-zatrzymanie-48"]
+        default:
+            return common
+        }
+        let leading = first.compactMap { id in common.first { $0.id == id } }
+        return leading + common.filter { rule in !first.contains(rule.id) }
+    }
 
     public struct Result: Equatable, Sendable {
         /// Ostatni dzień terminu po przesunięciu — to trafia do kalendarza.
@@ -202,6 +258,27 @@ public enum ProceduralDeadlines {
             due = due.adding(days: 1)
         }
         return Result(due: due, nominal: nominal, shiftReason: due == nominal ? nil : reason(for: nominal))
+    }
+
+    /// Ostatni dzień terminu `months` miesięcy od zdarzenia `from`
+    /// (31 stycznia + 1 miesiąc → 28/29 lutego), z tym samym przesunięciem
+    /// z soboty i dni wolnych co terminy dniowe.
+    public static func due(from: LocalDate, months: Int) -> Result {
+        let nominal = from.addingMonths(months)
+        var due = nominal
+        while !PolishHolidays.isWorkingDay(due) {
+            due = due.adding(days: 1)
+        }
+        return Result(due: due, nominal: nominal, shiftReason: due == nominal ? nil : reason(for: nominal))
+    }
+
+    /// Ostatni dzień terminu dniowego albo miesięcznego; `nil` dla godzinowego.
+    public static func due(from: LocalDate, rule: DeadlineRule) -> Result? {
+        switch rule.span {
+        case .days(let days): return due(from: from, days: days)
+        case .months(let months): return due(from: from, months: months)
+        case .hours: return nil
+        }
     }
 
     /// Koniec terminu godzinowego: chwila zatrzymania plus `hours` godzin.

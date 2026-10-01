@@ -116,7 +116,12 @@ public enum DemoFixtures {
         clientID: olenaID,
         status: .inProgress,
         summary: "Zapoznanie się z wezwaniem i konsultacja przed przesłuchaniem.",
-        createdAt: LocalDate(year: 2026, month: 9, day: 9)
+        createdAt: LocalDate(year: 2026, month: 9, day: 9),
+        courtSignature: "PR 1 Ds. 1432.2026",
+        court: "Prokuratura Rejonowa Warszawa-Śródmieście",
+        kind: .criminal,
+        stage: .preTrial,
+        clientRole: .suspect
     )
 
     public static let caseDmytro = LegalCase(
@@ -126,7 +131,12 @@ public enum DemoFixtures {
         clientID: dmytroID,
         status: .awaitingClient,
         summary: "Weryfikacja przekazanych dokumentów i ustalenie dalszego zakresu prowadzenia sprawy.",
-        createdAt: LocalDate(year: 2026, month: 9, day: 7)
+        createdAt: LocalDate(year: 2026, month: 9, day: 7),
+        kind: .residence,
+        stage: .adminFirst,
+        // 40 dni od dnia referencyjnego: licznik na ekranie sprawy, a „Dzisiaj”
+        // w Demo bez dodatkowej karty (testy układu pierwszego widoku).
+        legalStayUntil: LocalDate(year: 2026, month: 10, day: 21)
     )
 
     public static let cases: [LegalCase] = [caseOlena, caseDmytro]
@@ -365,8 +375,11 @@ public enum DemoFixtures {
             authorID: nil,
             authorLabel: "Olena Kovalenko",
             providerMessageID: "wamid.demo.olena.3",
-            text: "Надіслала скан повістки на пошту. Оригінал взяти з собою?",
-            translation: "Wysłałam skan wezwania mailem. Czy wziąć ze sobą oryginał?",
+            // Zdjęcie wezwania — plik od klienta z czynnościami „do akt” i „policz termin”.
+            kind: .image,
+            text: "Ось повістка. Оригінал взяти з собою?",
+            attachmentName: "povistka.jpg",
+            translation: "Oto wezwanie. Czy wziąć ze sobą oryginał?",
             sentAt: instant(referenceDay, "09:34"),
             sequence: 3,
             transport: .delivered,
