@@ -377,3 +377,28 @@ public enum GeminiLiveProtocolError: Error, Equatable, Sendable {
     case websocketFailed(String)
     case sessionEnded(code: Int, reason: String)
 }
+
+// MARK: - Kontekst rozmowy dla modelu
+
+public extension AssistantContext {
+    /// Notatka o kontekście dla modelu: liczbowe identyfikatory (takie, jakie
+    /// przyjmują narzędzia CRM) i zdanie, jak rozumieć „ta sprawa”, „ten klient”.
+    var liveContextNote: String {
+        /// `client-12` → `12`; identyfikator nieliczbowy (dane demo) zostaje bez zmian.
+        func number(_ raw: String?) -> String? {
+            guard let raw, !raw.isEmpty else { return nil }
+            if let digits = raw.split(separator: "-").last, Int(digits) != nil { return String(digits) }
+            return raw
+        }
+        var parts: [String] = []
+        if let raw = clientID?.rawValue, let id = number(raw) {
+            parts.append(raw.hasPrefix("lead-") ? "lead_id \(id)" : "client_id \(id)")
+        }
+        if let id = number(caseID?.rawValue) { parts.append("case_id \(id)") }
+        guard !parts.isEmpty else {
+            return "Kontekst: użytkownik nie ma otwartej karty osoby ani sprawy — pytania dotyczą całej kancelarii."
+        }
+        return "Kontekst: użytkownik ma teraz na ekranie \(parts.joined(separator: ", ")). "
+            + "„Ta sprawa”, „ten klient”, „tu” oznaczają te identyfikatory. Nie odpowiadaj na tę wiadomość — uwzględnij ją w kolejnej turze."
+    }
+}

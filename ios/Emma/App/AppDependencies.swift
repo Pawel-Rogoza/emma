@@ -558,6 +558,44 @@ public final class AppDependencies: ObservableObject {
         await voice.setMicrophoneMuted(voiceState.isCapturingMicrophone)
     }
 
+    /// Trasa na wierzchu bieżącej zakładki — to, co adwokat ma przed oczami.
+    public var visibleRoute: AppRoute? { navigation[tab]?.path.last }
+
+    /// Ostatni ekran przekazany Emmie w trwającej rozmowie.
+    private var voiceFollowedRoute: AppRoute?
+
+    /// Emma patrzy tam, gdzie adwokat. Wcześniej kontekst rozmowy ustawiał
+    /// się raz, przy starcie, więc „dodaj notatkę do tej sprawy” po przejściu
+    /// do innej sprawy trafiało do poprzedniej albo kończyło się dopytaniem.
+    /// Teraz każda karta klienta, sprawy i rozmowy otwarta w trakcie rozmowy
+    /// staje się jej kontekstem (wersjonowanym przez backend, §5.2).
+    func followVisibleScreenInVoice() async {
+        guard voiceState.mode == .conversation, voiceState.connection == .connected else {
+            voiceFollowedRoute = nil
+            return
+        }
+        guard let route = visibleRoute, route != voiceFollowedRoute else { return }
+        voiceFollowedRoute = route
+        let context: AssistantContext
+        switch route {
+        case .person(let clientID):
+            context = .client(clientID)
+        case .legalCase(let caseID):
+            guard let legalCase = try? await repository.legalCase(id: caseID) else { return }
+            context = .client(legalCase.clientID, caseID: caseID)
+        case .thread(let threadID):
+            let threads = (try? await repository.threads()) ?? []
+            guard let thread = threads.first(where: { $0.id == threadID }) else { return }
+            context = .client(thread.clientID)
+        case .tasks:
+            return
+        }
+        // Kontekst należy do trwającej rozmowy — ekran mógł się zmienić w trakcie `await`.
+        guard visibleRoute == route else { return }
+        emmaContext = context.clientID
+        await voice.updateContext(context)
+    }
+
     /// Zakończenie rozmowy z dowolnego ekranu. Jedna ścieżka dla docku Emmy
     /// i mini-panelu, żeby zakończenie nie miało dwóch implementacji (§5.3).
     public func endVoiceSession() async {

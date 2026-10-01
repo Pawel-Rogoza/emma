@@ -28,7 +28,11 @@ extension AssistantStore: VoiceAppToolHandling {
 
         switch name {
         case "app_open_screen":
-            return openScreen(args["screen"] as? String, dependencies: dependencies)
+            return openScreen(
+                args["screen"] as? String,
+                day: (args["date"] as? String).flatMap { LocalDate(iso: $0) },
+                dependencies: dependencies
+            )
 
         case "app_open_client":
             guard let clientID = Self.contactID(from: args) else {
@@ -217,18 +221,27 @@ extension AssistantStore: VoiceAppToolHandling {
 
     // MARK: Nawigacja
 
-    private func openScreen(_ screen: String?, dependencies: AppDependencies) -> String {
+    /// Ekran aplikacji; kalendarz od razu na wskazanym dniu („pokaż piątek”).
+    private func openScreen(_ screen: String?, day: LocalDate?, dependencies: AppDependencies) -> String {
         switch screen {
         case "today": dependencies.go(to: .today, resetStack: true)
         case "tasks": dependencies.openTasks()
-        case "calendar": dependencies.go(to: .calendar, resetStack: true)
+        case "calendar":
+            if let day {
+                dependencies.openCalendar(on: day)
+            } else {
+                dependencies.go(to: .calendar, resetStack: true)
+            }
         case "clients": dependencies.go(to: .clients, resetStack: true)
+        case "leads": dependencies.openLeads(filter: .needsAction)
         case "messages": dependencies.go(to: .messages, resetStack: true)
         case "emma": dependencies.go(to: .emma)
         default:
-            return Self.toolError("Nieznany ekran. Dostępne: today, tasks, calendar, clients, messages, emma.")
+            return Self.toolError("Nieznany ekran. Dostępne: today, tasks, calendar, clients, leads, messages, emma.")
         }
-        return Self.toolResult(["status": "opened", "screen": screen ?? ""])
+        var result: [String: Any] = ["status": "opened", "screen": screen ?? ""]
+        if screen == "calendar", let day { result["date"] = day.isoString }
+        return Self.toolResult(result)
     }
 
     // MARK: Propozycje

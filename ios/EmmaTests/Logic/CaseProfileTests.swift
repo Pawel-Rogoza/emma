@@ -250,3 +250,20 @@ final class CaseKindGuessTests: XCTestCase {
         XCTAssertEqual(CaseKind.guess(from: "Zezwolenie na widzenie, wizyta w areszcie"), .criminal)
     }
 }
+
+final class VoiceContextNoteTests: XCTestCase {
+
+    func testCaseOnScreenGivesNumericIDsForCRMTools() {
+        let note = AssistantContext.client(ClientID("client-12"), caseID: CaseID("case-7")).liveContextNote
+        XCTAssertTrue(note.contains("client_id 12, case_id 7"), note)
+        XCTAssertTrue(note.contains("„Ta sprawa”"))
+    }
+
+    func testLeadIsNamedAsLead() {
+        XCTAssertTrue(AssistantContext.client(ClientID("lead-3")).liveContextNote.contains("lead_id 3"))
+    }
+
+    func testFirmContextSaysNothingIsOpen() {
+        XCTAssertTrue(AssistantContext.firm.liveContextNote.contains("całej kancelarii"))
+    }
+}

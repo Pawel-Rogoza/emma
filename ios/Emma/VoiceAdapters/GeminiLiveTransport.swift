@@ -594,14 +594,7 @@ public final class GeminiLiveTransport: VoiceTransport {
     public func updateContext(_ context: AssistantContext) async throws {
         // Kontekst wstrzykujemy jako treść bez `turnComplete`, więc model nie
         // odpowiada na nią samoistnie — ma ją tylko uwzględnić w kolejnej turze.
-        let fields: [String: String] = [
-            "scope": context.scope.rawValue,
-            "client_id": context.clientID?.rawValue ?? "",
-            "case_id": context.caseID?.rawValue ?? "",
-            "version": String(context.version.value)
-        ]
-        let payload = (try? JSONEncoder().encode(fields)).flatMap { String(decoding: $0, as: UTF8.self) } ?? "{}"
-        try await send(.clientContent(role: .user, text: "Kontekst bieżącej rozmowy: \(payload)", turnComplete: false))
+        try await send(.clientContent(role: .user, text: context.liveContextNote, turnComplete: false))
         // Potwierdzenie kontekstu przychodzi od backendu; lokalny stan nie jest
         // uznawany za obowiązujący, dopóki go nie ma.
     }

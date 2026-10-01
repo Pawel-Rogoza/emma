@@ -86,6 +86,13 @@ public struct RootShell: View {
                 dependencies.voice.viewDidDisappear()
             }
         }
+        // Emma w rozmowie widzi ekran, który adwokat właśnie otworzył.
+        .onChange(of: dependencies.visibleRoute) { _, _ in
+            Task { await dependencies.followVisibleScreenInVoice() }
+        }
+        .onChange(of: dependencies.voiceState.connection) { _, _ in
+            Task { await dependencies.followVisibleScreenInVoice() }
+        }
         // Wiadomości WhatsApp przychodzą bez udziału aplikacji — licznik na
         // zakładce „Rozmowy” odświeża się co minutę, póki aplikacja jest na
         // ekranie i odblokowana. Wcześniej zmieniał się dopiero po zapisie.
