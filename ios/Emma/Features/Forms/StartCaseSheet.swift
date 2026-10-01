@@ -74,7 +74,7 @@ struct StartCaseSheet: View {
             }
 
             FormSectionLabel("Rodzaj sprawy")
-            FlowLayout {
+            ChipFlow {
                 ForEach(CaseKind.allCases) { candidate in
                     ChoiceChip(title: candidate.displayName, systemImage: candidate.systemImage, isSelected: kind == candidate) {
                         kind = kind == candidate ? nil : candidate

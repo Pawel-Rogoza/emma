@@ -130,7 +130,7 @@ struct CaseSettingsSheet: View {
     private var profileSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             FormSectionLabel("Rodzaj sprawy")
-            FlowLayout {
+            ChipFlow {
                 ForEach(CaseKind.allCases) { candidate in
                     ChoiceChip(title: candidate.displayName, systemImage: candidate.systemImage, isSelected: kind == candidate) {
                         selectKind(kind == candidate ? nil : candidate)
@@ -141,7 +141,7 @@ struct CaseSettingsSheet: View {
 
             if let kind, !kind.stages.isEmpty {
                 FormSectionLabel("Etap")
-                FlowLayout {
+                ChipFlow {
                     ForEach(kind.stages) { candidate in
                         ChoiceChip(title: candidate.displayName(in: kind), isSelected: stage == candidate) {
                             selectStage(stage == candidate ? nil : candidate)
@@ -154,7 +154,7 @@ struct CaseSettingsSheet: View {
 
             if let kind, !kind.roles.isEmpty {
                 FormSectionLabel("Klient w sprawie")
-                FlowLayout {
+                ChipFlow {
                     ForEach(kind.roles) { candidate in
                         ChoiceChip(title: candidate.displayName, isSelected: role == candidate) {
                             role = role == candidate ? nil : candidate

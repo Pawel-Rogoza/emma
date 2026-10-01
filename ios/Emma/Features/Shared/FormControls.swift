@@ -173,6 +173,15 @@ struct FlowLayout: Layout {
     }
 }
 
+/// Kontener chipów zawijanych do kolejnej linii (`FlowLayout`).
+struct ChipFlow<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        FlowLayout().callAsFunction { content }
+    }
+}
+
 /// Chip wyboru z ikoną. Ponowne dotknięcie wybranego odznacza go (pole
 /// profilu sprawy może zostać nieustalone).
 struct ChoiceChip: View {
