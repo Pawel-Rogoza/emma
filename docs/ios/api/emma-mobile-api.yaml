@@ -349,6 +349,76 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/ValidationFailed" }
 
+  /cases/{case_id}/files:
+    get:
+      tags: [Odczyt]
+      summary: Akta sprawy (aktualne wersje dokumentów)
+      description: |
+        Rozszerzenie 01.10.2026. Te same akta co w panelu (tabela `files`,
+        foldery, statusy pism), najnowsze najpierw.
+      parameters:
+        - $ref: "#/components/parameters/CaseID"
+      responses:
+        "200":
+          description: Dokumenty sprawy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/CaseDocument" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Zapis]
+      summary: Skan albo plik z telefonu do akt sprawy
+      description: |
+        `multipart/form-data`: pole `files` (PDF, zdjęcie, DOC/DOCX/RTF/TXT,
+        do 10 MB) i opcjonalnie `folder`. Typ ustala serwer po sygnaturze
+        bajtów; te same limity i skan AV co w panelu. Bez klucza idempotencji —
+        aplikacja nie ponawia wysyłki sama.
+      parameters:
+        - $ref: "#/components/parameters/CaseID"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [files]
+              properties:
+                files: { type: string, format: binary }
+                folder: { type: string, enum: [Dokumenty, Dowody, Pisma, Rozliczenia, Inne] }
+      responses:
+        "201":
+          description: Zapisane dokumenty
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/CaseDocument" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /files/{file_id}:
+    get:
+      tags: [Odczyt]
+      summary: Treść dokumentu z akt klienta lub sprawy
+      parameters:
+        - name: file_id
+          in: path
+          required: true
+          schema: { type: string, example: file-12 }
+      responses:
+        "200":
+          description: Bajty dokumentu z typem z `Content-Type`
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /tasks:
     get:
       tags: [Odczyt]
@@ -1182,6 +1252,21 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
 
   schemas:
+    CaseDocument:
+      type: object
+      required: [id, case_id, name, mime, size, folder, uploaded_at]
+      properties:
+        id: { type: string, example: file-12 }
+        case_id: { type: string, example: case-3 }
+        name: { type: string, example: wezwanie.pdf }
+        mime: { type: string, example: application/pdf }
+        size: { type: integer }
+        folder: { type: string, example: Pisma }
+        status:
+          type: [string, "null"]
+          enum: [roboczy, do_akceptacji, podpisany, wyslany, zlozony, otrzymany, archiwalny, null]
+        uploaded_at: { type: string, format: date-time }
+        uploaded_by: { type: [string, "null"] }
 
     # ------------------------------------------------------------ Typy podstawowe
 

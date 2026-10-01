@@ -21,6 +21,8 @@ public actor MockRepository:
     private let actionEngine = ActionEngine()
     private var idempotencyIndex: [String: MessageID] = [:]
     private var voiceSessions: [VoiceSessionID: VoiceSessionStatus] = [:]
+    /// Akta spraw w Demo: tylko w pamięci, jak reszta danych przykładowych.
+    private var documents: [CaseID: [(CaseDocument, Data)]] = [:]
 
     public init(
         dataset: DemoFixtures.Dataset = DemoFixtures.dataset(),
@@ -831,3 +833,43 @@ public actor MockRepository:
         )
     }
 }
+
+// MARK: - Akta sprawy (Demo)
+
+extension MockRepository: CaseDocumentsRepository {
+
+    public func caseDocuments(caseID: CaseID) async throws -> [CaseDocument] {
+        (documents[caseID] ?? []).map(\.0).sorted { $0.uploadedAt > $1.uploadedAt }
+    }
+
+    public func uploadCaseDocument(
+        caseID: CaseID,
+        fileName: String,
+        mime: String,
+        data: Data,
+        folder: CaseDocumentFolder
+    ) async throws -> CaseDocument {
+        idSequence += 1
+        let document = CaseDocument(
+            id: "file-\(idSequence)",
+            caseID: caseID,
+            name: fileName,
+            mime: mime,
+            size: data.count,
+            folder: folder.rawValue,
+            status: nil,
+            uploadedAt: clock.now(),
+            uploadedBy: dataset.user.displayName
+        )
+        documents[caseID, default: []].append((document, data))
+        return document
+    }
+
+    public func documentData(id: String) async throws -> Data {
+        for entries in documents.values {
+            if let match = entries.first(where: { $0.0.id == id }) { return match.1 }
+        }
+        throw DomainError.notFound(resource: "dokument", id: id)
+    }
+}
+

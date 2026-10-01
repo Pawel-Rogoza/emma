@@ -1211,3 +1211,50 @@ extension BackendRepository {
         return value
     }
 }
+
+// MARK: - Akta sprawy
+
+extension BackendRepository: CaseDocumentsRepository {
+
+    public func caseDocuments(caseID: CaseID) async throws -> [CaseDocument] {
+        try await api.caseDocuments(caseID: caseID).map(Self.document(from:))
+    }
+
+    public func uploadCaseDocument(
+        caseID: CaseID,
+        fileName: String,
+        mime: String,
+        data: Data,
+        folder: CaseDocumentFolder
+    ) async throws -> CaseDocument {
+        var form = MultipartForm()
+        form.addField("folder", folder.rawValue)
+        form.addFile("files", fileName: fileName, mime: mime, data: data)
+        guard let saved = try await api.uploadCaseDocument(caseID: caseID, form: form).first else {
+            throw BackendRepositoryError.decoding("serwer nie odesłał zapisanego dokumentu")
+        }
+        return try Self.document(from: saved)
+    }
+
+    public func documentData(id: String) async throws -> Data {
+        try await api.documentData(id: id)
+    }
+
+    static func document(from dto: BackendDocumentDTO) throws -> CaseDocument {
+        guard let uploadedAt = MobileAuthClient.parseISO8601(dto.uploadedAt) else {
+            throw BackendRepositoryError.decoding("nieprawidłowa data dokumentu: \(dto.uploadedAt)")
+        }
+        return CaseDocument(
+            id: dto.id,
+            caseID: CaseID(dto.caseID),
+            name: dto.name,
+            mime: dto.mime,
+            size: dto.size,
+            folder: dto.folder,
+            status: dto.status,
+            uploadedAt: uploadedAt,
+            uploadedBy: dto.uploadedBy
+        )
+    }
+}
+

@@ -13,6 +13,7 @@ final class CaseStore: ObservableObject {
         case overview = "Przegląd"
         case tasks = "Zadania"
         case notes = "Notatki"
+        case documents = "Akta"
         case history = "Historia"
 
         var id: String { rawValue }
@@ -199,6 +200,7 @@ struct CaseScreen: View {
         case .overview: overview(model)
         case .tasks: tasksTab(model)
         case .notes: notesTab(model)
+        case .documents: CaseDocumentsTab(caseID: model.legalCase.id, caseTitle: model.legalCase.title)
         case .history: historyTab(model)
         }
     }

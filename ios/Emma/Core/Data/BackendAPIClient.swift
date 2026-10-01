@@ -105,6 +105,8 @@ public struct BackendAPIClient: Sendable {
         case actions = "api/mobile/v1/actions"
         /// Rozmowy WhatsApp (numer kancelarii podłączony przez Dualhook).
         case threads = "api/mobile/v1/threads"
+        /// Treść dokumentu z akt (`GET /files/{file_id}`).
+        case files = "api/mobile/v1/files"
     }
 
     /// Domyślny rozmiar strony z kontraktu (`limit`, maks. 100). Repozytorium
@@ -263,6 +265,54 @@ public struct BackendAPIClient: Sendable {
     /// `GET /api/mobile/v1/cases/{case_id}` — sprawa z zadania i historią.
     func caseDetail(id: CaseID) async throws -> BackendCaseDetail {
         try await get("\(Endpoint.cases.rawValue)/\(id.rawValue)", query: [])
+    }
+
+    /// `GET /api/mobile/v1/cases/{case_id}/files` — akta sprawy.
+    func caseDocuments(caseID: CaseID) async throws -> [BackendDocumentDTO] {
+        let response: BackendItems<BackendDocumentDTO> = try await get(
+            "\(Endpoint.cases.rawValue)/\(caseID.rawValue)/files", query: []
+        )
+        return response.items
+    }
+
+    /// `POST /api/mobile/v1/cases/{case_id}/files` — plik do akt (multipart).
+    /// Bez ponawiania: drugi taki sam skan w aktach to bałagan, nie wygoda.
+    func uploadCaseDocument(caseID: CaseID, form: MultipartForm) async throws -> [BackendDocumentDTO] {
+        let body = form.finished()
+        let (data, http) = try await authenticatedRequest { token in
+            var request = try self.makeRequest(
+                path: "\(Endpoint.cases.rawValue)/\(caseID.rawValue)/files",
+                method: "POST",
+                token: token
+            )
+            request.httpBody = body
+            request.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
+            // Skan kilku stron przez słabe LTE trwa dłużej niż zwykły zapis.
+            request.timeoutInterval = max(request.timeoutInterval, 120)
+            return request
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw Self.error(from: http, data: data)
+        }
+        do {
+            return try Self.decoder.decode(BackendItems<BackendDocumentDTO>.self, from: data).items
+        } catch {
+            throw BackendRepositoryError.decoding("\(error)")
+        }
+    }
+
+    /// `GET /api/mobile/v1/files/{file_id}` — surowa treść dokumentu.
+    func documentData(id: String) async throws -> Data {
+        let (data, http) = try await authenticatedRequest { token in
+            var request = try self.makeRequest(path: "\(Endpoint.files.rawValue)/\(id)", token: token)
+            request.setValue("*/*", forHTTPHeaderField: "Accept")
+            request.timeoutInterval = max(request.timeoutInterval, 120)
+            return request
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw Self.error(from: http, data: data)
+        }
+        return data
     }
 
     /// `GET /api/mobile/v1/tasks/{task_id}`.
@@ -1514,5 +1564,25 @@ struct BackendReadStateBody: Encodable {
         case manualUnread = "manual_unread"
         case isPinned = "is_pinned"
         case expectedVersion = "expected_version"
+    }
+}
+
+/// Dokument z akt sprawy (`MobileDocument`).
+struct BackendDocumentDTO: Decodable, Sendable {
+    let id: String
+    let caseID: String
+    let name: String
+    let mime: String
+    let size: Int
+    let folder: String
+    let status: String?
+    let uploadedAt: String
+    let uploadedBy: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, mime, size, folder, status
+        case caseID = "case_id"
+        case uploadedAt = "uploaded_at"
+        case uploadedBy = "uploaded_by"
     }
 }

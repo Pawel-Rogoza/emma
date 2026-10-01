@@ -101,3 +101,25 @@ mniej.
 Granica się nie zmienia. Żadne narzędzie nie zapisuje, nie wysyła i nie daje
 zgody: zapis wymaga przycisku na karcie, wysyłka przycisku w rozmowie, termin
 przycisku w formularzu.
+
+## 7. Emma śledzi ekran, zmiany sprawy głosem, akta w telefonie (0.12.0)
+
+- **Kontekst rozmowy idzie za ekranem.** Karta klienta, sprawy albo rozmowy
+  otwarta w trakcie rozmowy staje się kontekstem Emmy („dodaj notatkę do tej
+  sprawy”). Wcześniej kontekst ustawiał się raz, przy starcie.
+- **`app_update_case`**: „areszt przedłużony do 12 grudnia”, „sprawa poszła do
+  apelacji” otwiera ustawienia sprawy z wpisanymi zmianami. Zapis przyciskiem
+  „Zapisz”. Data aresztu bez rodzaju sprawy ustawia rodzaj „karna”, bo inaczej
+  formularz by ją zgubił.
+- **`app_open_screen`**: kalendarz na wskazanym dniu, ekran zgłoszeń.
+- **Akta sprawy** (zakładka „Akta”): skan aparatem (VisionKit) do jednego PDF
+  albo plik z Plików, nazwa i folder, potem „Zapisz w aktach”. Lista z panelu
+  ze statusami pism, podgląd QuickLook (kopia z ochroną `.complete`, usuwana
+  po zamknięciu). Backend: `GET/POST /cases/{id}/files`, `GET /files/{id}`.
+  Te same limity, sprawdzenie typu po sygnaturze i ten sam skan AV co w panelu
+  (wspólna funkcja `saveUploadedFiles`).
+
+**Do decyzji właściciela:** na produkcji `UPLOAD_SCAN_MODE=disabled`, a demon
+ClamAV nie działa. Pliki z panelu i z telefonu nie są skanowane antywirusem.
+Włączenie wymaga uruchomienia `clamd` (około 1 GB RAM) i zmiany trybu na
+`required`.
