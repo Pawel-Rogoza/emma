@@ -76,3 +76,28 @@ sprawy”) zamiast udawać sukces.
   otwiera „Termin w sprawie” z datą wiadomości.
 - Spotlight: wpisać sygnaturę — wynik otwiera sprawę po Face ID; po
   wylogowaniu wyników nie ma.
+
+## 6. Asystent głosowy (0.11.0)
+
+Przegląd 01.10.2026. Emma w rozmowie widziała klientów, sprawy, zadania,
+kalendarz i zgłoszenia, ale nie miała dostępu do reszty aplikacji.
+
+| Brak | Skutek | Teraz |
+|---|---|---|
+| Model nie znał dzisiejszej daty | „zadanie na jutro”, „termin od piątku” dostawały datę zgadniętą | instrukcja w tokenie zaczyna się od „Dziś jest …” (Europe/Warsaw) |
+| Brak dostępu do WhatsApp | „kto pisał?”, „co napisał Zenon?” — bez odpowiedzi | `list_conversations`, `get_conversation` (pliki po rodzaju i nazwie) |
+| Profil sprawy niewidoczny | rodzaj, etap, rola, areszt i pobyt z 0.10.0 nie docierały do rozmowy | pola w `search_cases` / `get_case`; `list_case_watches`; `case_watches` w przeglądzie dnia |
+| Wiadomość do klienta — „nie da się głosem” | adwokat musiał sam wejść w rozmowę i pisać | `app_draft_reply`: szkic w polu odpowiedzi rozmowy, wysyła adwokat |
+| Termin w kalendarzu — tylko tekstowo | | `app_prepare_event`: wypełniony formularz, zapis w formularzu |
+| Liczenie terminów „w pamięci” modelu | ryzyko złej daty (soboty, święta) | `app_compute_deadline` — ta sama arytmetyka co kalkulator w formularzu |
+| Skrót „Odpowiedz” przy prawdziwym backendzie | karta „Wiadomość” odrzucana (422) — skrót kończył się błędem | szkic trafia w pole odpowiedzi rozmowy WhatsApp |
+
+Szybkość: narzędzia CRM odpowiadają na serwerze w 2–15 ms (audyt produkcji),
+więc czas zależy od liczby rund modelu. Instrukcja każe wywoływać niezależne
+narzędzia równolegle i używać jednego `get_today_overview` przy pytaniach
+o dzień. Przegląd dnia zawiera też areszty i pobyty, więc to jedno wywołanie
+mniej.
+
+Granica się nie zmienia. Żadne narzędzie nie zapisuje, nie wysyła i nie daje
+zgody: zapis wymaga przycisku na karcie, wysyłka przycisku w rozmowie, termin
+przycisku w formularzu.

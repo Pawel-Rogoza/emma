@@ -3,13 +3,15 @@ import Foundation
 // MARK: - Narzędzia aplikacji dla Gemini Live (`app_*`)
 //
 // Model rozmawia głosem i **steruje aplikacją** przez te narzędzia: otwiera
-// ekrany, karty klientów i spraw, przygotowuje notatki i zadania. Wykonuje je
+// ekrany, karty klientów i spraw, rozmowy WhatsApp, przygotowuje notatki,
+// zadania, szkice wiadomości i terminy, liczy terminy procesowe. Wykonuje je
 // ten ekran, bo to on pokazuje karty propozycji i zna powiązanie klient → sprawa.
 //
 // Granica bezpieczeństwa jest ta sama co w interfejsie: żadne narzędzie nie
-// zapisuje danych ani nie daje zgody. Propozycja trafia na kartę, a zapis
-// następuje dopiero po dotknięciu „Zatwierdź” (`/actions/{id}/confirm`
-// z nagłówkiem `direct_ui_button`). Model dostaje to wprost w wyniku narzędzia.
+// zapisuje danych, nie wysyła i nie daje zgody. Propozycja trafia na kartę
+// (zapis po „Zatwierdź”, `/actions/{id}/confirm` z nagłówkiem
+// `direct_ui_button`), szkic wiadomości — w pole odpowiedzi rozmowy, termin —
+// do formularza. Model dostaje to wprost w wyniku narzędzia.
 //
 // Deklaracje (nazwy, argumenty) są po stronie backendu:
 // `adwokat-app-project/src/lib/crm/voice/appTools.ts`. Identyfikatory przychodzą
@@ -76,9 +78,141 @@ extension AssistantStore: VoiceAppToolHandling {
             await cancel(actionID: actionID)
             return Self.toolResult(["status": "cancelled", "action_id": actionID.rawValue])
 
+        case "app_open_thread":
+            guard let clientID = Self.contactID(from: args) else {
+                return Self.toolError("Podaj client_id albo lead_id z wyniku wyszukiwania.")
+            }
+            guard let threadID = await conversationID(for: ClientID(clientID), dependencies: dependencies) else {
+                return Self.toolError("Ta osoba nie pisała do kancelarii na WhatsAppie — nie ma rozmowy do otwarcia.")
+            }
+            dependencies.emmaContext = ClientID(clientID)
+            dependencies.openThread(threadID)
+            return Self.toolResult(["status": "opened", "screen": "thread"])
+
+        case "app_draft_reply":
+            return await draftReplyFromTool(args, dependencies: dependencies)
+
+        case "app_prepare_event":
+            return await prepareEventFromTool(args, dependencies: dependencies)
+
+        case "app_compute_deadline":
+            return await computeDeadlineFromTool(args, dependencies: dependencies)
+
         default:
             return Self.toolError("Aplikacja nie zna narzędzia \(name).")
         }
+    }
+
+    // MARK: Rozmowy WhatsApp
+
+    /// Rozmowa osoby z listy wątków — bez zgadywania identyfikatora.
+    func conversationID(for clientID: ClientID, dependencies: AppDependencies) async -> ThreadID? {
+        let threads = (try? await dependencies.repository.threads()) ?? []
+        return threads.first { $0.clientID == clientID }?.id
+    }
+
+    /// Szkic w polu odpowiedzi rozmowy. Wysyła adwokat — model tego nie umie
+    /// i dostaje to wprost w wyniku.
+    private func draftReplyFromTool(_ args: [String: Any], dependencies: AppDependencies) async -> String {
+        guard let text = (args["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
+            return Self.toolError("Podaj treść wiadomości.")
+        }
+        guard let rawID = Self.contactID(from: args) ?? dependencies.emmaContext?.rawValue else {
+            return Self.toolError("Nie wiem, do kogo napisać. Wyszukaj osobę i podaj client_id albo lead_id.")
+        }
+        let clientID = ClientID(rawID)
+        guard let threadID = await conversationID(for: clientID, dependencies: dependencies) else {
+            return Self.toolError("Ta osoba nie pisała do kancelarii na WhatsAppie, więc nie ma rozmowy, w której można odpisać.")
+        }
+        dependencies.emmaContext = clientID
+        dependencies.pendingThreadDraft = ThreadDraftSeed(threadID: threadID, text: text)
+        dependencies.openThread(threadID)
+        return Self.toolResult([
+            "status": "draft_in_composer",
+            "text": text,
+            "message": "Szkic jest w polu odpowiedzi rozmowy. Wysyła użytkownik przyciskiem — nie mów, że wysłano.",
+        ])
+    }
+
+    // MARK: Kalendarz i terminy
+
+    /// Formularz nowego terminu wypełniony z rozmowy. Zapis — w formularzu.
+    private func prepareEventFromTool(_ args: [String: Any], dependencies: AppDependencies) async -> String {
+        let title = (args["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let day = (args["date"] as? String).flatMap { LocalDate(iso: $0) }
+        let time = (args["time"] as? String).flatMap { TimeOfDay(hhmm: $0) }
+        let (clientID, caseID) = await eventContext(args, dependencies: dependencies)
+        dependencies.pendingEventDraft = EventDraftSeed(
+            title: (title?.isEmpty == false) ? title : nil,
+            day: day,
+            time: time
+        )
+        dependencies.present(.eventForm(editing: nil, clientID: clientID, caseID: caseID, initialDay: day))
+        var result: [String: Any] = [
+            "status": "form_open",
+            "message": "Formularz terminu jest otwarty. Zapisze go użytkownik przyciskiem — nie mów, że dodano.",
+        ]
+        if let day { result["date"] = day.isoString }
+        if let time { result["time"] = time.hhmm }
+        return Self.toolResult(result)
+    }
+
+    /// Ta sama arytmetyka co „Policz termin” w formularzu (sobota i święta
+    /// przesuwają koniec). Na życzenie od razu otwiera formularz z wyliczeniem.
+    private func computeDeadlineFromTool(_ args: [String: Any], dependencies: AppDependencies) async -> String {
+        guard let from = (args["from_date"] as? String).flatMap({ LocalDate(iso: $0) }) else {
+            return Self.toolError("Podaj from_date (dzień doręczenia albo ogłoszenia) jako RRRR-MM-DD.")
+        }
+        let days = (args["days"] as? NSNumber)?.intValue
+        switch ProceduralDeadlines.compute(ruleID: args["rule_id"] as? String, days: days, from: from) {
+        case .failure(.unknownRule(let id)):
+            let known = ProceduralDeadlines.common.map(\.id).joined(separator: ", ")
+            return Self.toolError("Nie znam reguły \(id). Znane: \(known). Albo podaj days.")
+        case .failure(.hourly(let rule)):
+            return Self.toolError(
+                "\(rule.title) liczy się w godzinach od chwili zatrzymania (\(rule.spanText)). "
+                    + "Zapytaj o dzień i godzinę zatrzymania i otwórz formularz terminu."
+            )
+        case .failure(.missingSpan):
+            return Self.toolError("Podaj rule_id z listy albo liczbę dni (days).")
+        case .success(let computation):
+            var result: [String: Any] = [
+                "from_date": computation.from.isoString,
+                "span": computation.spanText,
+                "due_date": computation.result.due.isoString,
+                "due_text": dependencies.dateText.dayTitle(computation.result.due),
+            ]
+            if let reason = computation.result.shiftReason {
+                result["shifted_from"] = computation.result.nominal.isoString
+                result["shift_reason"] = reason
+            }
+            if let rule = computation.rule {
+                result["rule"] = rule.title
+                result["legal_basis"] = rule.legalBasis
+                result["starts_from"] = rule.startsFrom
+            }
+            if args["open_form"] as? Bool == true {
+                let (clientID, caseID) = await eventContext(args, dependencies: dependencies)
+                dependencies.pendingEventDraft = EventDraftSeed(
+                    title: computation.rule?.title,
+                    deadlineFrom: computation.from,
+                    deadlineRuleID: computation.rule?.id
+                )
+                dependencies.present(.eventForm(editing: nil, clientID: clientID, caseID: caseID, initialDay: nil))
+                result["form"] = "open — zapis przyciskiem w formularzu"
+            }
+            return Self.toolResult(result)
+        }
+    }
+
+    /// Klient i sprawa terminu: z argumentów, a sprawa podpowiada klienta.
+    private func eventContext(_ args: [String: Any], dependencies: AppDependencies) async -> (ClientID?, CaseID?) {
+        let caseID = Self.entityID(args["case_id"], prefix: "case").map { CaseID($0) }
+        var clientID = Self.contactID(from: args).map { ClientID($0) }
+        if clientID == nil, let caseID {
+            clientID = (try? await dependencies.repository.legalCase(id: caseID))?.clientID
+        }
+        return (clientID ?? dependencies.emmaContext, caseID)
     }
 
     // MARK: Nawigacja

@@ -76,4 +76,48 @@ final class ProceduralDeadlinesTests: XCTestCase {
         XCTAssertEqual(ProceduralDeadlines.due(from: arrest, hours: 48).timeIntervalSince(arrest), 48 * 3600)
         XCTAssertEqual(ProceduralDeadlines.common.first { $0.id == "kpk-zatrzymanie-72" }?.span, .hours(72))
     }
+
+    // MARK: Emma liczy głosem (`app_compute_deadline`)
+
+    func testVoiceComputationUsesTheSameShiftAsTheForm() throws {
+        // 17.10.2026 (sobota) + 7 dni = sobota 24.10 → poniedziałek 26.10.
+        let computation = try ProceduralDeadlines.compute(
+            ruleID: "kpk-zazalenie", days: nil, from: LocalDate(year: 2026, month: 10, day: 17)
+        ).get()
+        XCTAssertEqual(computation.result.due, LocalDate(year: 2026, month: 10, day: 26))
+        XCTAssertEqual(computation.result.shiftReason, "sobota")
+        XCTAssertEqual(computation.rule?.legalBasis, "art. 460 k.p.k.")
+    }
+
+    func testVoiceComputationFromPlainDays() throws {
+        let computation = try ProceduralDeadlines.compute(
+            ruleID: nil, days: 14, from: LocalDate(year: 2026, month: 10, day: 1)
+        ).get()
+        XCTAssertNil(computation.rule)
+        XCTAssertEqual(computation.result.due, LocalDate(year: 2026, month: 10, day: 15))
+        XCTAssertEqual(computation.spanText, "14 dni")
+    }
+
+    func testVoiceComputationRefusesWhatItCannotCount() {
+        let day = LocalDate(year: 2026, month: 10, day: 1)
+        XCTAssertEqual(ProceduralDeadlines.compute(ruleID: "kpk-nie-ma", days: nil, from: day), .failure(.unknownRule("kpk-nie-ma")))
+        XCTAssertEqual(ProceduralDeadlines.compute(ruleID: nil, days: nil, from: day), .failure(.missingSpan))
+        guard case .failure(.hourly(let rule)) = ProceduralDeadlines.compute(ruleID: "kpk-zatrzymanie-48", days: nil, from: day) else {
+            return XCTFail("Zatrzymanie liczy się w godzinach — głos ma odesłać do formularza.")
+        }
+        XCTAssertEqual(rule.id, "kpk-zatrzymanie-48")
+    }
+
+    /// Opis narzędzia `app_compute_deadline` w backendzie
+    /// (`adwokat-app-project/src/lib/crm/voice/appTools.ts`) wylicza te reguły.
+    /// Zmiana listy tutaj bez zmiany tam to reguła, o której model nie wie.
+    func testRulesNamedInTheVoiceToolDeclaration() {
+        let declared = [
+            "kpk-zazalenie", "kpk-uzasadnienie", "kpk-apelacja", "kpk-sprzeciw", "kpk-kasacja",
+            "kpk-zazalenie-areszt", "kpk-zazalenie-umorzenie", "kpk-subsydiarny", "kpk-przywrocenie",
+            "kpa-odwolanie", "kpa-zazalenie", "ppsa-skarga", "ppsa-skarga-kasacyjna",
+        ]
+        let countable = ProceduralDeadlines.common.filter { !$0.isHourly }.map(\.id)
+        XCTAssertEqual(Set(countable), Set(declared))
+    }
 }

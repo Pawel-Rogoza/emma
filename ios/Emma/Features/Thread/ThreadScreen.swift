@@ -119,6 +119,7 @@ final class ThreadStore: ObservableObject {
                     )
                 )
             )
+            applyPendingDraft(dependencies, threadID: threadID)
         } catch {
             if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać rozmowy.") {
                 dependencies.showToast(message)
@@ -199,6 +200,17 @@ final class ThreadStore: ObservableObject {
         model.draft.updatedAt = dependencies?.clock.now() ?? Date()
         phase = .loaded(model)
         scheduleDraftSave(model.draft, delay: 600_000_000)
+    }
+
+    /// Szkic od Emmy („napisz Zenonowi, że…”) albo ze skrótu „Odpowiedz”.
+    /// Pusty szkic zastępuje; pisany tekst zostaje, a propozycja dochodzi
+    /// pod nim — nic, co adwokat zaczął pisać, nie znika.
+    func applyPendingDraft(_ dependencies: AppDependencies, threadID: ThreadID) {
+        guard let seed = dependencies.pendingThreadDraft, seed.threadID == threadID,
+              let model = phase.value else { return }
+        dependencies.pendingThreadDraft = nil
+        let current = model.draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        setDraftText(current.isEmpty ? seed.text : "\(model.draft.text)\n\n\(seed.text)")
     }
 
     /// Gotowa odpowiedź albo dyktowanie — zapis bez czekania.
@@ -399,6 +411,10 @@ struct ThreadScreen: View {
         .navigationBarBackButtonHidden(true)
         .emmaPreservesSwipeBack()
         .task(id: dependencies.dataVersion) { await store.load(dependencies, threadID: threadID) }
+        // Rozmowa już otwarta, a Emma podsuwa szkic — bez ponownego wczytania.
+        .onChange(of: dependencies.pendingThreadDraft) { _, _ in
+            store.applyPendingDraft(dependencies, threadID: threadID)
+        }
         // Odpowiedź klienta pojawia się w otwartej rozmowie sama.
         .task(id: threadID) {
             while !Task.isCancelled {

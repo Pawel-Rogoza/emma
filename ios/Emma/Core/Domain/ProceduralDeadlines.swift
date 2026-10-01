@@ -287,6 +287,38 @@ public enum ProceduralDeadlines {
         instant.addingTimeInterval(TimeInterval(hours) * 3600)
     }
 
+    public static func rule(id: String) -> DeadlineRule? {
+        common.first { $0.id == id }
+    }
+
+    /// Wyliczenie dla Emmy (`app_compute_deadline`): ta sama arytmetyka co
+    /// w formularzu, żeby głos i kalkulator nigdy nie podały dwóch dat.
+    public struct Computation: Equatable, Sendable {
+        /// `nil`, gdy liczono z samej liczby dni.
+        public let rule: DeadlineRule?
+        public let from: LocalDate
+        public let result: Result
+        public let spanText: String
+    }
+
+    public enum ComputationError: Error, Equatable, Sendable {
+        case unknownRule(String)
+        /// Zatrzymanie liczy się w godzinach od chwili — to robi formularz.
+        case hourly(DeadlineRule)
+        case missingSpan
+    }
+
+    /// Reguła z listy albo `days` dni od `from`. Reguła ma pierwszeństwo.
+    public static func compute(ruleID: String?, days: Int?, from: LocalDate) -> Swift.Result<Computation, ComputationError> {
+        if let ruleID, !ruleID.isEmpty {
+            guard let rule = rule(id: ruleID) else { return .failure(.unknownRule(ruleID)) }
+            guard let result = due(from: from, rule: rule) else { return .failure(.hourly(rule)) }
+            return .success(Computation(rule: rule, from: from, result: result, spanText: rule.spanText))
+        }
+        guard let days, days > 0, days <= 366 else { return .failure(.missingSpan) }
+        return .success(Computation(rule: nil, from: from, result: due(from: from, days: days), spanText: EmmaPlural.days(days)))
+    }
+
     private static func reason(for day: LocalDate) -> String {
         if let holiday = PolishHolidays.name(of: day) { return holiday }
         return day.weekdayIndexMondayFirst == 5 ? "sobota" : "niedziela"

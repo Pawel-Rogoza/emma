@@ -751,6 +751,19 @@ final class AssistantStore: ObservableObject {
 
     func prepareReply(_ clientID: ClientID) async {
         guard let client = client(id: clientID) else { return }
+        // Backend nie przyjmuje karty „Wiadomość” (422 — wysyłka idzie z pola
+        // rozmowy, z bramką okna 24 h). Szkic trafia więc tam, gdzie się go
+        // wysyła, zamiast kończyć skrót komunikatem o błędzie.
+        if let dependencies, dependencies.repository is BackendRepository {
+            guard let threadID = await conversationID(for: clientID, dependencies: dependencies) else {
+                await answer("Nie ma jeszcze rozmowy WhatsApp z \(client.displayName) — odpisać można dopiero, gdy klient napisze pierwszy.")
+                return
+            }
+            dependencies.pendingThreadDraft = ThreadDraftSeed(threadID: threadID, text: await draftText(clientID))
+            dependencies.openThread(threadID)
+            await answer("Szkic odpowiedzi do \(client.displayName) czeka w rozmowie WhatsApp — przeczytaj i wyślij.")
+            return
+        }
         guard let turn = await newAction(kind: .reply, clientID: clientID, text: await draftText(clientID)) else { return }
         if speaksReplies, !providerOwnsVoice {
             await speak(

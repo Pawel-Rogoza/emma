@@ -27,6 +27,18 @@ public enum SubmitOutcome<T> {
 
 /// Pola spotkania rozpoznane z wypowiedzi (F14). Wszystkie opcjonalne: brak pola
 /// znaczy „zostaw domyślną wartość formularza”, nie „zgaduj”.
+/// Szkic wiadomości podyktowany Emmie (`app_draft_reply`) albo przygotowany
+/// skrótem „Odpowiedz”: ląduje w polu odpowiedzi rozmowy, a wysyła adwokat.
+public struct ThreadDraftSeed: Equatable, Sendable {
+    public let threadID: ThreadID
+    public let text: String
+
+    public init(threadID: ThreadID, text: String) {
+        self.threadID = threadID
+        self.text = text
+    }
+}
+
 public struct EventDraftSeed: Equatable, Sendable {
     public var title: String?
     public var day: LocalDate?
@@ -151,6 +163,8 @@ public final class AppDependencies: ObservableObject {
     /// Pola spotkania rozpoznane głosem (F14). Formularz terminu zużywa je przy
     /// otwarciu, żeby „dodaj spotkanie … o 11” nie gubiło godziny i tytułu.
     @Published public var pendingEventDraft: EventDraftSeed?
+    /// Szkic do wpisania w pole odpowiedzi rozmowy; zużywa go ekran wątku.
+    @Published public var pendingThreadDraft: ThreadDraftSeed?
     /// Tryb listy klientów: leady, kartoteka klientów albo sprawy (`clientMode`).
     @Published public var clientMode: ClientListMode = .leads
     /// Ostatnio otwierane karty osób — pasek „Ostatnio otwierani” w kartotece.
@@ -707,6 +721,7 @@ public final class AppDependencies: ObservableObject {
         pendingEmmaAction = nil
         pendingVoiceStart = false
         pendingEventDraft = nil
+        pendingThreadDraft = nil
         pendingLeadFilter = nil
         pendingClientSearch = false
         clientMode = .leads
