@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreSpotlight
 import UserNotifications
 
 // MARK: - Wejście aplikacji
@@ -63,6 +64,7 @@ struct EmmaApp: App {
             }
             // Przypomnienia z nazwami klientów nie przeżywają końca sesji.
             await dependencies.reminders.removeAll()
+            dependencies.spotlight.removeAll()
             // Dane i nawigacja poprzedniego konta też nie.
             dependencies.clearSessionState()
         }
@@ -106,6 +108,13 @@ struct EmmaApp: App {
             }
             .onChange(of: auth.state) { _, _ in
                 syncLockOverlay()
+            }
+            // Wynik Spotlight (sygnatura, nazwisko). Tu, a nie w powłoce: przy
+            // zimnym starcie powłoka powstaje dopiero po Face ID, a rekord ma
+            // poczekać i otworzyć się po odblokowaniu (`HomeScreenQuickActions`).
+            .onContinueUserActivity(CSSearchableItemActionType) { activity in
+                guard let identifier = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return }
+                HomeScreenQuickActions.shared.pendingRecord = identifier
             }
             .environmentObject(auth)
             .tint(EmmaTheme.accent)

@@ -141,6 +141,8 @@ public final class AppDependencies: ObservableObject {
     private(set) var messagesStore: MessagesStore
     /// Przypomnienia o terminach (lokalne powiadomienia telefonu).
     let reminders: EventReminderScheduler
+    /// Sprawy i klienci w wyszukiwarce iPhone'a (poza Demo).
+    let spotlight: SpotlightIndex
 
     /// Kontekst Emmy wybrany na innym ekranie (odpowiada `emmaContext` z referencji).
     @Published public var emmaContext: ClientID?
@@ -209,6 +211,10 @@ public final class AppDependencies: ObservableObject {
         self.calendarStore = CalendarStore()
         self.messagesStore = MessagesStore()
         self.reminders = EventReminderScheduler(
+            isEnabled: !configuration.usesMockServices
+                && !ProcessInfo.processInfo.arguments.contains("--skip-auth")
+        )
+        self.spotlight = SpotlightIndex(
             isEnabled: !configuration.usesMockServices
                 && !ProcessInfo.processInfo.arguments.contains("--skip-auth")
         )

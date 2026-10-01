@@ -148,6 +148,9 @@ jobs:
             echo "::group::Nieudane testy jednostkowe"
             grep -E "error:|' failed \(|XCTAssert|Fatal error" "$ARTIFACTS/unit-tests.log" | head -100 || true
             echo "::endgroup::"
+            # Te same porażki jako adnotacje — widoczne bez logowania (API check-runs).
+            grep -E "error: -\[|error: .*XCT|Fatal error|error: " "$ARTIFACTS/unit-tests.log" | sort -u | head -30 \
+              | sed -E "s#^.*/ios/([^:]+):([0-9]+):([0-9]+:)? *error: (.*)#::error file=ios/\1,line=\2::\4#; t; s#^(.*)#::error::\1#" || true
           fi
           exit $status
 

@@ -121,6 +121,7 @@ final class TodayStore: ObservableObject {
                 phase = .loaded(model)
             }
             dependencies.leadsNeedingAction = clients.filter { $0.stage == .new }.count
+            dependencies.spotlight.update(cases: cases, clients: clients)
         } catch {
             if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać dnia.") {
                 dependencies.showToast(message)

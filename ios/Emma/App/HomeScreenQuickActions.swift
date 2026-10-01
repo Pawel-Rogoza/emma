@@ -23,6 +23,9 @@ final class HomeScreenQuickActions: ObservableObject {
 
     /// Skrót czekający na wykonanie (aplikacja mogła być zablokowana).
     @Published var pending: HomeScreenQuickAction?
+    /// Sprawa albo klient wybrany w Spotlight (`SpotlightIndex`) — też
+    /// dopiero po odblokowaniu.
+    @Published var pendingRecord: String?
 
     func receive(_ item: UIApplicationShortcutItem) -> Bool {
         guard let action = HomeScreenQuickAction(rawValue: item.type) else { return false }
@@ -32,6 +35,14 @@ final class HomeScreenQuickActions: ObservableObject {
 
     /// Wykonuje odłożony skrót. Wywoływane przez powłokę, gdy jest widoczna.
     func consume(_ dependencies: AppDependencies) {
+        if let record = pendingRecord {
+            pendingRecord = nil
+            if record.hasPrefix(SpotlightIndex.casePrefix) {
+                dependencies.openCase(CaseID(String(record.dropFirst(SpotlightIndex.casePrefix.count))))
+            } else if record.hasPrefix(SpotlightIndex.clientPrefix) {
+                dependencies.openPerson(ClientID(String(record.dropFirst(SpotlightIndex.clientPrefix.count))))
+            }
+        }
         guard let action = pending else { return }
         pending = nil
         switch action {

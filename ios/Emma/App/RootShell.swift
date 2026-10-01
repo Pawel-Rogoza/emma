@@ -98,6 +98,7 @@ public struct RootShell: View {
         }
         // Skrót z ikony aplikacji — dopiero po odblokowaniu (Face ID).
         .onChange(of: quickActions.pending) { _, _ in consumeQuickAction() }
+        .onChange(of: quickActions.pendingRecord) { _, _ in consumeQuickAction() }
         .onChange(of: auth.state) { _, _ in consumeQuickAction() }
         .onAppear {
             consumeQuickAction()
