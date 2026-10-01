@@ -402,3 +402,74 @@ public enum CaseWatchReminderPlan {
         return items.sorted { $0.fireAt < $1.fireAt }
     }
 }
+
+// MARK: - Zmiany sprawy podyktowane Emmie
+
+/// „Areszt przedłużony do 12 grudnia”, „sprawa poszła do apelacji”: Emma
+/// otwiera ustawienia sprawy z tymi zmianami, a zapisuje adwokat (`Zapisz`).
+/// Niepodane pole (`nil`) zostaje takie, jak w sprawie.
+public struct CaseProfileSeed: Equatable, Sendable {
+    public var caseID: CaseID
+    public var signature: String?
+    public var court: String?
+    public var kind: CaseKind?
+    public var stage: CaseStage?
+    public var clientRole: ClientRole?
+    public var custodyUntil: LocalDate?
+    public var legalStayUntil: LocalDate?
+
+    public init(
+        caseID: CaseID,
+        signature: String? = nil,
+        court: String? = nil,
+        kind: CaseKind? = nil,
+        stage: CaseStage? = nil,
+        clientRole: ClientRole? = nil,
+        custodyUntil: LocalDate? = nil,
+        legalStayUntil: LocalDate? = nil
+    ) {
+        self.caseID = caseID
+        self.signature = signature
+        self.court = court
+        self.kind = kind
+        self.stage = stage
+        self.clientRole = clientRole
+        self.custodyUntil = custodyUntil
+        self.legalStayUntil = legalStayUntil
+    }
+
+    /// Sprawa po zmianach. Rodzaj wynika z daty, gdy go brak (areszt → karna,
+    /// pobyt → pobytowa) — bez rodzaju formularz nie pokazałby tej daty
+    /// i zapis by ją zgubił. Etap i rola spoza rodzaju są pomijane, a zmiana
+    /// etapu przestawia rolę tak samo jak w formularzu.
+    public func applied(to legalCase: LegalCase) -> LegalCase {
+        var updated = legalCase
+        if let signature { updated.courtSignature = signature }
+        if let court { updated.court = court }
+        let inferred: CaseKind? = custodyUntil != nil ? .criminal : legalStayUntil != nil ? .residence : nil
+        let kind = kind ?? legalCase.kind ?? inferred
+        updated.kind = kind
+        if let stage, kind?.stages.contains(stage) == true {
+            updated.clientRole = ClientRole.afterStageChange(current: legalCase.clientRole, from: legalCase.stage, to: stage)
+            updated.stage = stage
+        }
+        if let clientRole, kind?.roles.contains(clientRole) == true { updated.clientRole = clientRole }
+        if let custodyUntil { updated.custodyUntil = custodyUntil }
+        if let legalStayUntil { updated.legalStayUntil = legalStayUntil }
+        return updated
+    }
+
+    /// Co faktycznie się zmieni — do odpowiedzi Emmy („zmieniam: areszt do…”).
+    public func changedFields(in legalCase: LegalCase) -> [String] {
+        let updated = applied(to: legalCase)
+        var fields: [String] = []
+        if updated.courtSignature != legalCase.courtSignature { fields.append("signature") }
+        if updated.court != legalCase.court { fields.append("court") }
+        if updated.kind != legalCase.kind { fields.append("kind") }
+        if updated.stage != legalCase.stage { fields.append("stage") }
+        if updated.clientRole != legalCase.clientRole { fields.append("client_role") }
+        if updated.custodyUntil != legalCase.custodyUntil { fields.append("custody_until") }
+        if updated.legalStayUntil != legalCase.legalStayUntil { fields.append("legal_stay_until") }
+        return fields
+    }
+}

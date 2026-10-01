@@ -267,3 +267,40 @@ final class VoiceContextNoteTests: XCTestCase {
         XCTAssertTrue(AssistantContext.firm.liveContextNote.contains("całej kancelarii"))
     }
 }
+
+final class CaseProfileSeedTests: XCTestCase {
+
+    private func legalCase(kind: CaseKind? = nil, stage: CaseStage? = nil, role: ClientRole? = nil) -> LegalCase {
+        var value = LegalCase(
+            id: CaseID("case-1"), number: "KR/1", title: "Rozbój", clientID: ClientID("client-1"),
+            status: .inProgress, summary: "", createdAt: LocalDate(year: 2026, month: 9, day: 1), kind: kind
+        )
+        value.stage = stage
+        value.clientRole = role
+        return value
+    }
+
+    func testCustodyWithoutKindMakesTheCaseCriminal() {
+        // Bez rodzaju formularz nie pokazałby daty aresztu, a zapis by ją zgubił.
+        let seed = CaseProfileSeed(caseID: CaseID("case-1"), custodyUntil: LocalDate(year: 2026, month: 12, day: 12))
+        let updated = seed.applied(to: legalCase())
+        XCTAssertEqual(updated.kind, .criminal)
+        XCTAssertEqual(updated.custodyUntil, LocalDate(year: 2026, month: 12, day: 12))
+        XCTAssertEqual(seed.changedFields(in: legalCase()), ["kind", "custody_until"])
+    }
+
+    func testStageChangeMovesSuspectToAccusedLikeTheForm() {
+        let before = legalCase(kind: .criminal, stage: .preTrial, role: .suspect)
+        let updated = CaseProfileSeed(caseID: CaseID("case-1"), stage: .firstInstance).applied(to: before)
+        XCTAssertEqual(updated.stage, .firstInstance)
+        XCTAssertEqual(updated.clientRole, .accused)
+    }
+
+    func testValuesOutsideTheKindAreIgnored() {
+        // Etap „WSA” i rola „oskarżony” nie istnieją w sprawie pobytowej.
+        let before = legalCase(kind: .residence)
+        let seed = CaseProfileSeed(caseID: CaseID("case-1"), stage: .appeal, clientRole: .accused)
+        XCTAssertEqual(seed.applied(to: before), before)
+        XCTAssertTrue(seed.changedFields(in: before).isEmpty)
+    }
+}

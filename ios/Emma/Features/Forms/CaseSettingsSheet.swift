@@ -253,26 +253,36 @@ struct CaseSettingsSheet: View {
                 return
             }
             if !didPrefill {
-                title = legalCase.title
-                summary = legalCase.summary
-                status = legalCase.status
-                signature = legalCase.signatureText ?? ""
-                court = legalCase.courtText ?? ""
-                kind = legalCase.kind
-                stage = legalCase.stage
-                role = legalCase.clientRole
-                for watch in CaseWatch.Kind.allCases {
-                    if let day = legalCase.watchDate(watch) {
-                        watchOn[watch] = true
-                        watchDates[watch] = FirmDateTime.date(day: day, time: TimeOfDay(minutes: 12 * 60)!)
-                    }
+                // Zmiany podyktowane Emmie wchodzą do pól; zapis — przyciskiem.
+                var prefill = legalCase
+                if let seed = dependencies.pendingCaseSeed, seed.caseID == caseID {
+                    prefill = seed.applied(to: legalCase)
+                    dependencies.pendingCaseSeed = nil
                 }
+                prefillFields(from: prefill)
                 didPrefill = true
             }
             phase = .loaded(legalCase)
         } catch {
             if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać sprawy.") {
                 dependencies.showToast(message)
+            }
+        }
+    }
+
+    private func prefillFields(from legalCase: LegalCase) {
+        title = legalCase.title
+        summary = legalCase.summary
+        status = legalCase.status
+        signature = legalCase.signatureText ?? ""
+        court = legalCase.courtText ?? ""
+        kind = legalCase.kind
+        stage = legalCase.stage
+        role = legalCase.clientRole
+        for watch in CaseWatch.Kind.allCases {
+            if let day = legalCase.watchDate(watch) {
+                watchOn[watch] = true
+                watchDates[watch] = FirmDateTime.date(day: day, time: TimeOfDay(minutes: 12 * 60)!)
             }
         }
     }

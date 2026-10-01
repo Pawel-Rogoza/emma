@@ -165,6 +165,8 @@ public final class AppDependencies: ObservableObject {
     @Published public var pendingEventDraft: EventDraftSeed?
     /// Szkic do wpisania w pole odpowiedzi rozmowy; zużywa go ekran wątku.
     @Published public var pendingThreadDraft: ThreadDraftSeed?
+    /// Zmiany sprawy podyktowane Emmie; zużywa je arkusz ustawień sprawy.
+    @Published public var pendingCaseSeed: CaseProfileSeed?
     /// Tryb listy klientów: leady, kartoteka klientów albo sprawy (`clientMode`).
     @Published public var clientMode: ClientListMode = .leads
     /// Ostatnio otwierane karty osób — pasek „Ostatnio otwierani” w kartotece.
@@ -760,6 +762,7 @@ public final class AppDependencies: ObservableObject {
         pendingVoiceStart = false
         pendingEventDraft = nil
         pendingThreadDraft = nil
+        pendingCaseSeed = nil
         pendingLeadFilter = nil
         pendingClientSearch = false
         clientMode = .leads

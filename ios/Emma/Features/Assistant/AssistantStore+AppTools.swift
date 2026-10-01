@@ -102,6 +102,9 @@ extension AssistantStore: VoiceAppToolHandling {
         case "app_compute_deadline":
             return await computeDeadlineFromTool(args, dependencies: dependencies)
 
+        case "app_update_case":
+            return await updateCaseFromTool(args, dependencies: dependencies)
+
         default:
             return Self.toolError("Aplikacja nie zna narzędzia \(name).")
         }
@@ -207,6 +210,52 @@ extension AssistantStore: VoiceAppToolHandling {
             }
             return Self.toolResult(result)
         }
+    }
+
+    // MARK: Sprawa
+
+    /// Ustawienia sprawy otwarte z podyktowanymi zmianami. Zapis — „Zapisz”.
+    private func updateCaseFromTool(_ args: [String: Any], dependencies: AppDependencies) async -> String {
+        guard let rawID = Self.entityID(args["case_id"], prefix: "case") else {
+            return Self.toolError("Podaj case_id z wyniku wyszukiwania spraw.")
+        }
+        let caseID = CaseID(rawID)
+        guard let legalCase = try? await dependencies.repository.legalCase(id: caseID) else {
+            return Self.toolError("Nie znaleziono tej sprawy.")
+        }
+        func text(_ key: String) -> String? {
+            guard let value = (args[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !value.isEmpty else { return nil }
+            return value
+        }
+        func day(_ key: String) -> LocalDate? { text(key).flatMap { LocalDate(iso: $0) } }
+        let seed = CaseProfileSeed(
+            caseID: caseID,
+            signature: text("signature"),
+            court: text("court"),
+            kind: text("kind").flatMap(CaseKind.init(rawValue:)),
+            stage: text("stage").flatMap(CaseStage.init(rawValue:)),
+            clientRole: text("client_role").flatMap(ClientRole.init(rawValue:)),
+            custodyUntil: day("custody_until"),
+            legalStayUntil: day("legal_stay_until")
+        )
+        let changed = seed.changedFields(in: legalCase)
+        guard !changed.isEmpty else {
+            return Self.toolError("Nic się nie zmienia — sprawa ma już te dane albo wartości są spoza listy (kind, stage, client_role).")
+        }
+        // Otwarty już arkusz tej sprawy nie wczyta zmian ponownie — zamykamy go
+        // i otwieramy od nowa, gdy zniknie.
+        if dependencies.sheet != nil {
+            dependencies.dismissSheet()
+            try? await Task.sleep(nanoseconds: 400_000_000)
+        }
+        dependencies.pendingCaseSeed = seed
+        dependencies.present(.caseSettings(caseID))
+        return Self.toolResult([
+            "status": "form_open",
+            "changed": changed,
+            "message": "Ustawienia sprawy są otwarte ze zmianami. Zapisze je użytkownik przyciskiem „Zapisz” — nie mów, że zapisano.",
+        ])
     }
 
     /// Klient i sprawa terminu: z argumentów, a sprawa podpowiada klienta.
