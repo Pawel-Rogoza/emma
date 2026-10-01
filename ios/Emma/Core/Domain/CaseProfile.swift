@@ -71,6 +71,21 @@ public enum CaseKind: String, Codable, Sendable, CaseIterable, Identifiable {
         }
     }
 
+    /// Rodzaj zgadnięty z tematu zgłoszenia („Zatrzymanie brata”, „Karta
+    /// pobytu”) — podpowiedź przy przyjęciu sprawy, nie decyzja. Kolejność
+    /// ma znaczenie: deportacja przed pobytem, bo „pobyt” pada w obu.
+    public static func guess(from text: String) -> CaseKind? {
+        let lowered = text.lowercased()
+        let rules: [(CaseKind, [String])] = [
+            (.deportation, ["deport", "zobowiązani", "do powrotu", "wydalen", "strzeżon", "депорт", "депортац"]),
+            (.residence, ["pobyt", "legaliz", "karta pobytu", "obywatelstw", "посвідк", "внж", "вид на жительство"]),
+            (.enforcement, ["dozór", "dozor", "wykonani", "odroczeni", "przedterminow", "kara pozbawienia", "zakład karny"]),
+            (.criminal, ["zatrzyma", "aresz", "oskarż", "podejrz", "prokurat", "przesłuch", "policj", "karn", "kradzież",
+                         "pobici", "narkot", "затрим", "арешт", "поліц", "задерж"])
+        ]
+        return rules.first { _, keys in keys.contains { lowered.contains($0) } }?.0
+    }
+
     /// Etapy, które mają sens dla tego rodzaju — w tej kolejności pokazuje je formularz.
     public var stages: [CaseStage] {
         switch self {

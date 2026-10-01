@@ -17,6 +17,8 @@ struct StartCaseSheet: View {
     @State private var phase: LoadPhase<Client> = .idle
     @State private var title = ""
     @State private var summary = ""
+    /// Rodzaj sprawy — zgadnięty z tematu zgłoszenia, zmiana jednym dotknięciem.
+    @State private var kind: CaseKind?
     @State private var errorMessage: String?
     @State private var isSaving = false
     /// Pola wypełniamy raz, przy pierwszym wczytaniu — później nie nadpisujemy
@@ -71,6 +73,17 @@ struct StartCaseSheet: View {
                     .accessibilityLabel("Nazwa sprawy")
             }
 
+            FormSectionLabel("Rodzaj sprawy")
+            FlowLayout {
+                ForEach(CaseKind.allCases) { candidate in
+                    ChoiceChip(title: candidate.displayName, systemImage: candidate.systemImage, isSelected: kind == candidate) {
+                        kind = kind == candidate ? nil : candidate
+                    }
+                    .accessibilityIdentifier("case-start-kind-\(candidate.rawValue)")
+                }
+            }
+            .padding(.bottom, 14)
+
             LabeledField(
                 "Zakres i ustalenia (opcjonalnie)",
                 help: "Trafi do notatki sprawy."
@@ -113,6 +126,7 @@ struct StartCaseSheet: View {
             if !didPrefill {
                 title = LeadTopic.parse(client.topic).text
                 summary = LeadTopic.parse(client.briefing).text
+                kind = CaseKind.guess(from: [client.topic, client.briefing, client.incomingTranslation ?? ""].joined(separator: " "))
                 didPrefill = true
             }
             phase = .loaded(client)
@@ -145,9 +159,17 @@ struct StartCaseSheet: View {
         let outcome = await dependencies.submit(fallback: "Nie udało się przyjąć sprawy.") {
             try await dependencies.repository.createCase(draft)
         }
-        guard let created = outcome.value else {
+        guard var created = outcome.value else {
             errorMessage = outcome.errorMessage
             return
+        }
+        // `POST /cases` nie przyjmuje profilu — rodzaj idzie drugim zapisem.
+        // Jego porażka nie cofa założenia sprawy (rodzaj da się ustawić potem).
+        if let kind {
+            created.kind = kind
+            if let saved = try? await dependencies.repository.updateCase(created, expectedVersion: created.version) {
+                created = saved
+            }
         }
         EmmaHaptics.success()
         dependencies.showToast("\(client.displayName) jest klientem kancelarii. Sprawa założona.")

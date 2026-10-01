@@ -231,3 +231,15 @@ final class DebriefTests: XCTestCase {
         XCTAssertNil(DayAgenda.debrief(DayAgenda.split(events, now: TimeOfDay(hhmm: "08:30")!)), "Rozprawa jeszcze trwa")
     }
 }
+
+final class CaseKindGuessTests: XCTestCase {
+    func testGuessFromLeadTopic() {
+        XCTAssertEqual(CaseKind.guess(from: "Zatrzymanie brata przez policję"), .criminal)
+        XCTAssertEqual(CaseKind.guess(from: "Karta pobytu — odmowa wojewody"), .residence)
+        XCTAssertEqual(CaseKind.guess(from: "Decyzja o zobowiązaniu do powrotu, pobyt nielegalny"), .deportation)
+        XCTAssertEqual(CaseKind.guess(from: "Мого брата затримали"), .criminal)
+        XCTAssertEqual(CaseKind.guess(from: "Dozór elektroniczny zamiast więzienia"), .enforcement)
+        XCTAssertNil(CaseKind.guess(from: "Sprawa rozwodowa"))
+        XCTAssertEqual(CaseKind.guess(from: "Zezwolenie na widzenie, wizyta w areszcie"), .criminal)
+    }
+}
