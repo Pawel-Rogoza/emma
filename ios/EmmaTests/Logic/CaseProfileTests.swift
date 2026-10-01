@@ -185,6 +185,13 @@ final class MessageAttachmentTests: XCTestCase {
         XCTAssertTrue(photo.kind.mayBeLegalDocument)
         XCTAssertFalse(MessageKind.audio.mayBeLegalDocument)
 
+        // Format backendu: etykieta w nawiasie i nazwa pliku albo podpis.
+        let fromBackend = message(kind: .document, text: "[Dokument] wyrok.pdf", name: "wyrok.pdf")
+        XCTAssertNil(fromBackend.caption)
+        XCTAssertEqual(fromBackend.previewText, "Dokument · wyrok.pdf")
+        let captioned = message(kind: .image, text: "[Zdjęcie] Wezwanie na jutro")
+        XCTAssertEqual(captioned.caption, "Wezwanie na jutro")
+
         let plain = message(kind: .text, text: "Dzień dobry")
         XCTAssertNil(plain.attachmentLabel)
         XCTAssertEqual(plain.previewText, "Dzień dobry")

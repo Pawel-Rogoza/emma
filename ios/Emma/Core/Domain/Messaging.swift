@@ -236,7 +236,12 @@ extension Message {
     /// Podpis pod plikiem bez powtórzenia nazwy pliku (część dostawców wkłada
     /// nazwę do treści).
     public var caption: String? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Backend opisuje plik w treści („[Dokument] wyrok.pdf”) dla starszych
+        // wersji aplikacji — etykieta jest już na karcie pliku.
+        if kind.isAttachment, trimmed.hasPrefix("["), let close = trimmed.firstIndex(of: "]") {
+            trimmed = trimmed[trimmed.index(after: close)...].trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         guard !trimmed.isEmpty, trimmed != attachmentName else { return nil }
         return trimmed
     }
