@@ -228,7 +228,6 @@ struct CaseScreen: View {
 
     // MARK: Sekcje
 
-    @ViewBuilder
     /// „Sąd Rejonowy dla Warszawy-Śródmieścia · II K 123/26” — przytrzymanie
     /// kopiuje sygnaturę (do pisma, maila, e-Sądu). Bez sygnatury — zachęta
     /// do jej wpisania, bo po niej sprawy szuka się w sądzie i w kartotece.

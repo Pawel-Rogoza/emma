@@ -18,7 +18,8 @@ name: Emma · iOS
 on:
   workflow_dispatch:
   push:
-    branches: [main, master]
+    # `feat/**` — sprawdzenie gałęzi bez wysyłki do TestFlight.
+    branches: [main, master, "feat/**"]
     paths:
       - "ios/**"
       - ".github/workflows/ios-macos.yml"
@@ -106,14 +107,22 @@ jobs:
       - name: Kompilacja (pierwsza prawdziwa kontrola typów SwiftUI)
         working-directory: ios
         run: |
-          set -o pipefail
+          mkdir -p "$ARTIFACTS"
+          set +e
           xcodebuild build \
             -project Emma.xcodeproj \
             -scheme Emma-Demo \
             -destination "id=${{ steps.simulator.outputs.device_id }}" \
             -derivedDataPath .build/DerivedData \
             CODE_SIGNING_ALLOWED=NO \
-            | tail -200
+            > "$ARTIFACTS/build.log" 2>&1
+          status=$?
+          tail -200 "$ARTIFACTS/build.log"
+          # Błędy kompilatora jako adnotacje: widać je w podsumowaniu przebiegu
+          # (i w API check-runs) bez logowania i bez pobierania logów.
+          grep -E "^/.+:[0-9]+:[0-9]+: error: " "$ARTIFACTS/build.log" | sort -u | head -40 \
+            | sed -E "s#^.*/ios/([^:]+):([0-9]+):([0-9]+): error: (.*)#::error file=ios/\1,line=\2,col=\3::\4#"
+          exit $status
 
       - name: Testy jednostkowe w Xcode
         working-directory: ios
