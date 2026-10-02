@@ -294,6 +294,27 @@ public struct ConversationThread: Identifiable, Hashable, Codable, Sendable {
     }
 }
 
+/// Koszt rozmów głosowych z Emmą w bieżącym miesiącu (szacunek serwera).
+public struct VoiceUsageSummary: Equatable, Sendable {
+    public let monthCostUSD: Double
+    /// `0` — bez limitu.
+    public let budgetUSD: Double
+    public let sessions: Int
+    public let minutes: Int
+
+    public init(monthCostUSD: Double, budgetUSD: Double, sessions: Int, minutes: Int) {
+        self.monthCostUSD = monthCostUSD
+        self.budgetUSD = budgetUSD
+        self.sessions = sessions
+        self.minutes = minutes
+    }
+
+    /// Ułamek wykorzystanego limitu (0…1); `nil` bez limitu.
+    public var budgetFraction: Double? {
+        budgetUSD > 0 ? min(1, monthCostUSD / budgetUSD) : nil
+    }
+}
+
 /// Rozmowa z numerem, którego nie ma w kartotece — najczęściej z importu
 /// historii WhatsApp Business (numer kancelarii jest służbowy, więc pokazujemy
 /// każdą rozmowę). Nie udajemy osoby: jest tylko nazwa z WhatsAppa albo numer.

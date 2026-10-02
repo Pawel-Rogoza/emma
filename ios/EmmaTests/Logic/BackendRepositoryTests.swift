@@ -831,6 +831,23 @@ final class BackendRepositoryTests: XCTestCase {
         XCTAssertEqual(threads.map(\.id.rawValue), ["thread-3"])
     }
 
+    func testDraftReplyComesFromServerModel() async throws {
+        StubURLProtocol.respond { request, _ in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/mobile/v1/threads/thread-3/draft-reply")
+            return (200, Data(#"{"text":"Здравствуйте! Проверим и вернёмся с ответом.","language":"ru"}"#.utf8))
+        }
+        let text = try await makeRepository().draftReply(threadID: ThreadID("thread-3"))
+        XCTAssertEqual(text, "Здравствуйте! Проверим и вернёмся с ответом.")
+    }
+
+    func testVoiceUsageSummary() async throws {
+        StubURLProtocol.respond(json: Data(#"{"month_cost_usd":12.5,"budget_usd":150,"sessions":40,"minutes":95}"#.utf8), status: 200)
+        let usage = await makeRepository().voiceUsage()
+        XCTAssertEqual(usage, VoiceUsageSummary(monthCostUSD: 12.5, budgetUSD: 150, sessions: 40, minutes: 95))
+        XCTAssertEqual(usage?.budgetFraction ?? 0, 12.5 / 150, accuracy: 0.0001)
+    }
+
     func testCreateLeadFromThreadPostsToLeadRoute() async throws {
         StubURLProtocol.respond { request, _ in
             XCTAssertEqual(request.httpMethod, "POST")
