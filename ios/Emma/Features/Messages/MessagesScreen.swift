@@ -303,7 +303,7 @@ struct MessagesScreen: View {
         .scrollContentBackground(.hidden)
         .scrollDismissesKeyboard(.immediately)
         .environment(\.defaultMinListRowHeight, 0)
-        .background(EmmaTheme.bg)
+        .background(EmmaTheme.surface)
         .refreshable { await store.load(dependencies) }
         .task(id: dependencies.dataVersion) { await store.load(dependencies) }
         // Nowe wiadomości WhatsApp przychodzą bez naszego udziału — lista

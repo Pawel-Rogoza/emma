@@ -17,60 +17,64 @@ struct UnassignedConversationRow: View {
 
     var body: some View {
         Button(action: onOpen) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "person.crop.circle.badge.questionmark")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(EmmaTheme.mutedSoft)
-                    .frame(width: 40, height: 40)
+            HStack(alignment: .center, spacing: 13) {
+                // Sylwetka jak nieznany kontakt w WhatsAppie.
+                Image(systemName: "person.fill")
+                    .font(.system(size: 23))
+                    .foregroundStyle(EmmaTheme.mutedSoft.opacity(0.8))
+                    .frame(width: 54, height: 54)
                     .background(EmmaTheme.controlBackground, in: Circle())
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(conversation.name)
-                            .font(EmmaTypography.personName)
+                            .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(EmmaTheme.ink)
-                            .lineLimit(2)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
                         if let sentAt = conversation.preview?.sentAt {
                             Text(timeLabel(sentAt))
-                                .font(EmmaTypography.caption())
+                                .font(.system(size: 14))
                                 .foregroundStyle(EmmaTheme.mutedSoft)
                         }
                     }
-                    if conversation.name != conversation.phone {
+                    if let preview = conversation.preview {
+                        HStack(alignment: .firstTextBaseline, spacing: 3) {
+                            if preview.isOutgoing { ChatTicks(transport: preview.transport) }
+                            Text(preview.previewText)
+                                .font(.system(size: 15))
+                                .foregroundStyle(EmmaTheme.mutedSoft)
+                                .lineLimit(2)
+                        }
+                    } else if conversation.name != conversation.phone {
                         Text(conversation.phone)
-                            .font(EmmaTypography.caption())
+                            .font(.system(size: 15))
                             .foregroundStyle(EmmaTheme.mutedSoft)
                     }
-                    if let preview = conversation.preview {
-                        Text(preview.previewText)
-                            .font(EmmaTypography.ui(13))
-                            .foregroundStyle(EmmaTheme.muted)
-                            .lineLimit(2)
-                    }
+                }
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(EmmaTheme.cardBorder)
+                        .frame(height: 0.5)
                 }
             }
-            .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // Ten sam układ co zwykła rozmowa: cienka linia od tekstu.
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(EmmaTheme.cardBorder)
-                .frame(height: 1)
-                .padding(.leading, 52)
-        }
         .accessibilityHint("Otwiera historię rozmowy")
     }
 
     /// Dzisiejsza wiadomość — godzina, starsza — dzień.
     private func timeLabel(_ instant: Date) -> String {
         let day = AppDependencies.localDate(from: instant)
-        return day == dependencies.today
-            ? dependencies.dateText.clockTime(instant)
-            : dependencies.dateText.dayLabel(day)
+        let today = dependencies.today
+        if day == today { return dependencies.dateText.clockTime(instant) }
+        if day == today.adding(days: -1) { return "Wczoraj" }
+        if day >= today.adding(days: -6) { return dependencies.dateText.weekdayName(for: day) }
+        return String(format: "%02d.%02d.%04d", day.day, day.month, day.year)
     }
 }
 

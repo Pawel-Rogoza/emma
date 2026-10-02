@@ -69,6 +69,12 @@ public enum EmmaTheme {
     public static let quoteBackground = Color(hex: 0xEAF0F6)
     public static let receiptDefault = Color(hex: 0x4E6882)
     public static let receiptRead = Color(hex: 0x2674D8)
+    /// Zieleń WhatsAppa na liście rozmów: godzina i licznik nowych wiadomości,
+    /// kropka „bez odpowiedzi” — ten sam sygnał, co w aplikacji, z której
+    /// kancelaria przychodzi (02.10.2026).
+    public static let chatGreen = Color(hex: 0x1DAA61)
+    /// Ptaszki „odczytane” na liście — błękit WhatsAppa.
+    public static let chatReadTicks = Color(hex: 0x53BDEB)
     public static let chatDayChip = Color(hex: 0xE5EAF0)
     public static let chatDayChipText = Color(hex: 0x4E6882)
     public static let dictationAccent = Color(hex: 0x9A622C)
