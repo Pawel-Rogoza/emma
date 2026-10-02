@@ -566,6 +566,21 @@ public struct BackendAPIClient: Sendable {
         )
     }
 
+    /// `POST /api/mobile/v1/threads/{thread_id}/draft-reply` — szkic odpowiedzi od modelu.
+    func draftReply(threadID: ThreadID, idempotencyKey: String) async throws -> BackendDraftReplyDTO {
+        try await send(
+            "POST",
+            path: "\(Endpoint.threads.rawValue)/\(threadID.rawValue)/draft-reply",
+            body: BackendEmptyBody(),
+            idempotencyKey: idempotencyKey
+        )
+    }
+
+    /// `GET /api/mobile/v1/voice/usage` — koszt rozmów głosowych w tym miesiącu.
+    func voiceUsage() async throws -> BackendVoiceUsageDTO {
+        try await get("api/mobile/v1/voice/usage", query: [])
+    }
+
     /// `POST /api/mobile/v1/threads/{thread_id}/lead` — rozmowa bez osoby staje się leadem.
     func createThreadLead(threadID: ThreadID, idempotencyKey: String) async throws -> BackendThreadSummaryDTO {
         try await send(
@@ -1522,6 +1537,24 @@ struct BackendThreadSummaryDTO: Decodable {
         case manualUnread = "manual_unread"
         case readStateVersion = "read_state_version"
         case replyWindowUntil = "reply_window_until"
+    }
+}
+
+struct BackendDraftReplyDTO: Decodable {
+    let text: String
+    let language: String?
+}
+
+struct BackendVoiceUsageDTO: Decodable {
+    let monthCostUsd: Double
+    let budgetUsd: Double
+    let sessions: Int
+    let minutes: Int
+
+    enum CodingKeys: String, CodingKey {
+        case sessions, minutes
+        case monthCostUsd = "month_cost_usd"
+        case budgetUsd = "budget_usd"
     }
 }
 

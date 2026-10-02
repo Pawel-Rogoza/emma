@@ -544,10 +544,11 @@ struct MessagesScreen: View {
 
     // MARK: Czynności
 
-    /// Emma przygotowuje odpowiedź w języku klienta — do sprawdzenia, nic nie wysyła.
+    /// Emma pisze szkic odpowiedzi prosto w polu rozmowy — do sprawdzenia,
+    /// nic nie wysyła (wcześniej przez zakładkę Emmy i szablon).
     private func prepareReply(_ row: MessagesStore.Row) {
         EmmaHaptics.tap()
-        dependencies.openEmma(clientID: row.client.id, action: .reply, startVoice: false)
+        dependencies.openThreadWithEmmaDraft(row.thread.id)
     }
 
     /// Ta sama reguła co w opcjach rozmowy: odczyt przesuwa kursor tylko do

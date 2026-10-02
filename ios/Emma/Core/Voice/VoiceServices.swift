@@ -167,6 +167,9 @@ public protocol MessagingRepository: Sendable {
     func unassignedConversations() async throws -> [UnassignedConversation]
     /// Zamienia rozmowę bez osoby w leada; numer znany z kartoteki trafia do tej osoby.
     func createLead(fromThread threadID: ThreadID) async throws
+    /// Szkic odpowiedzi od modelu tekstowego (po polsku albo po rosyjsku).
+    /// Niczego nie wysyła ani nie zapisuje.
+    func draftReply(threadID: ThreadID) async throws -> String
 
 }
 
@@ -176,6 +179,11 @@ public extension MessagingRepository {
 
     func createLead(fromThread threadID: ThreadID) async throws {
         throw DomainError.notFound(resource: "rozmowa", id: threadID.rawValue)
+    }
+
+    /// Demo nie ma modelu — wątek wstawia wtedy gotową odpowiedź.
+    func draftReply(threadID: ThreadID) async throws -> String {
+        throw DomainError.validationFailed("Szkic od modelu jest dostępny po połączeniu z serwerem kancelarii.")
     }
 }
 
@@ -380,6 +388,13 @@ public struct OutgoingMessageDraft: Hashable, Sendable {
 }
 
 // MARK: - Błędy domenowe
+
+/// Błąd startu rozmowy z gotowym komunikatem dla użytkownika (np. serwer
+/// odmówił, bo miesięczny limit kosztu jest wyczerpany). Inne błędy dostawcy
+/// pokazujemy ogólnym „Rozmowa jest niedostępna”, żeby nie ujawniać szczegółów.
+public protocol UserFacingVoiceError: Error {
+    var userMessage: String? { get }
+}
 
 public enum DomainError: Error, Equatable, Sendable {
     case notFound(resource: String, id: String)

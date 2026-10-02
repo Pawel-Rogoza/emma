@@ -594,6 +594,21 @@ public struct BackendRepository: EmmaRepository, Sendable {
         }
     }
 
+    public func draftReply(threadID: ThreadID) async throws -> String {
+        try await api.draftReply(threadID: threadID, idempotencyKey: Self.newIdempotencyKey()).text
+    }
+
+    /// Koszt rozmów głosowych w tym miesiącu; `nil`, gdy serwer jeszcze go nie liczy.
+    public func voiceUsage() async -> VoiceUsageSummary? {
+        guard let dto = try? await api.voiceUsage() else { return nil }
+        return VoiceUsageSummary(
+            monthCostUSD: dto.monthCostUsd,
+            budgetUSD: dto.budgetUsd,
+            sessions: dto.sessions,
+            minutes: dto.minutes
+        )
+    }
+
     public func createLead(fromThread threadID: ThreadID) async throws {
         _ = try await api.createThreadLead(threadID: threadID, idempotencyKey: Self.newIdempotencyKey())
     }

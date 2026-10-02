@@ -41,6 +41,8 @@ final class ThreadStore: ObservableObject {
     @Published private(set) var phase: LoadPhase<Model> = .idle
     @Published private(set) var isDictating = false
     @Published private(set) var dictationNotice: String?
+    /// Emma pisze szkic odpowiedzi (model tekstowy na serwerze).
+    @Published private(set) var isDraftingWithEmma = false
 
     private let pageSize = 30
     private var snapshotSequence: Int = 0
@@ -129,6 +131,10 @@ final class ThreadStore: ObservableObject {
                 )
             )
             applyPendingDraft(dependencies, threadID: threadID)
+            if dependencies.pendingEmmaDraftThreadID == threadID {
+                dependencies.pendingEmmaDraftThreadID = nil
+                await draftWithEmma(dependencies)
+            }
         } catch {
             if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać rozmowy.") {
                 dependencies.showToast(message)
@@ -220,6 +226,30 @@ final class ThreadStore: ObservableObject {
         dependencies.pendingThreadDraft = nil
         let current = model.draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
         setDraftText(current.isEmpty ? seed.text : "\(model.draft.text)\n\n\(seed.text)")
+    }
+
+    /// Szkic odpowiedzi od Emmy prosto w polu (02.10.2026). Wcześniej przycisk
+    /// przerzucał na zakładkę Emmy, która wstawiała szablon niezwiązany z tym,
+    /// o co pytał klient. Teraz model czyta rozmowę na serwerze i pisze po
+    /// polsku albo po rosyjsku. Bez modelu (Demo, starszy serwer) — gotowa
+    /// odpowiedź „Otrzymaliśmy” w języku klienta. Nic nie wysyła się samo.
+    func draftWithEmma(_ dependencies: AppDependencies) async {
+        guard !isDraftingWithEmma, let model = phase.value else { return }
+        isDraftingWithEmma = true
+        defer { isDraftingWithEmma = false }
+        let text: String
+        do {
+            text = try await dependencies.repository.draftReply(threadID: model.thread.id)
+        } catch {
+            text = QuickReplies.templates(for: model.replyLanguage).last?.text ?? ""
+            if !dependencies.configuration.usesMockServices {
+                dependencies.showToast(ScreenLoad.message(for: error, fallback: "Emma nie przygotowała szkicu — wstawiłam gotową odpowiedź."))
+            }
+        }
+        guard !text.isEmpty, let current = phase.value else { return }
+        EmmaHaptics.success()
+        let typed = current.draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        await replaceDraftText(typed.isEmpty ? text : "\(current.draft.text)\n\n\(text)")
     }
 
     /// Gotowa odpowiedź albo dyktowanie — zapis bez czekania.
@@ -655,36 +685,47 @@ struct ThreadScreen: View {
 
     // MARK: Pole wiadomości
 
+    /// „Emma” — szkic odpowiedzi z treści rozmowy (model na serwerze), w języku
+    /// odpowiedzi (PL/RU). Podczas pisania kręciołek zamiast iskierki.
+    private func emmaDraftChip(_ model: ThreadStore.Model) -> some View {
+        Button {
+            EmmaHaptics.tap()
+            Task { await store.draftWithEmma(dependencies) }
+        } label: {
+            HStack(spacing: 6) {
+                if store.isDraftingWithEmma {
+                    ProgressView().controlSize(.mini).tint(EmmaTheme.primaryButtonText)
+                } else {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                Text(store.isDraftingWithEmma ? "Emma pisze…" : "Odpowiedz z Emmą")
+                    .font(EmmaTypography.caption(.semibold))
+                Text(model.replyLanguage == .ru ? "RU" : "PL")
+                    .font(EmmaTypography.ui(10, .semibold))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(EmmaTheme.primaryButtonText.opacity(0.18), in: Capsule())
+            }
+            .foregroundStyle(EmmaTheme.primaryButtonText)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 32)
+            .background(EmmaTheme.primaryButton, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(EmmaCardButtonStyle())
+        .frame(minHeight: EmmaSpacing.hitTarget)
+        .disabled(store.isDraftingWithEmma)
+        .accessibilityLabel(store.isDraftingWithEmma ? "Emma pisze odpowiedź" : "Odpowiedz z Emmą")
+        .accessibilityHint(model.replyLanguage == .ru
+            ? "Emma przygotuje szkic po rosyjsku z treści rozmowy. Nic nie wysyła."
+            : "Emma przygotuje szkic po polsku z treści rozmowy. Nic nie wysyła.")
+    }
+
     @ViewBuilder
     private func composer(_ model: ThreadStore.Model) -> some View {
         VStack(spacing: 8) {
             replyWindowNotice(model)
-
-            Button {
-                dependencies.openEmma(clientID: model.client.id, action: .reply)
-            } label: {
-                HStack(spacing: 8) {
-                    EmmaOrb(size: .small)
-                    Text("Przygotuj z Emmą")
-                        .font(EmmaTypography.ui(13, .medium))
-                        .foregroundStyle(EmmaTheme.secondaryButtonText)
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(EmmaTheme.mutedSoft)
-                }
-                .padding(.horizontal, 12)
-                .frame(minHeight: 40)
-                .background(EmmaTheme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous)
-                        .strokeBorder(EmmaTheme.composerBorder, lineWidth: 1)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Przygotuj odpowiedź z Emmą")
 
             if let quote = model.draft.quote {
                 HStack(alignment: .top, spacing: 8) {
@@ -720,9 +761,12 @@ struct ThreadScreen: View {
 
             // Gotowe odpowiedzi w języku klienta — tylko przy pustym szkicu,
             // żeby nie zasłaniały pisanej wiadomości (audyt 28.09.2026).
+            // Emma jest pierwszym chipem (02.10.2026): wcześniej osobny pasek nad
+            // chipami robił z dołu ekranu trzy piętra i zabierał miejsce rozmowie.
             if model.draft.text.isEmpty && model.draft.quote == nil && !model.replyWindow.isClosed {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
+                        emmaDraftChip(model)
                         ForEach(QuickReplies.templates(for: model.replyLanguage)) { reply in
                             Button {
                                 EmmaHaptics.selection()

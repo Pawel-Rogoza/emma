@@ -39,6 +39,8 @@ enum ConversationTokenError: Error, LocalizedError, Sendable {
     case backendNotConfigured
     case unauthorized
     case server(status: Int)
+    /// Serwer odmówił z czytelnym powodem (np. wyczerpany miesięczny limit).
+    case refused(message: String)
     case malformedResponse
     case expiresInPast
 
@@ -50,11 +52,20 @@ enum ConversationTokenError: Error, LocalizedError, Sendable {
             return "Sesja wygasła. Zaloguj się ponownie, aby kontynuować rozmowę."
         case .server(let status):
             return "Backend nie wydał tokenu rozmowy (HTTP \(status))."
+        case .refused(let message):
+            return message
         case .malformedResponse:
             return "Odpowiedź backendu nie zawierała tokenu rozmowy."
         case .expiresInPast:
             return "Token rozmowy wygasł przed rozpoczęciem sesji."
         }
+    }
+}
+
+extension ConversationTokenError: UserFacingVoiceError {
+    var userMessage: String? {
+        if case .refused(let message) = self { return message }
+        return nil
     }
 }
 
@@ -126,6 +137,11 @@ actor BackendConversationTokenProvider {
             break
         case 401, 403:
             throw ConversationTokenError.unauthorized
+        case 429:
+            // Wyczerpany miesięczny limit rozmów: serwer mówi po polsku, co dalej.
+            let message = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["message"] as? String
+            throw message.map { ConversationTokenError.refused(message: $0) }
+                ?? ConversationTokenError.server(status: http.statusCode)
         default:
             throw ConversationTokenError.server(status: http.statusCode)
         }

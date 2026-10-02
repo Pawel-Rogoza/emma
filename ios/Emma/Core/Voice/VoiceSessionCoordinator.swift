@@ -207,6 +207,7 @@ public final class VoiceSessionCoordinator {
             startTransportSubscription(transport)
         } catch {
             let message = (error as? DomainError)?.safeMessage
+                ?? (error as? UserFacingVoiceError)?.userMessage
                 ?? FatalErrorKind.providerUnavailable.safeMessage
             // Nieudany start sprzątamy do końca: transport mógł już przejąć
             // sesję audio i otworzyć gniazdo, a backend ma założoną sesję.

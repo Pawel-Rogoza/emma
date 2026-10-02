@@ -759,9 +759,10 @@ final class AssistantStore: ObservableObject {
                 await answer("Nie ma jeszcze rozmowy WhatsApp z \(client.displayName) — odpisać można dopiero, gdy klient napisze pierwszy.")
                 return
             }
-            dependencies.pendingThreadDraft = ThreadDraftSeed(threadID: threadID, text: await draftText(clientID))
-            dependencies.openThread(threadID)
-            await answer("Szkic odpowiedzi do \(client.displayName) czeka w rozmowie WhatsApp — przeczytaj i wyślij.")
+            // Szkic pisze model na serwerze z treści rozmowy, prosto w polu
+            // odpowiedzi — zamiast szablonu niezwiązanego z pytaniem klienta.
+            dependencies.openThreadWithEmmaDraft(threadID)
+            await answer("Piszę szkic odpowiedzi do \(client.displayName) w rozmowie WhatsApp — przeczytaj i wyślij.")
             return
         }
         guard let turn = await newAction(kind: .reply, clientID: clientID, text: await draftText(clientID)) else { return }

@@ -165,6 +165,9 @@ public final class AppDependencies: ObservableObject {
     @Published public var pendingEventDraft: EventDraftSeed?
     /// Szkic do wpisania w pole odpowiedzi rozmowy; zużywa go ekran wątku.
     @Published public var pendingThreadDraft: ThreadDraftSeed?
+    /// Rozmowa, w której Emma ma od razu napisać szkic odpowiedzi (skrót
+    /// „Emma” z listy rozmów albo „Przygotuj odpowiedź” na ekranie Emmy).
+    @Published public var pendingEmmaDraftThreadID: ThreadID?
     /// Zmiany sprawy podyktowane Emmie; zużywa je arkusz ustawień sprawy.
     @Published public var pendingCaseSeed: CaseProfileSeed?
     /// Tryb listy klientów: leady, kartoteka klientów albo sprawy (`clientMode`).
@@ -526,6 +529,12 @@ public final class AppDependencies: ObservableObject {
         tab = .today
     }
 
+    /// Otwiera rozmowę i od razu prosi Emmę o szkic odpowiedzi w polu.
+    public func openThreadWithEmmaDraft(_ threadID: ThreadID) {
+        pendingEmmaDraftThreadID = threadID
+        openThread(threadID)
+    }
+
     public func openThread(_ threadID: ThreadID) {
         var state = navigation[.messages] ?? TabNavigation()
         state.reset(to: .thread(threadID))
@@ -762,6 +771,7 @@ public final class AppDependencies: ObservableObject {
         pendingVoiceStart = false
         pendingEventDraft = nil
         pendingThreadDraft = nil
+        pendingEmmaDraftThreadID = nil
         pendingCaseSeed = nil
         pendingLeadFilter = nil
         pendingClientSearch = false

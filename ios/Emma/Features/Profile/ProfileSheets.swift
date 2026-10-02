@@ -36,6 +36,8 @@ struct ProfileSheet: View {
                 .padding(.top, 20)
 
             if !dependencies.configuration.usesMockServices {
+                VoiceUsageRow()
+                    .padding(.top, 20)
                 VoiceDuplexToggle()
                     .padding(.top, 20)
             }
@@ -77,10 +79,66 @@ struct ProfileSheet: View {
                 + "AI i integracja WhatsApp są symulowane. Głos działa w trybie demonstracyjnym. "
                 + "Data przykładowego dnia: 11 września 2026."
         }
-        return "Konto zespołu: te same sprawy, zadania i rozmowy. Dane, kartoteka i rozmowa "
-            + "głosowa pochodzą z serwera kancelarii — klucz dostawcy nigdy nie trafia do "
-            + "aplikacji. WhatsApp nie jest jeszcze podłączony, więc wysyłka wiadomości "
-            + "pozostaje symulowana."
+        return "Konto zespołu: te same sprawy, zadania i rozmowy. Dane, kartoteka, rozmowy "
+            + "WhatsApp i rozmowa głosowa pochodzą z serwera kancelarii — klucze dostawców "
+            + "nigdy nie trafiają do aplikacji."
+    }
+}
+
+/// Koszt rozmów głosowych z Emmą w tym miesiącu — szacunek serwera z liczby
+/// tokenów. Widać go, zanim przyjdzie rachunek; po przekroczeniu limitu
+/// rozmowa głosowa nie startuje, a Emma działa dalej pisemnie.
+private struct VoiceUsageRow: View {
+
+    @EnvironmentObject private var dependencies: AppDependencies
+    @State private var usage: VoiceUsageSummary?
+    @State private var loaded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Emma głosem w tym miesiącu")
+                    .font(EmmaTypography.ui(14))
+                    .foregroundStyle(EmmaTheme.ink)
+                Spacer(minLength: 8)
+                Text(valueText)
+                    .font(EmmaTypography.ui(14, .semibold))
+                    .foregroundStyle(EmmaTheme.ink)
+                    .monospacedDigit()
+            }
+            if let fraction = usage?.budgetFraction {
+                ProgressView(value: fraction)
+                    .tint(fraction >= 0.9 ? EmmaTheme.danger : EmmaTheme.accent)
+            }
+            Text(detailText)
+                .font(EmmaTypography.caption())
+                .foregroundStyle(EmmaTheme.mutedSoft)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .task {
+            guard let repository = dependencies.repository as? BackendRepository else { return }
+            usage = await repository.voiceUsage()
+            loaded = true
+        }
+    }
+
+    private var valueText: String {
+        guard let usage else { return loaded ? "—" : "…" }
+        let cost = Self.dollars(usage.monthCostUSD)
+        return usage.budgetUSD > 0 ? "\(cost) z \(Self.dollars(usage.budgetUSD))" : cost
+    }
+
+    private var detailText: String {
+        guard let usage else {
+            return loaded ? "Serwer jeszcze nie liczy kosztu rozmów." : "Sprawdzam koszt rozmów…"
+        }
+        let talks = EmmaPlural.form(usage.sessions, "rozmowa", "rozmowy", "rozmów")
+        return "\(usage.sessions) \(talks), \(usage.minutes) min · szacunek z liczby tokenów. "
+            + "Pisanie do Emmy i szkice odpowiedzi kosztują ułamki grosza."
+    }
+
+    private static func dollars(_ value: Double) -> String {
+        String(format: "$%.2f", value).replacingOccurrences(of: ".", with: ",")
     }
 }
 
