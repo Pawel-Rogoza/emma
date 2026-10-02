@@ -81,6 +81,10 @@ final class MessagesStore: ObservableObject {
         var allRows: [Row]
         var searchQuery: String
         var filter: Filter
+        /// Rozmowy bez osoby w kartotece (np. z historii WhatsApp Business)
+        /// po wyszukiwaniu; `allUnassigned` — pełny zbiór.
+        var unassigned: [UnassignedConversation] = []
+        var allUnassigned: [UnassignedConversation] = []
 
         func count(_ filter: Filter) -> Int {
             allRows.filter(filter.includes).count
@@ -190,9 +194,20 @@ final class MessagesStore: ObservableObject {
                 )
             }
 
+            // Rozmowy bez osoby nie blokują listy: starszy serwer albo błąd
+            // tego jednego zapytania zostawia resztę rozmów na ekranie.
+            let unassigned = (try? await repository.unassignedConversations()) ?? []
+
             // Pełny zbiór zapisujemy osobno, a filtrowanie liczymy z niego — nie z wyniku.
             let allRows = rows
-            let model = Model(rows: filterAndSort(allRows), allRows: allRows, searchQuery: searchText, filter: filter)
+            let model = Model(
+                rows: filterAndSort(allRows),
+                allRows: allRows,
+                searchQuery: searchText,
+                filter: filter,
+                unassigned: filterUnassigned(unassigned),
+                allUnassigned: unassigned
+            )
             if wasLoaded {
                 // Zmiana stanu (przeczytane, przypięte) przenosi kartę między
                 // grupami płynnie, zamiast przeskoczyć.
@@ -224,6 +239,20 @@ final class MessagesStore: ObservableObject {
             .sorted { $0.sortKey < $1.sortKey }
     }
 
+    /// Rozmowy bez osoby widać przy „Wszystkie” i w wyszukiwaniu — nie są
+    /// ani nowe, ani do odpowiedzi w sensie filtrów (to zwykle historia).
+    private func filterUnassigned(_ items: [UnassignedConversation]) -> [UnassignedConversation] {
+        let query = searchText
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard filter == .all || !trimmed.isEmpty else { return [] }
+        return items
+            .filter { item in
+                SearchText.matches(query, in: [item.name, item.preview?.previewText ?? ""])
+                    || SearchText.matchesPhone(query, phone: item.phone)
+            }
+            .sorted { ($0.preview?.sentAt ?? .distantPast) > ($1.preview?.sentAt ?? .distantPast) }
+    }
+
     /// Ponowne filtrowanie bez odpytywania repozytorium — używane przy zmianie
     /// filtra i wpisywaniu tekstu. Liczone jest z pełnego zbioru `allRows`, więc
     /// wyczyszczenie zapytania przywraca całą listę (F11).
@@ -234,7 +263,9 @@ final class MessagesStore: ObservableObject {
                 rows: filterAndSort(model.allRows),
                 allRows: model.allRows,
                 searchQuery: searchText,
-                filter: filter
+                filter: filter,
+                unassigned: filterUnassigned(model.allUnassigned),
+                allUnassigned: model.allUnassigned
             )
         )
     }
@@ -318,6 +349,11 @@ struct MessagesScreen: View {
     /// ostatni stan i zachowuje filtr.
     @ObservedObject var store: MessagesStore
     @FocusState private var searchFocused: Bool
+    /// Otwarta rozmowa bez osoby (podgląd historii i „Zrób leada”).
+    @State private var openedUnassigned: UnassignedConversation?
+    /// Historia z telefonu bywa długa — pokazujemy najpierw kilka rozmów.
+    @State private var showsAllUnassigned = false
+    private static let unassignedPreviewLimit = 8
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -342,6 +378,10 @@ struct MessagesScreen: View {
                 await store.load(dependencies, silent: true)
                 dependencies.refreshUnreadTotal()
             }
+        }
+        .sheet(item: $openedUnassigned) { conversation in
+            UnassignedConversationSheet(conversation: conversation)
+                .environmentObject(dependencies)
         }
         .onChange(of: store.searchText) { _, _ in
             Task { await store.applyLocalFilter() }
@@ -478,7 +518,7 @@ struct MessagesScreen: View {
             }
             .emmaListRow(top: 0, bottom: 0, horizontal: layout.horizontalPadding)
         case .loaded(let model):
-            if model.rows.isEmpty {
+            if model.rows.isEmpty && model.unassigned.isEmpty {
                 emptyState(model)
                     .emmaListRow(top: 6, bottom: 0, horizontal: layout.horizontalPadding)
             } else {
@@ -497,7 +537,8 @@ struct MessagesScreen: View {
                     }
                 }
             }
-            disclosure(hasThreads: !model.allRows.isEmpty)
+            unassignedSection(model)
+            disclosure(hasThreads: !model.allRows.isEmpty || !model.allUnassigned.isEmpty)
                 .emmaListRow(top: 12, bottom: EmmaSpacing.contentBottom, horizontal: layout.horizontalPadding)
         }
     }
@@ -581,6 +622,42 @@ struct MessagesScreen: View {
             dependencies.openPerson(row.client.id)
         } label: {
             Label("Karta klienta", systemImage: "person")
+        }
+    }
+
+    // MARK: Rozmowy bez osoby
+
+    @ViewBuilder
+    private func unassignedSection(_ model: MessagesStore.Model) -> some View {
+        if !model.unassigned.isEmpty {
+            let searching = !model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let visible = showsAllUnassigned || searching
+                ? model.unassigned
+                : Array(model.unassigned.prefix(Self.unassignedPreviewLimit))
+            GroupHeader(
+                title: "Bez osoby w kartotece",
+                count: model.unassigned.count,
+                tone: EmmaTheme.mutedSoft,
+                emphasized: false
+            )
+            .emmaListRow(top: 12, bottom: 2, horizontal: layout.horizontalPadding)
+
+            ForEach(visible) { conversation in
+                UnassignedConversationRow(conversation: conversation) {
+                    openedUnassigned = conversation
+                }
+                .emmaListRow(top: 5, bottom: 5, horizontal: layout.horizontalPadding)
+            }
+
+            if visible.count < model.unassigned.count {
+                Button("Pokaż wszystkie (\(model.unassigned.count))") {
+                    withAnimation(EmmaMotion.smooth) { showsAllUnassigned = true }
+                }
+                .font(EmmaTypography.caption(.medium))
+                .foregroundStyle(EmmaTheme.accent)
+                .frame(maxWidth: .infinity, minHeight: EmmaSpacing.hitTarget)
+                .emmaListRow(top: 0, bottom: 0, horizontal: layout.horizontalPadding)
+            }
         }
     }
 

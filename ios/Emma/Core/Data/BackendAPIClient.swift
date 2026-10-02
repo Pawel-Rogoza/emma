@@ -557,8 +557,23 @@ public struct BackendAPIClient: Sendable {
     // MARK: Rozmowy WhatsApp
 
     /// `GET /api/mobile/v1/threads` — rozmowy z licznikami dla zalogowanej osoby.
-    func threads() async throws -> BackendThreadList {
-        try await get(Endpoint.threads.rawValue, query: [])
+    /// `includeUnassigned` dokłada rozmowy bez osoby w kartotece (`client_id = null`);
+    /// starszy serwer ignoruje parametr i zwraca tylko rozmowy z osobą.
+    func threads(includeUnassigned: Bool = false) async throws -> BackendThreadList {
+        try await get(
+            Endpoint.threads.rawValue,
+            query: includeUnassigned ? [URLQueryItem(name: "include_unassigned", value: "1")] : []
+        )
+    }
+
+    /// `POST /api/mobile/v1/threads/{thread_id}/lead` — rozmowa bez osoby staje się leadem.
+    func createThreadLead(threadID: ThreadID, idempotencyKey: String) async throws -> BackendThreadSummaryDTO {
+        try await send(
+            "POST",
+            path: "\(Endpoint.threads.rawValue)/\(threadID.rawValue)/lead",
+            body: BackendEmptyBody(),
+            idempotencyKey: idempotencyKey
+        )
     }
 
     /// `GET /api/mobile/v1/threads/{thread_id}/messages?before_sequence=&limit=`.
@@ -1477,7 +1492,8 @@ struct BackendMessageDTO: Decodable {
 
 struct BackendThreadSummaryDTO: Decodable {
     let id: String
-    let clientID: String
+    /// `nil` tylko dla rozmowy bez osoby (`include_unassigned=1`).
+    let clientID: String?
     let clientName: String?
     let preview: BackendMessageDTO?
     let unreadCount: Int
@@ -1489,9 +1505,14 @@ struct BackendThreadSummaryDTO: Decodable {
     let readStateVersion: Int?
     /// Do kiedy WhatsApp pozwala wysłać swobodny tekst (ISO) — `nil`, gdy okno zamknięte.
     let replyWindowUntil: String?
+    /// Rozszerzenie 02.10.2026: numer rozmówcy i znacznik rozmowy bez osoby.
+    let contactPhone: String?
+    let isUnassigned: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id, preview
+        case contactPhone = "contact_phone"
+        case isUnassigned = "is_unassigned"
         case clientID = "client_id"
         case clientName = "client_name"
         case unreadCount = "unread_count"

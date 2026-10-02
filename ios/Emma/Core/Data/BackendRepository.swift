@@ -572,7 +572,30 @@ public struct BackendRepository: EmmaRepository, Sendable {
     // która mogłaby być nieaktualna po zmianie na drugim urządzeniu.
 
     public func threads() async throws -> [ConversationThread] {
-        try await threadList()?.items.map(Self.mapThread) ?? []
+        try await threadList()?.items.compactMap(Self.mapThread) ?? []
+    }
+
+    public func unassignedConversations() async throws -> [UnassignedConversation] {
+        let list: BackendThreadList
+        do {
+            list = try await api.threads(includeUnassigned: true)
+        } catch BackendRepositoryError.notAvailableInBackend {
+            return []
+        }
+        return try list.items.compactMap { dto in
+            guard dto.clientID == nil else { return nil }
+            let phone = dto.contactPhone ?? ""
+            return UnassignedConversation(
+                threadID: ThreadID(dto.id),
+                name: dto.clientName ?? phone,
+                phone: phone,
+                preview: try dto.preview.map(Self.mapMessage)
+            )
+        }
+    }
+
+    public func createLead(fromThread threadID: ThreadID) async throws {
+        _ = try await api.createThreadLead(threadID: threadID, idempotencyKey: Self.newIdempotencyKey())
     }
 
     /// Lista rozmów albo `nil`, gdy serwer kancelarii nie ma jeszcze tras
@@ -676,10 +699,12 @@ public struct BackendRepository: EmmaRepository, Sendable {
 
     // MARK: Mapowanie rozmów
 
-    static func mapThread(_ dto: BackendThreadSummaryDTO) -> ConversationThread {
-        ConversationThread(
+    /// `nil` dla rozmowy bez osoby — tych nie ma na liście klientów.
+    static func mapThread(_ dto: BackendThreadSummaryDTO) -> ConversationThread? {
+        guard let clientID = dto.clientID else { return nil }
+        return ConversationThread(
             id: ThreadID(dto.id),
-            clientID: ClientID(dto.clientID),
+            clientID: ClientID(clientID),
             sequenceHighWatermark: dto.highWatermark ?? 0
         )
     }

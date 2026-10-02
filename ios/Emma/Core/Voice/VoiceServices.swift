@@ -163,7 +163,20 @@ public protocol MessagingRepository: Sendable {
     ) async throws -> Message?
     /// Suma nieprzeczytanych wiadomości dla plakietki zakładki.
     func unreadTotal(userID: UserID) async throws -> Int
+    /// Rozmowy bez osoby w kartotece (np. z importu historii).
+    func unassignedConversations() async throws -> [UnassignedConversation]
+    /// Zamienia rozmowę bez osoby w leada; numer znany z kartoteki trafia do tej osoby.
+    func createLead(fromThread threadID: ThreadID) async throws
 
+}
+
+public extension MessagingRepository {
+    /// Demo i starsze źródła danych nie mają rozmów bez osoby.
+    func unassignedConversations() async throws -> [UnassignedConversation] { [] }
+
+    func createLead(fromThread threadID: ThreadID) async throws {
+        throw DomainError.notFound(resource: "rozmowa", id: threadID.rawValue)
+    }
 }
 
 public protocol UserRepository: Sendable {

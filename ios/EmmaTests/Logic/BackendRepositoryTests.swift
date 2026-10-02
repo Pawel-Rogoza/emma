@@ -814,6 +814,34 @@ final class BackendRepositoryTests: XCTestCase {
         XCTAssertEqual(unread, 2)
     }
 
+    /// Rozmowa bez osoby (`client_id = null`) nie trafia na listę klientów,
+    /// tylko do osobnej sekcji — z nazwą z WhatsAppa i numerem.
+    func testUnassignedConversationsComeSeparately() async throws {
+        StubURLProtocol.respond(json: Data(Self.unassignedThreadsJSON.utf8), status: 200)
+        let repository = makeRepository()
+
+        let unassigned = try await repository.unassignedConversations()
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.query, "include_unassigned=1")
+        XCTAssertEqual(unassigned.map(\.threadID.rawValue), ["thread-8"])
+        XCTAssertEqual(unassigned.first?.name, "Ołeh")
+        XCTAssertEqual(unassigned.first?.phone, "+48999888777")
+        XCTAssertEqual(unassigned.first?.preview?.text, "Dzień dobry")
+
+        let threads = try await repository.threads()
+        XCTAssertEqual(threads.map(\.id.rawValue), ["thread-3"])
+    }
+
+    func testCreateLeadFromThreadPostsToLeadRoute() async throws {
+        StubURLProtocol.respond { request, _ in
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertEqual(request.url?.path, "/api/mobile/v1/threads/thread-8/lead")
+            XCTAssertNotNil(request.value(forHTTPHeaderField: "Idempotency-Key"))
+            return (200, Data(#"{"id":"thread-8","client_id":"lead-12","client_name":"Ołeh","preview":null,"unread_count":0,"is_unassigned":false}"#.utf8))
+        }
+        try await makeRepository().createLead(fromThread: ThreadID("thread-8"))
+        XCTAssertEqual(StubURLProtocol.requestCount, 1)
+    }
+
     func testMessagesMapOriginTransportAndHistory() async throws {
         StubURLProtocol.respond { request, _ in
             XCTAssertTrue(request.url?.path.hasSuffix("/threads/thread-3/messages") ?? false)
@@ -899,6 +927,19 @@ final class BackendRepositoryTests: XCTestCase {
      "read_cursor_sequence":2,"manual_unread":false,"read_state_version":3,
      "reply_window_until":"2026-10-01T10:00:00.000Z","contact_phone":"+380671112233"}],
      "unread_total":2}
+    """#
+
+    private static let unassignedThreadsJSON = #"""
+    {"items":[{"id":"thread-3","client_id":"lead-9","client_name":"Iryna Petrenko",
+     "preview":null,"unread_count":0,"is_pinned":false,"has_draft":false,"high_watermark":4,
+     "contact_phone":"+380671112233","is_unassigned":false},
+     {"id":"thread-8","client_id":null,"client_name":"Ołeh",
+     "preview":{"id":"message-9","thread_id":"thread-8","direction":"incoming","author_id":null,"author_label":null,
+      "provider_message_id":"wamid.h9","kind":"text","attachment_type":null,"text":"Dzień dobry","translation":null,
+      "sent_at":"2026-08-01T09:00:00.000Z","sequence":-3,"transport":"read","source":"provider","origin":"history","version":1},
+     "unread_count":0,"is_pinned":false,"has_draft":false,"high_watermark":0,
+     "contact_phone":"+48999888777","is_unassigned":true}],
+     "unread_total":0}
     """#
 
     private static let messagesJSON = #"""
