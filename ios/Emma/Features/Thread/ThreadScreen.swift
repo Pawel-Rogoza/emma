@@ -31,6 +31,11 @@ final class ThreadStore: ObservableObject {
         var loadEarlierAvailable: Bool
         /// Okno 24 h WhatsApp: po nim zwykła wiadomość zostanie odrzucona.
         var replyWindow: ReplyWindow
+
+        /// Po polsku albo po rosyjsku — wg tego, jak klient pisze (`ReplyLanguage`).
+        var replyLanguage: LanguageCode {
+            ReplyLanguage.forReply(clientLanguage: client.language, messages: messages)
+        }
     }
 
     @Published private(set) var phase: LoadPhase<Model> = .idle
@@ -88,7 +93,11 @@ final class ThreadStore: ObservableObject {
             // Repozytorium ma już zapisany szkic (flush wyżej) i ewentualny cytat
             // ustawiony z opcji wiadomości; tekst bierzemy z pola, bo mógł się
             // zmienić w trakcie odczytu.
-            var draft = threadState.draft ?? Draft(threadID: threadID, text: "", language: client.language)
+            var draft = threadState.draft ?? Draft(
+                threadID: threadID,
+                text: "",
+                language: ReplyLanguage.forReply(clientLanguage: client.language, messages: sorted)
+            )
 
             // Otwarcie wątku odnotowuje odczyt: kursor nigdy się nie cofa.
             threadState.readCursorSequence = ReadStatePolicy.cursorAfterOpeningThread(
@@ -282,7 +291,7 @@ final class ThreadStore: ObservableObject {
                     text: text,
                     quote: draft.quote,
                     authorID: dependencies.currentUser.id,
-                    language: client.language,
+                    language: model.replyLanguage,
                     sentAt: dependencies.clock.now(),
                     idempotencyKey: key
                 )
@@ -309,7 +318,7 @@ final class ThreadStore: ObservableObject {
         if !model.messages.contains(where: { $0.id == sent.id }) {
             model.messages = MessageOrdering.sorted(model.messages + [sent])
         }
-        model.draft = Draft(threadID: model.thread.id, text: "", language: client.language)
+        model.draft = Draft(threadID: model.thread.id, text: "", language: model.replyLanguage)
         phase = .loaded(model)
         if var threadState = state {
             threadState.draft = nil
@@ -353,7 +362,7 @@ final class ThreadStore: ObservableObject {
         dictationNotice = "Dyktowanie wpisuje tekst do szkicu. Nic nie wyśle się samo."
         await dependencies.voice.startDictation(
             target: target,
-            language: model.client.language,
+            language: model.replyLanguage,
             service: dependencies.makeDictationService()
         )
     }
@@ -458,7 +467,9 @@ struct ThreadScreen: View {
                         Text(model.client.displayName)
                             .font(EmmaTypography.chatHeader)
                             .foregroundStyle(EmmaTheme.ink)
-                        Text("WhatsApp · \(model.client.language.displayName)")
+                        // Numer zamiast języka: od razu widać, z jakiego numeru ktoś pisze
+                        // i czy kartoteka przypisała go właściwej osobie (02.10.2026).
+                        Text("WhatsApp · \(model.client.phone ?? model.client.language.displayName)")
                             .font(EmmaTypography.caption())
                             .foregroundStyle(EmmaTheme.mutedSoft)
                     }
@@ -712,7 +723,7 @@ struct ThreadScreen: View {
             if model.draft.text.isEmpty && model.draft.quote == nil && !model.replyWindow.isClosed {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
-                        ForEach(QuickReplies.templates(for: model.client.language)) { reply in
+                        ForEach(QuickReplies.templates(for: model.replyLanguage)) { reply in
                             Button {
                                 EmmaHaptics.selection()
                                 Task { await store.replaceDraftText(reply.text) }

@@ -31,276 +31,184 @@ struct ConversationRow: View {
 
     @EnvironmentObject private var dependencies: AppDependencies
 
-    // F13 audytu: licznik nieprzeczytanych był nakładką wyśrodkowaną w pionie, więc
-    // nachodził na dwuliniowy podgląd (najgorzej w pierwszym wierszu i przy długiej
-    // cyrylicy). Teraz czas, licznik, pinezka i menu tworzą **osobną kolumnę**
-    // w układzie, a nie warstwę nad tekstem. Podgląd nie może wejść w jej prostokąt,
-    // bo kolumna zajmuje własną szerokość — także przy największym Dynamic Type.
+    // Przebudowa 02.10.2026 — wiersz jak w WhatsAppie. Właściciel chce od razu
+    // widzieć: kto napisał, kiedy, komu odpisano, a komu nie. Karta z linijką
+    // stanu, linijką okna 24 h, kolumną znaczników i „…” była nieczytelna.
+    // Teraz:
+    //   • u góry imię i godzina ostatniej wiadomości (zielona, gdy są nowe),
+    //   • podgląd: nasza wiadomość ma ptaszki dostarczenia i „Ty:”, więc
+    //     „odpisano” widać bez dodatkowego napisu,
+    //   • tylko gdy ruch jest nasz — jedna dyskretna linijka „Bez odpowiedzi ·
+    //     3 godz.”, po 24 h „Ponad 24 h bez odpowiedzi” (wtedy WhatsApp
+    //     przyjmie już tylko szablon),
+    //   • opcje pod przytrzymaniem i przesunięciem, bez „…” w każdym wierszu.
     var body: some View {
-        HStack(alignment: .top, spacing: 4) {
-            Button(action: onOpen) {
-                HStack(alignment: .top, spacing: 12) {
-                    avatar
+        Button(action: onOpen) {
+            HStack(alignment: .center, spacing: 12) {
+                PersonAvatar(
+                    initials: client.initials,
+                    style: .identity(client.id),
+                    diameter: EmmaMetrics.conversationAvatar
+                )
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(alignment: .firstTextBaseline, spacing: 7) {
-                            Text(client.displayName)
-                                .font(EmmaTypography.threadName)
-                                .foregroundStyle(EmmaTheme.ink)
-                                // Bez `lineLimit(1)`: przy największym Dynamic Type długie
-                                // nazwisko („Maria Sokołowa”) ucinało się do „Maria…”.
-                                // Zawinięcie do dwóch linii jest czytelniejsze niż wielokropek.
-                                .lineLimit(2)
-                                .minimumScaleFactor(0.75)
-                                .fixedSize(horizontal: false, vertical: true)
-                            LanguageBadge(language: client.language)
-                        }
-
-                        statusLine
-
-                        windowLine
-
-                        previewLine
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(client.displayName)
+                            .font(EmmaTypography.ui(16, isUnread ? .semibold : .medium))
+                            .foregroundStyle(EmmaTheme.ink)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        Text(timeLabel)
+                            .font(EmmaTypography.ui(12, isUnread ? .semibold : .regular))
+                            .foregroundStyle(isUnread ? EmmaTheme.unreadBadge : EmmaTheme.mutedSoft)
+                            .fixedSize()
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    HStack(alignment: .top, spacing: 8) {
+                        previewLine
+                        Spacer(minLength: 4)
+                        trailingMarks
+                    }
+
+                    if let waiting = waitingLine {
+                        HStack(spacing: 4) {
+                            Image(systemName: waiting.isOverdue ? "clock.badge.exclamationmark" : "clock")
+                                .font(.system(size: 10, weight: .semibold))
+                            Text(waiting.text)
+                                .font(EmmaTypography.ui(12, .medium))
+                        }
+                        .foregroundStyle(waiting.isOverdue ? EmmaTheme.danger : EmmaTheme.pillAmberText)
+                        .lineLimit(1)
+                        .padding(.top, 1)
+                    }
                 }
-                .padding(.vertical, 13)
-                .padding(.leading, 14)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(accessibilityLabel)
-            .accessibilityAddTraits(.isButton)
-
-            // Kolumna znaczników: czas u góry, pod nim licznik i pinezka, menu na dole.
-            VStack(alignment: .trailing, spacing: 5) {
-                Text(previewLabel)
-                    .font(EmmaTypography.threadTime)
-                    .foregroundStyle(isUnread ? EmmaTheme.unreadBadge : EmmaTheme.mutedSoft)
-                    .fixedSize()
-
-                if unreadCount > 0 {
-                    UnreadBadge(count: unreadCount, compact: true)
-                        .contentTransition(.numericText())
-                        .transition(.scale.combined(with: .opacity))
-                }
-
-                if isPinned {
-                    Image(systemName: "pin.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(EmmaTheme.mutedSoft)
-                        .rotationEffect(.degrees(35))
-                        .transition(.scale.combined(with: .opacity))
-                        .accessibilityLabel("Rozmowa przypięta")
-                }
-
-                Spacer(minLength: 0)
-
-                Button(action: onOptions) {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(EmmaTheme.mutedSoft)
-                        .frame(width: EmmaSpacing.hitTarget, height: EmmaSpacing.hitTarget)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Opcje rozmowy z \(client.displayName)")
-            }
-            .padding(.top, 13)
-            .padding(.bottom, 4)
-            .padding(.trailing, 6)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(EmmaTheme.surface)
-        // Pasek z lewej — jak przy pilnej sprawie: wiadomość czeka na przeczytanie.
-        .overlay(alignment: .leading) {
-            if isUnread {
-                Rectangle()
-                    .fill(EmmaTheme.unreadBadge)
-                    .frame(width: 3)
-                    .transition(.opacity)
-            }
+        .buttonStyle(.plain)
+        .overlay(alignment: .bottom) {
+            // Cienka linia od tekstu, nie od awatara — jak w WhatsAppie.
+            Rectangle()
+                .fill(EmmaTheme.cardBorder)
+                .frame(height: 1)
+                .padding(.leading, EmmaMetrics.conversationAvatar + 12)
         }
-        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
-                .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
-        }
-        .emmaCardShadow()
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: "Opcje rozmowy", onOptions)
         .animation(EmmaMotion.bouncy, value: unreadCount)
         .animation(EmmaMotion.smooth, value: isPinned)
     }
 
-    private var isUnread: Bool { status == .unread }
-
-    // MARK: Awatar
-
-    private var avatar: some View {
-        PersonAvatar(
-            initials: client.initials,
-            style: .identity(client.id),
-            diameter: EmmaMetrics.conversationAvatar
-        )
-        .overlay {
-            if isUnread {
-                EmmaPulseRing(color: EmmaTheme.unreadBadge, diameter: EmmaMetrics.conversationAvatar + 6)
-            }
-        }
-        .frame(width: EmmaMetrics.conversationAvatar + 6, height: EmmaMetrics.conversationAvatar + 6)
-    }
-
-    // MARK: Linijka stanu
-
-    /// „Nowe · czeka 12 min”, „Do odpowiedzi · czeka 7 min”, „Odpisano · odczytane”.
-    private var statusLine: some View {
-        HStack(spacing: 5) {
-            if showsReceipt, let transport = preview?.transport {
-                ReceiptMark(transport: transport)
-            } else {
-                Image(systemName: statusIcon)
-                    .font(.system(size: 11, weight: .semibold))
-                    .symbolEffect(.bounce, value: status)
-            }
-            Text(statusText)
-                .font(EmmaTypography.caption(.semibold))
-                .contentTransition(.opacity)
-        }
-        .foregroundStyle(statusColor)
-        .lineLimit(1)
-        .minimumScaleFactor(0.85)
-        .animation(EmmaMotion.smooth, value: status)
-    }
-
-    /// „WhatsApp: na odpowiedź zostało 2 godz.” albo „Minęło 24 h…” — tylko
-    /// gdy ruch jest nasz. Po 24 h od wiadomości klienta WhatsApp przyjmie już
-    /// tylko zatwierdzony szablon; lepiej wiedzieć o tym przed otwarciem wątku.
-    @ViewBuilder
-    private var windowLine: some View {
-        if let text = windowText {
-            HStack(spacing: 5) {
-                Image(systemName: replyWindow.isClosed ? "exclamationmark.circle" : "hourglass")
-                    .font(.system(size: 11, weight: .semibold))
-                Text(text)
-                    .font(EmmaTypography.caption(.medium))
-            }
-            .foregroundStyle(replyWindow.isClosed ? EmmaTheme.danger : EmmaTheme.pillAmberText)
-            .lineLimit(1)
-            .minimumScaleFactor(0.85)
-            .transition(.opacity)
-        }
-    }
-
-    private var windowText: String? {
-        guard status.needsReply else { return nil }
-        if replyWindow.isClosed { return "Minęło 24 h · tylko szablon lub telefon" }
-        let now = dependencies.now
-        guard replyWindow.isClosingSoon(now: now), let left = replyWindow.remainingText(now: now) else { return nil }
-        return "WhatsApp: na odpowiedź zostało \(left)"
-    }
-
-    private var showsReceipt: Bool {
-        !hasDraft && (status == .replied || status == .seen) && preview?.transport.receiptGlyph != MessageTransport.ReceiptGlyph.none
-    }
-
-    private var waitingText: String? {
-        guard let waitingSince else { return nil }
-        return ConversationInbox.waitingText(since: waitingSince, now: dependencies.now)
-    }
-
-    private var statusText: String {
-        if hasDraft { return "Szkic odpowiedzi" }
-        switch status {
-        case .unread:
-            return waitingText.map { "Nowe · czeka \($0)" } ?? "Nowe"
-        case .awaitingReply:
-            return waitingText.map { "Do odpowiedzi · czeka \($0)" } ?? "Do odpowiedzi"
-        case .replied:
-            switch preview?.transport {
-            case .failed?: return "Nie wysłano"
-            case .unknown?: return "Sprawdzamy wysyłkę"
-            case .delivered?: return "Odpisano · dostarczono"
-            case .accepted?, .sent?: return "Odpisano · wysłano"
-            default: return "Odpisano · wysyłanie"
-            }
-        case .seen:
-            return "Odpisano · odczytane"
-        case .empty:
-            return "Brak wiadomości"
-        }
-    }
-
-    private var statusIcon: String {
-        if hasDraft { return "square.and.pencil" }
-        switch status {
-        case .unread: return "envelope.badge.fill"
-        case .awaitingReply: return "arrowshape.turn.up.left.fill"
-        case .replied:
-            return preview?.transport == .failed ? "exclamationmark.circle.fill" : "clock"
-        case .seen: return "checkmark"
-        case .empty: return "bubble.left"
-        }
-    }
-
-    private var statusColor: Color {
-        if hasDraft { return EmmaTheme.accent }
-        switch status {
-        case .unread: return EmmaTheme.unreadBadge
-        case .awaitingReply:
-            // Świeżo przeczytane — spokojnie; klient czeka ponad godzinę — bursztyn.
-            guard let waitingSince else { return EmmaTheme.pillAmberText }
-            return ConversationInbox.isWaitingLong(since: waitingSince, now: dependencies.now)
-                ? EmmaTheme.pillAmberText
-                : EmmaTheme.secondaryButtonText
-        case .replied: return preview?.transport == .failed ? EmmaTheme.danger : EmmaTheme.mutedSoft
-        case .seen: return EmmaTheme.pillGreenText
-        case .empty: return EmmaTheme.mutedSoft
-        }
-    }
+    private var isUnread: Bool { unreadCount > 0 }
 
     // MARK: Podgląd
 
     private var previewLine: some View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {
-            if hasDraft {
-                Text("Szkic:")
-                    .font(EmmaTypography.ui(14, .semibold))
-                    .foregroundStyle(EmmaTheme.muted)
-            } else if preview?.isOutgoing == true {
-                Text("Ty:")
-                    .font(EmmaTypography.ui(14, .medium))
-                    .foregroundStyle(EmmaTheme.mutedSoft)
+            if !hasDraft, let preview, preview.isOutgoing {
+                ReceiptMark(transport: preview.transport)
             }
-            Text(previewText)
+            // Prefiks i treść w jednym napisie — druga linia zaczyna się pod
+            // pierwszą, a nie wcięta za „Telefon:”.
+            (prefixText + Text(previewText)
                 .font(EmmaTypography.body(for: previewText, size: 14, weight: isUnread ? .medium : .regular))
-                .foregroundStyle(isUnread ? EmmaTheme.ink : EmmaTheme.muted)
+                .foregroundColor(isUnread ? EmmaTheme.ink : EmmaTheme.muted))
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
         }
+    }
+
+    private var prefixText: Text {
+        if hasDraft {
+            return Text("Szkic: ").font(EmmaTypography.ui(14, .semibold)).foregroundColor(EmmaTheme.accent)
+        }
+        guard let preview, preview.isOutgoing else { return Text("") }
+        return Text("\(outgoingPrefix(preview)) ")
+            .font(EmmaTypography.ui(14, .medium))
+            .foregroundColor(EmmaTheme.mutedSoft)
+    }
+
+    /// „Ty:” dla wiadomości z Emmy, „Telefon:” dla odpowiedzi z WhatsApp Business.
+    private func outgoingPrefix(_ message: Message) -> String {
+        message.authorID == nil ? "Telefon:" : "Ty:"
     }
 
     private var previewText: String {
         if hasDraft { return "Szkic w toku" }
-        return preview?.previewText ?? "Rozpocznij rozmowę"
+        return preview?.previewText ?? "Brak wiadomości"
     }
 
-    private var previewLabel: String {
+    @ViewBuilder
+    private var trailingMarks: some View {
+        HStack(spacing: 6) {
+            if isPinned {
+                Image(systemName: "pin.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(EmmaTheme.mutedSoft)
+                    .rotationEffect(.degrees(35))
+                    .accessibilityLabel("Rozmowa przypięta")
+            }
+            if unreadCount > 0 {
+                UnreadBadge(count: unreadCount, compact: true)
+                    .contentTransition(.numericText())
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .padding(.top, 1)
+    }
+
+    // MARK: Bez odpowiedzi
+
+    private struct WaitingLine {
+        let text: String
+        /// Ponad 24 h — WhatsApp przyjmie już tylko zatwierdzony szablon.
+        let isOverdue: Bool
+    }
+
+    private var waitingLine: WaitingLine? {
+        guard status.needsReply, !hasDraft else { return nil }
+        let now = dependencies.now
+        if replyWindow.isClosed || waitingSince.map({ now.timeIntervalSince($0) >= ReplyWindow.duration }) == true {
+            return WaitingLine(text: "Ponad 24 h bez odpowiedzi", isOverdue: true)
+        }
+        var text = "Bez odpowiedzi"
+        if let waitingSince {
+            text += " · \(ConversationInbox.waitingText(since: waitingSince, now: now))"
+        }
+        if replyWindow.isClosingSoon(now: now), let left = replyWindow.remainingText(now: now) {
+            text += " · zostało \(left)"
+        }
+        return WaitingLine(text: text, isOverdue: false)
+    }
+
+    // MARK: Czas
+
+    /// Dziś — godzina, wczoraj — „Wczoraj”, w tym tygodniu — dzień tygodnia,
+    /// dalej — data. Jak w WhatsAppie.
+    private var timeLabel: String {
         guard let preview else { return "" }
         let day = AppDependencies.localDate(from: preview.sentAt)
-        if day == dependencies.today {
-            return dependencies.dateText.clockTime(preview.sentAt)
-        }
-        return dependencies.dateText.dayLabel(day)
+        let today = dependencies.today
+        if day == today { return dependencies.dateText.clockTime(preview.sentAt) }
+        if day == today.adding(days: -1) { return "Wczoraj" }
+        if day >= today.adding(days: -6) { return dependencies.dateText.weekdayName(for: day) }
+        return String(format: "%02d.%02d.%02d", day.day, day.month, day.year % 100)
     }
 
     private var accessibilityLabel: String {
-        var parts = [client.displayName, statusText]
-        if let windowText { parts.append(windowText) }
+        var parts = [client.displayName]
         if unreadCount > 0 { parts.append(EmmaPlural.unread(unreadCount)) }
+        if let waitingLine { parts.append(waitingLine.text) }
+        if let preview {
+            parts.append(preview.isOutgoing ? "Twoja wiadomość: \(preview.previewText)" : preview.previewText)
+            parts.append(timeLabel)
+        }
         if isPinned { parts.append("przypięta") }
-        if let preview { parts.append(preview.previewText) }
         return parts.joined(separator: ", ")
     }
 
@@ -402,22 +310,9 @@ struct MessageBubble: View {
                     if message.isOutgoing {
                         ReceiptMark(transport: message.transport)
                     }
-                    Button(action: onOptions) {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(EmmaTheme.bubbleMeta)
-                            .frame(width: 28, height: 28)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(
-                        message.isOutgoing
-                            ? "Szczegóły wysłanej wiadomości z \(clockText)"
-                            : "Odpowiedz na wiadomość z \(clockText)"
-                    )
                 }
             }
-            .padding(EdgeInsets(top: 11, leading: 13, bottom: 9, trailing: 11))
+            .padding(EdgeInsets(top: 9, leading: 12, bottom: 8, trailing: 12))
             .background(message.isOutgoing ? EmmaTheme.bubbleOutgoing : EmmaTheme.bubbleIncoming)
             .clipShape(bubbleShape)
             .overlay {
@@ -428,7 +323,14 @@ struct MessageBubble: View {
 
             if !message.isOutgoing { Spacer(minLength: 44) }
         }
+        // Opcje (odpowiedz, kopiuj, szczegóły) pod przytrzymaniem dymka — jak
+        // w WhatsAppie; wcześniej każdy dymek miał własne „…” (02.10.2026).
+        .onLongPressGesture(minimumDuration: 0.35) {
+            EmmaHaptics.selection()
+            onOptions()
+        }
         .accessibilityElement(children: .contain)
+        .accessibilityAction(named: message.isOutgoing ? "Szczegóły wiadomości" : "Odpowiedz na wiadomość", onOptions)
     }
 
     // MARK: Plik

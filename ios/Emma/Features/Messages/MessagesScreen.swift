@@ -6,6 +6,11 @@ import SwiftUI
 // z tej samej reguły co licznik w wątku (`ReadStatePolicy`), więc liczby nie
 // mogą się rozjechać (§3.3).
 //
+// Przebudowa 02.10.2026 — jak w WhatsAppie: bez kafelków i grup, lista od
+// najnowszej wiadomości (przypięte na górze), wiersz z godziną, ptaszkami
+// i dyskretnym „Bez odpowiedzi” / „Ponad 24 h bez odpowiedzi”. Poniższy opis
+// z 29.09 dotyczy reguł stanu, które zostały (`ConversationInbox`):
+//
 // Przebudowa 29.09.2026 — ten sam język co „Dzisiaj” i „Klienci”:
 //   • nad listą trzy kafelki: nowe wiadomości, rozmowy do odpowiedzi i odpisane;
 //     dotknięcie ustawia filtr albo przewija do grupy,
@@ -271,72 +276,6 @@ final class MessagesStore: ObservableObject {
     }
 }
 
-// MARK: - Grupy listy
-
-/// Grupa listy rozmów: przypięte na górze, potem według tego, czyj jest ruch.
-enum ConversationGroup: String, CaseIterable, Identifiable {
-    case pinned
-    case unread
-    case awaitingReply
-    case replied
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .pinned: return "Przypięte"
-        case .unread: return "Nowe wiadomości"
-        case .awaitingReply: return "Do odpowiedzi"
-        case .replied: return "Odpisane"
-        }
-    }
-
-    var tone: Color {
-        switch self {
-        case .pinned: return EmmaTheme.mutedSoft
-        case .unread: return EmmaTheme.unreadBadge
-        case .awaitingReply: return EmmaTheme.pillAmberText
-        case .replied: return EmmaTheme.pillGreenText
-        }
-    }
-
-    /// Grupy, które wymagają działania, mają tytuł w kolorze stanu.
-    var isEmphasized: Bool { self == .unread || self == .awaitingReply }
-
-    /// Cel przewijania z kafelków.
-    var anchorID: String { "conversation-group-\(rawValue)" }
-
-    static func of(_ row: MessagesStore.Row) -> ConversationGroup {
-        if row.isPinned { return .pinned }
-        switch row.status {
-        case .unread: return .unread
-        case .awaitingReply: return .awaitingReply
-        case .replied, .seen, .empty: return .replied
-        }
-    }
-}
-
-private struct ConversationSection: Identifiable {
-    let group: ConversationGroup
-    let rows: [MessagesStore.Row]
-    /// Pozycja pierwszego wiersza na całej liście — do kaskadowego wejścia kart.
-    let startIndex: Int
-
-    var id: String { group.rawValue }
-
-    static func make(_ rows: [MessagesStore.Row]) -> [ConversationSection] {
-        var sections: [ConversationSection] = []
-        var index = 0
-        for group in ConversationGroup.allCases {
-            let members = rows.filter { ConversationGroup.of($0) == group }
-            guard !members.isEmpty else { continue }
-            sections.append(ConversationSection(group: group, rows: members, startIndex: index))
-            index += members.count
-        }
-        return sections
-    }
-}
-
 // MARK: - Ekran
 
 struct MessagesScreen: View {
@@ -356,16 +295,14 @@ struct MessagesScreen: View {
     private static let unassignedPreviewLimit = 8
 
     var body: some View {
-        ScrollViewReader { proxy in
-            List {
-                controls(proxy)
-                listContent
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .scrollDismissesKeyboard(.immediately)
-            .environment(\.defaultMinListRowHeight, 0)
+        List {
+            controls
+            listContent
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .scrollDismissesKeyboard(.immediately)
+        .environment(\.defaultMinListRowHeight, 0)
         .background(EmmaTheme.bg)
         .refreshable { await store.load(dependencies) }
         .task(id: dependencies.dataVersion) { await store.load(dependencies) }
@@ -395,16 +332,12 @@ struct MessagesScreen: View {
 
     // MARK: Nagłówek i sterowanie
 
+    // Przebudowa 02.10.2026: kafelki „nowe / czekają / odpisane” dublowały
+    // chipy filtra (te same liczby dwa razy nad listą) — zostały chipy.
     @ViewBuilder
-    private func controls(_ proxy: ScrollViewProxy) -> some View {
+    private var controls: some View {
         header
-            .id(Self.topID)
             .emmaListRow(top: EmmaSpacing.contentTop, bottom: 0, horizontal: layout.horizontalPadding)
-
-        if case .loaded(let model) = store.phase {
-            summaryTiles(model, proxy: proxy)
-                .emmaListRow(top: 14, bottom: 0, horizontal: layout.horizontalPadding)
-        }
 
         SearchField(text: $store.searchText, placeholder: "Szukaj osoby lub wiadomości", isFocused: $searchFocused)
             .emmaListRow(top: 14, bottom: 0, horizontal: layout.horizontalPadding)
@@ -427,54 +360,6 @@ struct MessagesScreen: View {
             }
         }
     }
-
-    // MARK: Kafelki
-
-    private func summaryTiles(_ model: MessagesStore.Model, proxy: ScrollViewProxy) -> some View {
-        let unreadMessages = model.unreadMessages
-        let needsReply = model.count(.needsReply)
-        let replied = model.repliedCount
-        return HStack(spacing: 8) {
-            PulseTile(
-                value: unreadMessages,
-                label: EmmaPlural.form(unreadMessages, "nowa wiadomość", "nowe wiadomości", "nowych wiadomości"),
-                systemImage: "envelope.badge",
-                tone: EmmaTheme.unreadBadge
-            ) { select(.unread) }
-            PulseTile(
-                value: needsReply,
-                label: EmmaPlural.form(needsReply, "czeka na odpowiedź", "czekają na odpowiedź", "czeka na odpowiedź"),
-                systemImage: "arrowshape.turn.up.left",
-                tone: needsReply > 0 ? EmmaTheme.pillAmberText : EmmaTheme.accent
-            ) { select(.needsReply) }
-            PulseTile(
-                value: replied,
-                label: EmmaPlural.form(replied, "odpisana", "odpisane", "odpisanych"),
-                systemImage: "checkmark.message",
-                tone: EmmaTheme.pillGreenText
-            ) { showGroup(.replied, proxy: proxy) }
-        }
-    }
-
-    private func select(_ filter: MessagesStore.Filter) {
-        store.searchText = ""
-        store.filter = filter
-    }
-
-    /// Kafelek „odpisane” nie zawęża listy, tylko przewija do grupy.
-    private func showGroup(_ group: ConversationGroup, proxy: ScrollViewProxy) {
-        store.searchText = ""
-        store.filter = .all
-        Task { @MainActor in
-            // Najpierw lista musi przebudować się po zmianie filtra.
-            await Task.yield()
-            withAnimation(.easeInOut(duration: 0.3)) {
-                proxy.scrollTo(group.anchorID, anchor: .top)
-            }
-        }
-    }
-
-    private static let topID = "messages-top"
 
     // MARK: Filtry
 
@@ -522,19 +407,10 @@ struct MessagesScreen: View {
                 emptyState(model)
                     .emmaListRow(top: 6, bottom: 0, horizontal: layout.horizontalPadding)
             } else {
-                ForEach(ConversationSection.make(model.rows)) { section in
-                    GroupHeader(
-                        title: section.group.title,
-                        count: section.rows.count,
-                        tone: section.group.tone,
-                        emphasized: section.group.isEmphasized
-                    )
-                    .id(section.group.anchorID)
-                    .emmaListRow(top: 12, bottom: 2, horizontal: layout.horizontalPadding)
-
-                    ForEach(Array(section.rows.enumerated()), id: \.element.id) { offset, row in
-                        conversationRow(row, index: section.startIndex + offset)
-                    }
+                // Jak w WhatsAppie: przypięte na górze, dalej od najnowszej
+                // wiadomości. Kto czeka na odpowiedź, mówi sam wiersz.
+                ForEach(Array(model.rows.enumerated()), id: \.element.id) { offset, row in
+                    conversationRow(row, index: offset)
                 }
             }
             unassignedSection(model)
@@ -561,7 +437,7 @@ struct MessagesScreen: View {
         }
         .contextMenu { rowMenu(row) }
         .emmaAppear(index)
-        .emmaListRow(top: 5, bottom: 5, horizontal: layout.horizontalPadding)
+        .emmaListRow(top: 0, bottom: 0, horizontal: layout.horizontalPadding)
         .swipeActions(edge: .leading, allowsFullSwipe: true) {
             Button {
                 Task { await toggleRead(row) }
@@ -623,6 +499,11 @@ struct MessagesScreen: View {
         } label: {
             Label("Karta klienta", systemImage: "person")
         }
+        Button {
+            dependencies.present(.conversationOptions(row.thread.id))
+        } label: {
+            Label("Więcej opcji", systemImage: "ellipsis.circle")
+        }
     }
 
     // MARK: Rozmowy bez osoby
@@ -646,7 +527,7 @@ struct MessagesScreen: View {
                 UnassignedConversationRow(conversation: conversation) {
                     openedUnassigned = conversation
                 }
-                .emmaListRow(top: 5, bottom: 5, horizontal: layout.horizontalPadding)
+                .emmaListRow(top: 0, bottom: 0, horizontal: layout.horizontalPadding)
             }
 
             if visible.count < model.unassigned.count {

@@ -25,4 +25,21 @@ final class QuickRepliesTests: XCTestCase {
         XCTAssertTrue(QuickReplies.templates(for: .uk).contains { $0.text.contains("і") })
         XCTAssertFalse(QuickReplies.templates(for: .ru).contains { $0.text.contains("і") })
     }
+
+    // MARK: Język odpowiedzi (02.10.2026): polski albo rosyjski, nigdy ukraiński
+
+    func testReplyLanguageFollowsHowTheClientWrites() {
+        XCTAssertEqual(ReplyLanguage.forReply(clientLanguage: .uk, lastIncomingText: "Dzień dobry, mam pytanie"), .pl)
+        XCTAssertEqual(ReplyLanguage.forReply(clientLanguage: .pl, lastIncomingText: "Доброго дня, мого брата затримали"), .ru)
+        XCTAssertEqual(ReplyLanguage.forReply(clientLanguage: .pl, lastIncomingText: "Здравствуйте, нужна консультация"), .ru)
+    }
+
+    func testReplyLanguageNeverUkrainianWithoutMessages() {
+        XCTAssertEqual(ReplyLanguage.forReply(clientLanguage: .uk, lastIncomingText: nil), .ru)
+        XCTAssertEqual(ReplyLanguage.forReply(clientLanguage: .ru, lastIncomingText: "👍"), .ru)
+        XCTAssertEqual(ReplyLanguage.forReply(clientLanguage: .pl, lastIncomingText: "+48 600 100 200"), .pl)
+        for language in LanguageCode.allCases {
+            XCTAssertNotEqual(ReplyLanguage.forReply(clientLanguage: language, lastIncomingText: nil), .uk)
+        }
+    }
 }

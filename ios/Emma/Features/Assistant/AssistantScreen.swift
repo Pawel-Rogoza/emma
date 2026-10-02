@@ -57,9 +57,11 @@ struct AssistantScreen: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .scrollDismissesKeyboard(.interactively)
-                // Rozmowa jest kotwiczona na dole: gdy pojawia się klawiatura,
-                // karta nowej propozycji zostaje nad nią, a nie pod nią (§6).
-                .defaultScrollAnchor(.bottom)
+                // Wejście na pusty ekran Emmy zaczyna się od góry (nagłówek,
+                // skróty) — wcześniej kotwica dołu przewijała go od razu w dół.
+                // Trwająca rozmowa jest kotwiczona na dole: gdy pojawia się
+                // klawiatura, karta nowej propozycji zostaje nad nią (§6).
+                .defaultScrollAnchor(store.turns.isEmpty ? .top : .bottom)
                 .animation(EmmaMotion.smooth, value: store.voiceState.turn == .thinking)
                 .onChange(of: store.turns.count) { _, _ in
                     guard let last = store.turns.last else { return }

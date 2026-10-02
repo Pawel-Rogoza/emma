@@ -50,18 +50,18 @@ struct UnassignedConversationRow: View {
                     }
                 }
             }
-            .padding(.vertical, 13)
-            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(EmmaTheme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
-                    .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
-            }
             .contentShape(Rectangle())
         }
-        .buttonStyle(EmmaCardButtonStyle())
+        .buttonStyle(.plain)
+        // Ten sam układ co zwykła rozmowa: cienka linia od tekstu.
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(EmmaTheme.cardBorder)
+                .frame(height: 1)
+                .padding(.leading, 52)
+        }
         .accessibilityHint("Otwiera historię rozmowy")
     }
 
