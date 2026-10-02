@@ -10,6 +10,45 @@ import Foundation
 // Kancelaria pisze w liczbie mnogiej („oddzwonimy”), więc szablon nie zależy
 // od płci osoby wysyłającej.
 
+// MARK: - Język odpowiedzi
+//
+// Zasada kancelarii (02.10.2026): klient piszący po polsku dostaje odpowiedź
+// po polsku, a piszący po ukraińsku albo rosyjsku — po rosyjsku. Po ukraińsku
+// kancelaria nie odpisuje. Decyduje to, w jakim alfabecie klient faktycznie
+// napisał ostatnią wiadomość; język z kartoteki jest tylko zapasem, gdy
+// wiadomości od klienta jeszcze nie ma.
+
+public enum ReplyLanguage {
+
+    /// Język odpowiedzi: zawsze `.pl` albo `.ru`, nigdy `.uk`.
+    public static func forReply(clientLanguage: LanguageCode, lastIncomingText: String?) -> LanguageCode {
+        if let text = lastIncomingText, let detected = detect(text) { return detected }
+        return clientLanguage == .pl ? .pl : .ru
+    }
+
+    /// Ta sama zasada na wiadomościach wątku (ostatnia od klienta z tekstem).
+    public static func forReply(clientLanguage: LanguageCode, messages: [Message]) -> LanguageCode {
+        let lastIncoming = messages.last { !$0.isOutgoing && $0.kind == .text && detect($0.text) != nil }
+        return forReply(clientLanguage: clientLanguage, lastIncomingText: lastIncoming?.text)
+    }
+
+    /// Cyrylica → rosyjski, łacinka → polski; `nil`, gdy w tekście nie ma liter
+    /// (sama emotka, numer, załącznik).
+    public static func detect(_ text: String) -> LanguageCode? {
+        var cyrillic = 0
+        var latin = 0
+        for scalar in text.unicodeScalars where scalar.properties.isAlphabetic {
+            switch scalar.value {
+            case 0x0400...0x04FF: cyrillic += 1
+            case 0x0041...0x024F: latin += 1
+            default: break
+            }
+        }
+        guard cyrillic + latin > 0 else { return nil }
+        return cyrillic > latin ? .ru : .pl
+    }
+}
+
 public struct QuickReply: Equatable, Sendable, Identifiable {
     /// Etykieta chipu (po polsku, dla adwokata).
     public let label: String

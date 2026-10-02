@@ -197,6 +197,12 @@ public struct DateTextFormatter: Sendable {
         Self.weekdayShort[date.weekdayIndexMondayFirst]
     }
 
+    /// „Poniedziałek” — dzień tygodnia na liście rozmów (jak w WhatsAppie).
+    public func weekdayName(for date: LocalDate) -> String {
+        let weekday = Self.weekdayFull[date.weekdayIndexMondayFirst].lowercased()
+        return weekday.prefix(1).uppercased() + weekday.dropFirst()
+    }
+
     /// Godzina z długością, np. „10:30 · 30 min”.
     public func timeAndDuration(_ time: TimeOfDay, minutes: Int) -> String {
         "\(time.hhmm) · \(minutes) min"

@@ -97,36 +97,19 @@ final class Stage2LayoutUITests: XCTestCase {
 
     // MARK: F13 — kolumna znaczników
 
-    /// Licznik nieprzeczytanych jest w kolumnie na końcu wiersza i nie nachodzi na menu.
-    func testUnreadBadgeSitsInTrailingColumnClearOfMenu() {
+    /// Wiersz rozmowy (jak w WhatsAppie, 02.10.2026) mówi czytnikowi ekranu
+    /// o nowych wiadomościach, a opcje są czynnością wiersza, nie osobnym „…”.
+    func testConversationRowAnnouncesUnreadAndOffersOptions() {
         openTab("messages")
 
         let row = application.buttons.matching(
             NSPredicate(format: "label BEGINSWITH[c] 'Andrii Melnyk'")
         ).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10), "Brak wiersza rozmowy z Andriiem Melnykiem")
-
-        let badge = application.staticTexts.matching(
-            NSPredicate(format: "label CONTAINS[c] 'nieprzeczyt'")
-        ).firstMatch
-        XCTAssertTrue(badge.exists, "Brak licznika nieprzeczytanych w pierwszym wierszu")
-
-        let menu = application.buttons["Opcje rozmowy z Andrii Melnyk"]
-        XCTAssertTrue(menu.exists, "Brak menu wiersza rozmowy")
-
+        XCTAssertTrue(row.label.localizedCaseInsensitiveContains("nieprzeczyt"), "Wiersz nie mówi o nowych wiadomościach")
         XCTAssertFalse(
-            badge.frame.intersects(menu.frame),
-            "Licznik nachodzi na menu wiersza — kolumna znaczników się rozjechała"
-        )
-        XCTAssertGreaterThan(
-            badge.frame.minX,
-            row.frame.midX,
-            "Licznik nie jest w kolumnie na końcu wiersza"
-        )
-        XCTAssertLessThanOrEqual(
-            badge.frame.maxX,
-            menu.frame.maxX,
-            "Licznik wychodzi poza kolumnę znaczników"
+            application.buttons["Opcje rozmowy z Andrii Melnyk"].exists,
+            "Wiersz nadal ma osobny przycisk „…”"
         )
     }
 }

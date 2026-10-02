@@ -319,7 +319,7 @@ final class AssistantStore: ObservableObject {
         if let awaiting = awaitingInput {
             awaitingInput = nil
             let kind = intent.commandKind ?? awaiting.kind
-            if await newAction(kind: kind, clientID: awaiting.clientID, text: text) != nil, speaksReplies, !providerOwnsVoice {
+            if await newAction(kind: kind, clientID: awaiting.clientID, text: text) != nil, readsAutomatically {
                 await speak("Przygotowałam treść do zatwierdzenia.", language: .pl, isSummary: false, sourceID: nextSourceID("emma-note"))
             }
             return
@@ -765,7 +765,7 @@ final class AssistantStore: ObservableObject {
             return
         }
         guard let turn = await newAction(kind: .reply, clientID: clientID, text: await draftText(clientID)) else { return }
-        if speaksReplies, !providerOwnsVoice {
+        if readsAutomatically {
             await speak(
                 "Przygotowałam wiadomość do \(client.displayName). Sprawdź treść lub odsłuchaj ją przed zatwierdzeniem.",
                 language: .pl,
@@ -1196,21 +1196,16 @@ final class AssistantStore: ObservableObject {
         }
 
         if clientID == DemoFixtures.andriiID {
-            return "Доброго дня. Отримав Ваше звернення щодо затримання брата. Будь ласка, повідомте, де він перебуває, та надішліть наявні документи. Після уточнення обставин узгодимо подальший контакт."
+            return "Здравствуйте. Получил Ваше обращение по поводу задержания брата. Пожалуйста, сообщите, где он находится, и пришлите имеющиеся документы. После уточнения обстоятельств согласуем дальнейший контакт."
         }
-        switch client.language {
-        case .uk:
-            let schedule = event.map {
-                "Бачу нашу консультацію о \($0.time.hhmm). "
-                    + ($0.status == .confirmed ? "Зустріч підтверджена." : "Час ще очікує на підтвердження.")
-            } ?? "Отримав Ваше звернення."
-            return "Доброго дня! \(schedule) Будь ласка, надішліть документи перед розмовою."
-        case .ru:
+        // Po polsku albo po rosyjsku — wg tego, jak klient pisze; nigdy po ukraińsku.
+        switch await replyLanguage(for: client, dependencies: dependencies) {
+        case .ru, .uk:
             let schedule = event.map {
                 "Вижу Вашу запись на \(shortDate($0.day)) в \($0.time.hhmm). "
                     + ($0.status == .confirmed ? "Встреча подтверждена." : "Время ещё ожидает подтверждения.")
             } ?? "Сообщите, пожалуйста, удобное время для разговора."
-            return "Здравствуйте! Да, консультацию можно провести на русском языке. \(schedule)"
+            return "Здравствуйте! \(schedule)"
         case .pl:
             let schedule = event.map {
                 "Widzę termin \(shortDate($0.day)), godz. \($0.time.hhmm). "
@@ -1218,6 +1213,15 @@ final class AssistantStore: ObservableObject {
             } ?? "Proszę o podanie dogodnego terminu kontaktu."
             return "Dziękuję za wiadomość. \(schedule)"
         }
+    }
+
+    /// Język odpowiedzi z ostatnich wiadomości klienta (`ReplyLanguage`).
+    private func replyLanguage(for client: Client, dependencies: AppDependencies) async -> LanguageCode {
+        guard let threadID = await conversationID(for: client.id, dependencies: dependencies) else {
+            return ReplyLanguage.forReply(clientLanguage: client.language, lastIncomingText: nil)
+        }
+        let messages = (try? await dependencies.repository.latestMessages(threadID: threadID, limit: 20)) ?? []
+        return ReplyLanguage.forReply(clientLanguage: client.language, messages: MessageOrdering.sorted(messages))
     }
 
     // MARK: Pomocnicze dla widoku
@@ -1400,8 +1404,17 @@ final class AssistantStore: ObservableObject {
     /// Świadomy odsłuch („Odsłuchaj", `readTurn`/`speakAction`) nadal działa.
     private func answer(_ text: String, isSummary: Bool = false, read: Bool = true) async {
         let id = appendAssistantTurn(text, isSummary: isSummary)
-        guard read, speaksReplies, !providerOwnsVoice else { return }
+        guard read, readsAutomatically else { return }
         await speak(text, language: .pl, isSummary: isSummary, sourceID: "emma-turn-\(id)")
+    }
+
+    /// Czy odpowiedź czytać na głos sama z siebie. Poza Demo — nigdy: głosem
+    /// Emmy jest rozmowa („Rozmawiaj”), a systemowy syntezator iOS brzmiał
+    /// jak robot i odzywał się np. po skrócie „Odpowiedź z Emmą” (02.10.2026).
+    /// Świadomy odsłuch („Odsłuchaj”) działa jak dotąd.
+    private var readsAutomatically: Bool {
+        guard speaksReplies, !providerOwnsVoice else { return false }
+        return dependencies?.configuration.usesMockServices ?? false
     }
 
     private func nextID(_ prefix: String) -> String {

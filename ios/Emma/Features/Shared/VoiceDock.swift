@@ -30,12 +30,28 @@ struct VoiceDock: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(stateLabel)
-                .font(EmmaTypography.caption())
-                .foregroundStyle(EmmaTheme.dockStatusText)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityLabel("Stan rozmowy: \(stateLabel)")
+        VStack(alignment: .leading, spacing: 6) {
+            // Jedna linijka: stan po lewej, zwarta pigułka po prawej. Wcześniej
+            // przycisk zajmował całą szerokość i 56 pt wysokości — wyglądał
+            // ciężko i staroświecko obok reszty aplikacji (02.10.2026).
+            HStack(alignment: .center, spacing: 12) {
+                HStack(spacing: 7) {
+                    if state.sessionID != nil {
+                        Circle()
+                            .fill(EmmaTheme.pillGreenText)
+                            .frame(width: 7, height: 7)
+                            .accessibilityHidden(true)
+                    }
+                    Text(stateLabel)
+                        .font(EmmaTypography.caption())
+                        .foregroundStyle(EmmaTheme.dockStatusText)
+                        .lineLimit(2)
+                        .accessibilityLabel("Stan rozmowy: \(stateLabel)")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                primaryButton
+            }
 
             // Błąd pokazujemy **przy przycisku**, a nie tylko w przewijanej
             // treści: brak zgody na mikrofon albo brak toru wejścia musi być
@@ -48,19 +64,16 @@ struct VoiceDock: View {
                     .accessibilityLabel("Problem: \(error)")
             }
 
-            primaryButton
-
             if let toolLabel = state.toolLabel {
                 Text("Emma: \(toolLabel)")
-                    .font(EmmaTypography.emmaBody(toolLabel))
+                    .font(EmmaTypography.caption())
                     .foregroundStyle(EmmaTheme.muted)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel("Emma pracuje: \(toolLabel)")
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(EmmaTheme.dockBackground)
         .overlay(alignment: .top) {
@@ -68,6 +81,7 @@ struct VoiceDock: View {
                 .fill(EmmaTheme.dockBorder)
                 .frame(height: 1)
         }
+        .animation(EmmaMotion.smooth, value: state.sessionID != nil)
     }
 
     /// Jedyny przycisk: „Rozmawiaj” bez sesji, „Zakończ” w trakcie rozmowy.
@@ -75,19 +89,20 @@ struct VoiceDock: View {
     private var primaryButton: some View {
         let isActive = state.sessionID != nil
         return Button(action: isActive ? onEnd : onStart) {
-            HStack(spacing: 9) {
-                Image(systemName: isActive ? "phone.down.fill" : "mic.fill")
-                    .font(.system(size: 20, weight: .semibold))
+            HStack(spacing: 7) {
+                Image(systemName: isActive ? "phone.down.fill" : "waveform")
+                    .font(.system(size: 14, weight: .semibold))
+                    .contentTransition(.symbolEffect(.replace))
                 Text(isActive ? "Zakończ" : "Rozmawiaj")
-                    .font(EmmaTypography.button)
+                    .font(EmmaTypography.ui(14, .semibold))
             }
-            .foregroundStyle(EmmaTheme.primaryButtonText)
-            .frame(maxWidth: .infinity, minHeight: EmmaMetrics.emmaVoiceButtonSize)
-            .background(EmmaTheme.primaryButton)
-            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.composerInner, style: .continuous))
-            .contentShape(Rectangle())
+            .foregroundStyle(isActive ? EmmaTheme.danger : EmmaTheme.primaryButtonText)
+            .padding(.horizontal, 16)
+            .frame(minHeight: 40)
+            .background(isActive ? EmmaTheme.danger.opacity(0.12) : EmmaTheme.primaryButton, in: Capsule())
+            .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(EmmaCardButtonStyle())
         .accessibilityLabel(isActive ? "Zakończ" : "Rozmawiaj")
         .accessibilityHint(isActive ? "Kończy rozmowę z Emmą" : "Rozpoczyna rozmowę głosową z Emmą")
     }
