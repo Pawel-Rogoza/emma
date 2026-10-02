@@ -294,6 +294,26 @@ public struct ConversationThread: Identifiable, Hashable, Codable, Sendable {
     }
 }
 
+/// Rozmowa z numerem, którego nie ma w kartotece — najczęściej z importu
+/// historii WhatsApp Business (numer kancelarii jest służbowy, więc pokazujemy
+/// każdą rozmowę). Nie udajemy osoby: jest tylko nazwa z WhatsAppa albo numer.
+public struct UnassignedConversation: Identifiable, Hashable, Sendable {
+    public let threadID: ThreadID
+    /// Nazwa kontaktu z WhatsAppa albo sam numer.
+    public let name: String
+    public let phone: String
+    public let preview: Message?
+
+    public var id: ThreadID { threadID }
+
+    public init(threadID: ThreadID, name: String, phone: String, preview: Message?) {
+        self.threadID = threadID
+        self.name = name
+        self.phone = phone
+        self.preview = preview
+    }
+}
+
 /// Stan użytkownika w wątku. Tomasz i Paweł mają **osobne** kursory, przypięcia
 /// i szkice (§3.3 pkt 3).
 public struct ThreadUserState: Hashable, Codable, Sendable {
