@@ -40,7 +40,7 @@ struct AssistantScreen: View {
                         } else {
                             conversation
                         }
-                        if store.voiceState.turn == .thinking {
+                        if store.voiceState.turn == .thinking || store.isAwaitingTextReply {
                             EmmaThinkingBubble()
                                 .padding(.top, 15)
                                 .transition(.opacity.combined(with: .move(edge: .bottom)))

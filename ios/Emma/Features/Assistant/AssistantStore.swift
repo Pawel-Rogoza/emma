@@ -80,6 +80,10 @@ final class AssistantStore: ObservableObject {
     @Published private(set) var clients: [Client] = []
     /// Czy trwa właśnie odsłuch streszczenia.
     @Published private(set) var isPlayingSummary = false
+    /// Emma pisze odpowiedź na pytanie wpisane bez rozmowy głosowej.
+    @Published private(set) var isAwaitingTextReply = false
+    /// Rozmowa pisemna na serwerze — kolejne pytania mają jej historię.
+    private var textConversationID: Int?
 
     // MARK: Zależności wewnętrzne
 
@@ -300,6 +304,10 @@ final class AssistantStore: ObservableObject {
                 // pytanie i odbierało Emmie prawo do odpowiedzi (localAnswerTurnID).
                 return
             }
+            // Bez rozmowy głosowej pytanie dostaje Emma pisemnie (model tekstowy
+            // na serwerze z odczytem danych kancelarii). Wcześniej kończyło się
+            // „nie rozpoznałam polecenia” — działały tylko sztywne komendy.
+            if origin == .typed, await askEmmaInWriting(text) { return }
             if let turnID { localAnswerTurnID = turnID }
             await answer(unrecognizedMessage)
             return
@@ -683,6 +691,26 @@ final class AssistantStore: ObservableObject {
     private func isBare(_ lowered: String, _ forms: [String]) -> Bool {
         let stripped = lowered.trimmingCharacters(in: CharacterSet(charactersIn: " .!"))
         return forms.contains(stripped)
+    }
+
+    /// Pytanie do Emmy pisemnie. `false`, gdy nie ma serwera z modelem
+    /// (Demo, starszy backend) — wtedy zostaje lokalna odpowiedź.
+    private func askEmmaInWriting(_ text: String) async -> Bool {
+        guard let dependencies, let repository = dependencies.repository as? BackendRepository else { return false }
+        isAwaitingTextReply = true
+        defer { isAwaitingTextReply = false }
+        let context = dependencies.emmaContext.flatMap { client(id: $0) }
+        do {
+            let result = try await repository.askEmma(text, conversationID: textConversationID, context: context)
+            textConversationID = result.conversationID
+            await answer(result.reply, read: false)
+            return true
+        } catch BackendRepositoryError.notAvailableInBackend {
+            return false
+        } catch {
+            await answer(ScreenLoad.message(for: error, fallback: "Emma chwilowo nie odpowiada. Spróbuj ponownie za chwilę."), read: false)
+            return true
+        }
     }
 
     private func forwardTypedTurn(_ text: String) async {

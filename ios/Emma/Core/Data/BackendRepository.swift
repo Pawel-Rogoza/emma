@@ -594,6 +594,25 @@ public struct BackendRepository: EmmaRepository, Sendable {
         }
     }
 
+    /// Pytanie do Emmy pisemnie (model tekstowy z odczytem danych kancelarii).
+    /// Zwraca odpowiedź i numer rozmowy do kolejnego pytania.
+    public func askEmma(
+        _ message: String,
+        conversationID: Int?,
+        context: Client?
+    ) async throws -> (conversationID: Int, reply: String) {
+        let dto = try await api.askAssistant(
+            body: BackendAssistantMessageBody(
+                message: message,
+                conversationID: conversationID,
+                contextClientID: context?.id.rawValue,
+                contextName: context?.displayName
+            ),
+            idempotencyKey: Self.newIdempotencyKey()
+        )
+        return (dto.conversationID, dto.reply)
+    }
+
     public func draftReply(threadID: ThreadID) async throws -> String {
         try await api.draftReply(threadID: threadID, idempotencyKey: Self.newIdempotencyKey()).text
     }

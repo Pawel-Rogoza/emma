@@ -576,6 +576,11 @@ public struct BackendAPIClient: Sendable {
         )
     }
 
+    /// `POST /api/mobile/v1/assistant/messages` — pytanie do Emmy pisemnie.
+    func askAssistant(body: BackendAssistantMessageBody, idempotencyKey: String) async throws -> BackendAssistantReplyDTO {
+        try await send("POST", path: "api/mobile/v1/assistant/messages", body: body, idempotencyKey: idempotencyKey)
+    }
+
     /// `GET /api/mobile/v1/voice/usage` — koszt rozmów głosowych w tym miesiącu.
     func voiceUsage() async throws -> BackendVoiceUsageDTO {
         try await get("api/mobile/v1/voice/usage", query: [])
@@ -1537,6 +1542,30 @@ struct BackendThreadSummaryDTO: Decodable {
         case manualUnread = "manual_unread"
         case readStateVersion = "read_state_version"
         case replyWindowUntil = "reply_window_until"
+    }
+}
+
+struct BackendAssistantMessageBody: Encodable {
+    let message: String
+    let conversationID: Int?
+    let contextClientID: String?
+    let contextName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case message
+        case conversationID = "conversation_id"
+        case contextClientID = "context_client_id"
+        case contextName = "context_name"
+    }
+}
+
+struct BackendAssistantReplyDTO: Decodable {
+    let conversationID: Int
+    let reply: String
+
+    enum CodingKeys: String, CodingKey {
+        case reply
+        case conversationID = "conversation_id"
     }
 }
 
