@@ -226,7 +226,7 @@ def main() -> int:
                   + ", ".join(f"{h} ({REGISTERED_COLOURS[h.upper()]})" for h in sorted(registered)))
         if elsewhere:
             print(f"  · kolory spoza reguł tego komponentu (token współdzielony): {', '.join(sorted(elsewhere))}")
-        if not invented and not elsewhere:
+        if not invented and not elsewhere and not registered:
             print("  ✓ wszystkie kolory użyte w Swift są w regułach tego komponentu")
 
     return 0
