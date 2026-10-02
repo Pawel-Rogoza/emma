@@ -7,3 +7,8 @@
   Właściciel rozpoznaje nowe wydanie w TestFlight po tym numerze.
 - Numer buildu (`CURRENT_PROJECT_VERSION`) ustawia automatycznie workflow
   TestFlight (`GITHUB_RUN_ID`) — nie zmieniaj go ręcznie.
+
+## Stan prac
+
+- Aktualny stan, otwarte sprawy i dane WhatsApp/serwera: `docs/HANDOFF_2026-10-02.md`.
+  Przeczytaj na początku nowej sesji.
