@@ -18,8 +18,10 @@ name: Emma · iOS
 on:
   workflow_dispatch:
   push:
-    # `feat/**` — sprawdzenie gałęzi bez wysyłki do TestFlight.
-    branches: [main, master, "feat/**"]
+    # Bez `feat/**`: gałąź z otwartym PR sprawdza zdarzenie `pull_request`.
+    # Push na gałąź i PR z tego samego commita dawały dwa identyczne przebiegi
+    # (i dwa maile o porażce).
+    branches: [main, master]
     paths:
       - "ios/**"
       - ".github/workflows/ios-macos.yml"

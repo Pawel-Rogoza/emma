@@ -30,7 +30,13 @@ ROOT = Path(__file__).resolve().parent.parent / "Emma"
 # Typ współdzielony -> pliki, w których szukamy jego deklaracji.
 DECLARATION_SOURCES = {
     "dependencies": ["App/AppDependencies.swift"],
-    "repository": ["Core/Voice/VoiceServices.swift", "PreviewSupport/MockRepository.swift"],
+    # `BackendRepository.swift`: widoki rzutują `dependencies.repository as? BackendRepository`
+    # i wołają składowe dostępne tylko na serwerze (np. `askEmma`, `voiceUsage`).
+    "repository": [
+        "Core/Voice/VoiceServices.swift",
+        "PreviewSupport/MockRepository.swift",
+        "Core/Data/BackendRepository.swift",
+    ],
     "voice": ["Core/Voice/VoiceSessionCoordinator.swift"],
     "clock": ["Core/Domain/ClockAndFormatting.swift"],
     "dataset": ["PreviewSupport/DemoFixtures.swift"],
@@ -82,6 +88,46 @@ IGNORED_USAGES = {
     ("repository", "self"),
     ("voice", "self"),
 }
+
+
+def strip_string_literals(line: str) -> str:
+    """Usuwa treść literałów tekstowych, zostawiając kod z interpolacji `\\( ... )`.
+
+    Bez tego nazwy symboli SF w rodzaju `"clock.badge.exclamationmark"` wyglądają
+    jak odwołanie `clock.badge`. Interpolacja to kod, więc `"\\(clock.now)"` dalej
+    podlega kontroli. Działa w obrębie jednej linii; literały wieloliniowe (trzy cudzysłowy) nie są śledzone.
+    """
+    out: list[str] = []
+    index, length = 0, len(line)
+    in_string = False
+    while index < length:
+        char = line[index]
+        if not in_string:
+            if char == '"':
+                in_string = True
+                out.append('""')
+            else:
+                out.append(char)
+            index += 1
+            continue
+        if char == "\\" and index + 1 < length and line[index + 1] == "(":
+            depth, start = 1, index + 2
+            index = start
+            while index < length and depth:
+                if line[index] == "(":
+                    depth += 1
+                elif line[index] == ")":
+                    depth -= 1
+                index += 1
+            out.append(" " + strip_string_literals(line[start:index - 1]) + " ")
+            continue
+        if char == "\\":
+            index += 2
+            continue
+        if char == '"':
+            in_string = False
+        index += 1
+    return "".join(out)
 
 
 def extension_members(path: Path, type_name: str) -> set[str]:
@@ -159,6 +205,7 @@ def main() -> int:
             stripped = line.strip()
             if stripped.startswith("//") or stripped.startswith("///"):
                 continue
+            line = strip_string_literals(line)
             for holder, member in USAGE_PATTERN.findall(line):
                 # Pomijamy dostęp do składowych własnych obiektów przekazanych jako
                 # parametr o tej samej nazwie (np. `repository.clients` w protokole).

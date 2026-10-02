@@ -713,6 +713,25 @@ sprawy, wszystkie sprawy na karcie klienta. Szczegóły:
 **Cofnięcie:** `EmmaMotion` → `nil`-owe animacje; `LoadingState` do wersji
 z `ProgressView`; usunięcie `missedDeadlinesCard` i `markFinished`.
 
+### D-37 · Zieleń WhatsAppa na liście rozmów — **decyzja właściciela 02.10.2026**
+
+**Treść:** `EmmaTheme.chatGreen` (`#1DAA61`) — godzina i licznik nowych
+wiadomości, kropka „bez odpowiedzi” i „Szkic:” w podglądzie wiersza rozmowy
+(`MessagingComponents.swift`, wersja 0.15.1). Referencja nie ma tego koloru.
+
+**Powód:** lista rozmów ma wyglądać jak w WhatsAppie, z którego kancelaria
+przychodzi; zielony sygnał „twój ruch” jest tam znany bez nauki.
+
+**Wpływ:** kontrast `#1DAA61` na białym tle to ok. 3,0:1 — poniżej 4,5:1
+dla tekstu. Akceptowalne tylko dla krótkich, pogrubionych etykiet (godzina,
+licznik, „Szkic:”); nie używać do treści.
+
+**Kontrola:** `scripts/design-token-diff.py` zna ten kolor z listy
+`REGISTERED_COLOURS` i wypisuje go jako zarejestrowany zamiast błędu.
+
+**Cofnięcie:** `chatGreen` → `EmmaTheme.primary` albo inny token z referencji
+i usunięcie wpisu z `REGISTERED_COLOURS`.
+
 ---
 
 ## Czego ten rejestr nie zawiera

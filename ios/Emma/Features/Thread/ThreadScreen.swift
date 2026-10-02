@@ -702,7 +702,7 @@ struct ThreadScreen: View {
                 Text(store.isDraftingWithEmma ? "Emma pisze…" : "Odpowiedz z Emmą")
                     .font(EmmaTypography.caption(.semibold))
                 Text(model.replyLanguage == .ru ? "RU" : "PL")
-                    .font(EmmaTypography.ui(10, .semibold))
+                    .font(EmmaTypography.caption(.semibold))
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
                     .background(EmmaTheme.primaryButtonText.opacity(0.18), in: Capsule())

@@ -31,6 +31,13 @@ CSS = ROOT.parent / "reference/prototype/style.css"
 # Warstwy referencji wyłączone z aplikacji (podgląd HTML / pulpit).
 DEAD_LAYERS = (".studio", ".intro", ".details", ".workspace", ".sidebar", "#desktop-nav", ".work-panel")
 
+# Kolory spoza referencji przyjęte świadomie: każdy ma wpis w
+# docs/ios/DESIGN_DEVIATIONS.md. Wzorca nie zmieniamy, żeby je ukryć — wyjątek
+# jest jawny tutaj i w rejestrze.
+REGISTERED_COLOURS = {
+    "#1DAA61": "D-37",  # EmmaTheme.chatGreen — zieleń WhatsAppa na liście rozmów
+}
+
 # Komponent → (selektory referencji, plik Swift, znacznik w pliku)
 COMPONENTS: dict[str, tuple[list[str], str, str]] = {
     "taskRow": ([".task-row", ".task-check", ".task-body b", ".task-body span", ".task-date"],
@@ -205,12 +212,18 @@ def main() -> int:
         #  2) kolory istniejące w referencji, ale poza regułami tego komponentu →
         #     token współdzielony (np. `muted`); wymaga oka, nie jest automatycznym błędem.
         all_css_hexes = {"#" + h.upper() for h in re.findall(r"#([0-9a-fA-F]{6})", whole_css())}
-        invented = {hexa for hexa in swift_hexes if hexa.upper() not in all_css_hexes}
+        registered = {hexa for hexa in swift_hexes
+                      if hexa.upper() not in all_css_hexes and hexa.upper() in REGISTERED_COLOURS}
+        invented = {hexa for hexa in swift_hexes
+                    if hexa.upper() not in all_css_hexes and hexa.upper() not in REGISTERED_COLOURS}
         elsewhere = {hexa for hexa in swift_hexes
                      if hexa.upper() in all_css_hexes and hexa.upper() not in {h.upper() for h in css_hexes}}
 
         if invented:
             print(f"  ✗ kolory spoza referencji (błąd): {', '.join(sorted(invented))}")
+        if registered:
+            print("  · kolory spoza referencji, zarejestrowane: "
+                  + ", ".join(f"{h} ({REGISTERED_COLOURS[h.upper()]})" for h in sorted(registered)))
         if elsewhere:
             print(f"  · kolory spoza reguł tego komponentu (token współdzielony): {', '.join(sorted(elsewhere))}")
         if not invented and not elsewhere:
