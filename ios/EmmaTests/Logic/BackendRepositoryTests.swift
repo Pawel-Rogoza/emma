@@ -841,6 +841,18 @@ final class BackendRepositoryTests: XCTestCase {
         XCTAssertEqual(text, "Здравствуйте! Проверим и вернёмся с ответом.")
     }
 
+    func testAskEmmaSendsContextAndKeepsConversation() async throws {
+        StubURLProtocol.respond { request, _ in
+            XCTAssertEqual(request.url?.path, "/api/mobile/v1/assistant/messages")
+            return (200, Data(#"{"conversation_id":7,"reply":"Olena pisała wczoraj o terminie."}"#.utf8))
+        }
+        let result = try await makeRepository().askEmma("Co pisała Olena?", conversationID: 5, context: nil)
+        XCTAssertEqual(result.conversationID, 7)
+        XCTAssertEqual(result.reply, "Olena pisała wczoraj o terminie.")
+        XCTAssertEqual(StubURLProtocol.lastBody?["message"] as? String, "Co pisała Olena?")
+        XCTAssertEqual(StubURLProtocol.lastBody?["conversation_id"] as? Int, 5)
+    }
+
     func testVoiceUsageSummary() async throws {
         StubURLProtocol.respond(json: Data(#"{"month_cost_usd":12.5,"budget_usd":150,"sessions":40,"minutes":95}"#.utf8), status: 200)
         let usage = await makeRepository().voiceUsage()
