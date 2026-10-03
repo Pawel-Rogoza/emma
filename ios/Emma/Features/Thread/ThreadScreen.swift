@@ -69,12 +69,21 @@ final class ThreadStore: ObservableObject {
         do {
             let repository = dependencies.repository
             let userID = dependencies.currentUser.id
-            guard let thread = try await repository.thread(id: threadID) else {
+            let thread: ConversationThread
+            let client: Client
+            if let known = try await repository.thread(id: threadID) {
+                guard let person = try await repository.client(id: known.clientID) else {
+                    phase = .failed(ScreenLoad.failure(for: DomainError.notFound(resource: "klient", id: known.clientID.rawValue), fallback: "Nie znaleziono klienta."))
+                    return
+                }
+                thread = known
+                client = person
+            } else if let contact = try await repository.unassignedConversations().first(where: { $0.threadID == threadID }) {
+                // Rozmówca spoza kartoteki — ten sam wątek, ta sama odpowiedź (03.10.2026).
+                thread = .whatsAppContact(contact)
+                client = .whatsAppContact(contact, createdAt: dependencies.today)
+            } else {
                 phase = .failed(ScreenLoad.failure(for: DomainError.notFound(resource: "rozmowa", id: threadID.rawValue), fallback: "Nie znaleziono rozmowy."))
-                return
-            }
-            guard let client = try await repository.client(id: thread.clientID) else {
-                phase = .failed(ScreenLoad.failure(for: DomainError.notFound(resource: "klient", id: thread.clientID.rawValue), fallback: "Nie znaleziono klienta."))
                 return
             }
             let states = try await repository.readStates(userID: userID)
@@ -110,7 +119,10 @@ final class ThreadStore: ObservableObject {
             threadState = (try? await repository.saveReadState(threadState)) ?? threadState
             state = threadState
             dependencies.refreshUnreadTotal()
-            let legalCase = try await repository.caseForClient(thread.clientID)
+            var legalCase: LegalCase?
+            if !client.isWhatsAppContact {
+                legalCase = try await repository.caseForClient(thread.clientID)
+            }
 
             // Ostatni odczyt pola — po wszystkich `await`, żeby nie zgubić liter.
             if let localText = phase.value?.draft.text { draft.text = localText }
@@ -329,8 +341,9 @@ final class ThreadStore: ObservableObject {
             // Repozytorium samo czyści szkic nadawcy przy przyjęciu wiadomości.
             // Oznaczenie klienta jako obsłużonego jest dodatkiem: jego błąd
             // (np. konflikt wersji) nie może zgłaszać, że wysyłka się nie udała.
+            // Rozmówcy spoza kartoteki nie ma czego oznaczać.
             var updatedClient = client
-            if updatedClient.needsReply || updatedClient.stage == .new {
+            if !client.isWhatsAppContact, updatedClient.needsReply || updatedClient.stage == .new {
                 updatedClient.needsReply = false
                 if updatedClient.stage == .new { updatedClient.stage = .inContact }
                 _ = try? await dependencies.repository.updateClient(
@@ -355,6 +368,21 @@ final class ThreadStore: ObservableObject {
             state = threadState
         }
         dependencies.refreshUnreadTotal()
+    }
+
+    // MARK: Kartoteka
+
+    /// Rozmówca spoza kartoteki trafia do „Nowych” razem z całą rozmową.
+    /// Zapis ogłasza zmianę danych, więc wątek wczyta się już z osobą.
+    func addToLeads(_ dependencies: AppDependencies) async {
+        guard let model = phase.value, model.client.isWhatsAppContact else { return }
+        let threadID = model.thread.id
+        let created: Void? = await dependencies.perform {
+            try await dependencies.repository.createLead(fromThread: threadID)
+        }
+        guard created != nil else { return }
+        EmmaHaptics.success()
+        dependencies.showToast("\(model.client.displayName) jest w „Nowych”")
     }
 
     // MARK: Dyktowanie
@@ -424,6 +452,13 @@ struct ThreadScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
     @StateObject private var store = ThreadStore()
+    /// Koniec historii jest na ekranie — nowa wiadomość może przewinąć w dół.
+    /// Na starcie `false`: ustawia go dopiero widoczny znacznik końca, więc
+    /// otwarcie od pierwszej nowej wiadomości od razu pokazuje „na dół”.
+    @State private var isAtBottom = false
+    /// Wiadomości, które przyszły, gdy historia była przewinięta w górę.
+    @State private var unseenCount = 0
+    @State private var showsContactActions = false
 
     /// Co ile sekund otwarty wątek pyta o nowe wiadomości.
     private static let liveRefreshSeconds: UInt64 = 15
@@ -485,14 +520,14 @@ struct ThreadScreen: View {
             .accessibilityLabel("Wróć do rozmów")
 
             Button {
-                dependencies.openPerson(model.client.id)
+                if model.client.isWhatsAppContact {
+                    showsContactActions = true
+                } else {
+                    dependencies.openPerson(model.client.id)
+                }
             } label: {
                 HStack(spacing: 10) {
-                    PersonAvatar(
-                        initials: model.client.initials,
-                        style: .identity(model.client.id),
-                        diameter: EmmaMetrics.threadHeaderAvatar
-                    )
+                    ChatAvatar(client: model.client, diameter: EmmaMetrics.threadHeaderAvatar)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(model.client.displayName)
                             .font(EmmaTypography.chatHeader)
@@ -508,7 +543,23 @@ struct ThreadScreen: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Karta klienta \(model.client.displayName)")
+            .accessibilityLabel(model.client.isWhatsAppContact
+                ? "Kontakt \(model.client.displayName)"
+                : "Karta klienta \(model.client.displayName)")
+            .confirmationDialog(model.client.displayName, isPresented: $showsContactActions, titleVisibility: .visible) {
+                Button("Dodaj do „Nowych”") {
+                    Task { await store.addToLeads(dependencies) }
+                }
+                if let url = model.client.phone.flatMap(ContactLinks.whatsAppURL) {
+                    Button("Otwórz w WhatsApp") { openURL(url) }
+                }
+                if let url = model.client.phone.flatMap(ContactLinks.phoneURL) {
+                    Button("Zadzwoń") { openURL(url) }
+                }
+                Button("Anuluj", role: .cancel) {}
+            } message: {
+                Text("Tego numeru nie ma jeszcze w kartotece.")
+            }
 
             Button {
                 dependencies.present(.conversationOptions(model.thread.id))
@@ -532,6 +583,44 @@ struct ThreadScreen: View {
 
     @ViewBuilder
     private func contextStrip(_ model: ThreadStore.Model) -> some View {
+        if model.client.isWhatsAppContact {
+            contactStrip(model)
+        } else {
+            caseStrip(model)
+        }
+    }
+
+    /// Rozmówca spoza kartoteki: rozmowa działa normalnie, a jednym dotknięciem
+    /// numer trafia do „Nowych” razem z historią.
+    private func contactStrip(_ model: ThreadStore.Model) -> some View {
+        Button {
+            EmmaHaptics.tap()
+            Task { await store.addToLeads(dependencies) }
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: "person.badge.plus")
+                    .font(.system(size: 13))
+                Text("Numeru nie ma w kartotece · Dodaj do „Nowych”")
+                    .font(EmmaTypography.caption())
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Image(systemName: "plus.circle")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(EmmaTheme.contextStripText)
+            .padding(.horizontal, layout.threadHorizontalPadding)
+            .frame(minHeight: 38)
+            .background(EmmaTheme.contextStripBackground)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(EmmaTheme.contextStripBorder).frame(height: 0.5)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Dodaj \(model.client.displayName) do Nowych")
+    }
+
+    private func caseStrip(_ model: ThreadStore.Model) -> some View {
         Button {
             if let legalCase = model.legalCase {
                 dependencies.openCase(legalCase.id)
@@ -564,11 +653,17 @@ struct ThreadScreen: View {
 
     // MARK: Historia
 
+    private static let bottomAnchor = "thread-bottom"
+
+    /// Historia (przebudowa 03.10.2026): wiadomości jednej strony sklejają się
+    /// w grupy, tło ma cichy wzór, otwarcie z nowymi zaczyna od pierwszej nowej,
+    /// a gdy historia jest przewinięta w górę, nowa wiadomość jej nie szarpie —
+    /// pojawia się przycisk „na dół” z licznikiem.
     @ViewBuilder
     private func transcript(_ model: ThreadStore.Model) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     if model.loadEarlierAvailable {
                         Button("Wczytaj starsze wiadomości") {
                             Task { await store.loadEarlier(dependencies) }
@@ -584,6 +679,7 @@ struct ThreadScreen: View {
                         let previousDay = index > 0
                             ? AppDependencies.localDate(from: model.messages[index - 1].sentAt)
                             : nil
+                        let position = ChatLayout.position(at: index, in: model.messages)
                         if day != previousDay {
                             ChatDaySeparator(text: dependencies.dateText.dayLabel(day))
                         }
@@ -593,8 +689,9 @@ struct ThreadScreen: View {
                         MessageBubble(
                             message: message,
                             senderLabel: message.outgoingAuthorLabel,
-                            showsAuthor: true,
-                            attachmentActions: attachmentActions(for: message, model: model)
+                            position: position,
+                            attachmentActions: attachmentActions(for: message, model: model),
+                            onOpenWhatsApp: whatsAppAction(model)
                         ) {
                             // Najpierw zapis pisanego tekstu: arkusz dopisuje cytat
                             // do szkicu z repozytorium i nie może go potem zgubić.
@@ -603,6 +700,7 @@ struct ThreadScreen: View {
                                 dependencies.present(.messageOptions(threadID: model.thread.id, messageID: message.id))
                             }
                         }
+                        .padding(.top, position.startsGroup ? 8 : 2)
                         .id(message.id)
                         // Nowa wiadomość wjeżdża od swojej strony (audyt 29.09.2026).
                         .transition(.asymmetric(
@@ -611,57 +709,95 @@ struct ThreadScreen: View {
                             removal: .opacity
                         ))
                     }
+
+                    // Koniec historii: widoczny — jesteśmy na dole.
+                    Color.clear
+                        .frame(height: 1)
+                        .id(Self.bottomAnchor)
+                        .onAppear {
+                            isAtBottom = true
+                            unseenCount = 0
+                        }
+                        .onDisappear { isAtBottom = false }
                 }
                 .animation(EmmaMotion.smooth, value: model.messages.count)
                 .padding(.horizontal, layout.threadHorizontalPadding)
-                .padding(.top, 10)
+                .padding(.top, 6)
                 .padding(.bottom, EmmaSpacing.chatScrollBottomInset)
             }
             .scrollIndicators(.hidden)
-            .onAppear {
-                if let last = model.messages.last?.id {
-                    proxy.scrollTo(last, anchor: .bottom)
+            .background(ChatWallpaper())
+            .overlay(alignment: .bottomTrailing) {
+                if !isAtBottom {
+                    JumpToLatestButton(newCount: unseenCount) {
+                        EmmaHaptics.tap()
+                        withAnimation(EmmaMotion.smooth) {
+                            proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
+                        }
+                    }
+                    .padding(.trailing, layout.threadHorizontalPadding)
+                    .padding(.bottom, 6)
+                    .transition(.scale.combined(with: .opacity))
                 }
             }
-            // Po wysłaniu (i po nowej wiadomości) historia jedzie na dół —
-            // wcześniej przewijała się tylko przy otwarciu wątku, więc wysłana
-            // wiadomość potrafiła wylądować pod klawiaturą.
+            .animation(EmmaMotion.snappy, value: isAtBottom)
+            .onAppear {
+                // Z nowymi wiadomościami — od pierwszej nowej, jak w WhatsAppie.
+                if model.firstUnreadID != nil {
+                    proxy.scrollTo("unread-divider", anchor: .top)
+                } else {
+                    proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
+                }
+            }
+            // Po wysłaniu historia jedzie na dół — wysłana wiadomość nie może
+            // wylądować pod klawiaturą. Odpowiedź klienta przewija tylko wtedy,
+            // gdy jesteśmy na dole; wyżej czytany fragment zostaje na miejscu.
             .onChange(of: model.messages.last?.id) { _, last in
-                guard let last else { return }
-                withAnimation(EmmaMotion.smooth) {
-                    proxy.scrollTo(last, anchor: .bottom)
+                guard last != nil, let newest = model.messages.last else { return }
+                if isAtBottom || newest.isOutgoing {
+                    withAnimation(EmmaMotion.smooth) {
+                        proxy.scrollTo(Self.bottomAnchor, anchor: .bottom)
+                    }
+                } else {
+                    unseenCount += 1
                 }
             }
         }
+    }
+
+    /// Rozmowa w aplikacji WhatsApp (Business) — tam, gdzie Emma nie może:
+    /// po 24 h, przy niewysłanej wiadomości i przy treści, której API nie oddaje.
+    private func whatsAppAction(_ model: ThreadStore.Model) -> (() -> Void)? {
+        guard let url = model.client.phone.flatMap(ContactLinks.whatsAppURL) else { return nil }
+        return { openURL(url) }
     }
 
     // MARK: Pliki od klienta
 
     /// Zdjęcie wezwania czy PDF postanowienia: do akt jednym dotknięciem,
     /// a termin liczony od dnia, w którym plik przyszedł (doręczenie).
+    /// Rozmówca spoza kartoteki nie ma akt — zostaje WhatsApp i Mapy.
     private func attachmentActions(for message: Message, model: ThreadStore.Model) -> AttachmentActions? {
         guard message.kind.isAttachment, !message.isOutgoing else { return nil }
         let day = AppDependencies.localDate(from: message.sentAt)
         let client = model.client
         let caseID = model.legalCase?.id
-        var openInWhatsApp: (() -> Void)?
-        if let url = client.phone.flatMap(ContactLinks.whatsAppURL) {
-            openInWhatsApp = { openURL(url) }
+        var actions = AttachmentActions()
+        actions.openInWhatsApp = whatsAppAction(model)
+        if message.kind == .location, let place = message.caption, let url = ContactLinks.mapsURL(place) {
+            actions.openInMaps = { openURL(url) }
         }
-        var countDeadline: (() -> Void)?
+        guard !client.isWhatsAppContact else { return actions }
         if message.kind.mayBeLegalDocument {
-            countDeadline = {
+            actions.countDeadline = {
                 dependencies.pendingEventDraft = EventDraftSeed(deadlineFrom: day)
                 dependencies.present(.eventForm(editing: nil, clientID: client.id, caseID: caseID, initialDay: nil))
             }
         }
-        return AttachmentActions(
-            openInWhatsApp: openInWhatsApp,
-            addToCase: {
-                Task { await addAttachmentNote(message, day: day, client: client, caseID: caseID) }
-            },
-            countDeadline: countDeadline
-        )
+        actions.addToCase = {
+            Task { await addAttachmentNote(message, day: day, client: client, caseID: caseID) }
+        }
+        return actions
     }
 
     private func addAttachmentNote(_ message: Message, day: LocalDate, client: Client, caseID: CaseID?) async {
@@ -896,28 +1032,30 @@ struct ThreadScreen: View {
                     Text(since == nil ? "Klient jeszcze nie pisał na WhatsApp" : "Minęło 24 h od wiadomości klienta")
                         .font(EmmaTypography.caption(.semibold))
                         .foregroundStyle(EmmaTheme.ink)
-                    Text("WhatsApp przyjmie teraz tylko zatwierdzony szablon. Zadzwoń albo poczekaj, aż klient napisze.")
+                    Text("Stąd WhatsApp przyjmie teraz tylko zatwierdzony szablon. Odpisz w aplikacji WhatsApp albo poczekaj, aż klient napisze.")
                         .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                if let phoneURL = model.client.phone.flatMap(ContactLinks.phoneURL) {
+                // WhatsApp zamiast telefonu (03.10.2026): z aplikacji WhatsApp
+                // Business na telefonie kancelarii można odpisać także po 24 h.
+                if let open = whatsAppAction(model) {
                     Button {
                         EmmaHaptics.tap()
-                        openURL(phoneURL)
+                        open()
                     } label: {
-                        Label("Zadzwoń", systemImage: "phone.fill")
+                        Label("WhatsApp", systemImage: "arrow.up.forward.app")
                             .font(EmmaTypography.caption(.semibold))
-                            .foregroundStyle(EmmaTheme.primaryButtonText)
+                            .foregroundStyle(Color.white)
                             .padding(.horizontal, 12)
                             .frame(minHeight: 34)
-                            .background(EmmaTheme.primaryButton, in: Capsule())
+                            .background(EmmaTheme.chatGreen, in: Capsule())
                             .frame(minHeight: EmmaSpacing.hitTarget)
                             .contentShape(Capsule())
                     }
                     .buttonStyle(EmmaCardButtonStyle())
-                    .accessibilityLabel("Zadzwoń do \(model.client.displayName)")
+                    .accessibilityLabel("Otwórz rozmowę z \(model.client.displayName) w WhatsApp")
                 }
             }
             .padding(.horizontal, 12)

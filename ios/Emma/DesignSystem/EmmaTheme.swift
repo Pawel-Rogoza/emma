@@ -69,10 +69,28 @@ public enum EmmaTheme {
     public static let quoteBackground = Color(hex: 0xEAF0F6)
     public static let receiptDefault = Color(hex: 0x4E6882)
     public static let receiptRead = Color(hex: 0x2674D8)
-    /// Zieleń WhatsAppa na liście rozmów: godzina i licznik nowych wiadomości,
-    /// kropka „bez odpowiedzi” — ten sam sygnał, co w aplikacji, z której
-    /// kancelaria przychodzi (02.10.2026).
+    /// Zieleń WhatsAppa na liście rozmów: godzina i licznik **nowych**
+    /// wiadomości — ten sam sygnał, co w aplikacji, z której kancelaria
+    /// przychodzi. Po przeczytaniu wiersz gaśnie (03.10.2026).
     public static let chatGreen = Color(hex: 0x1DAA61)
+    /// Dyskretna kropka „bez odpowiedzi” przy przeczytanej rozmowie.
+    public static let chatAwaitingDot = Color(hex: 0xA9B6C6)
+    /// Wzór tła historii rozmowy (kropki jak tapeta WhatsAppa, bardzo cicho).
+    public static let chatWallpaperDot = Color(hex: 0xD9DFE7)
+    /// Cień dymka zamiast obramowania.
+    public static let bubbleShadow = Color(hex: 0x1A2E47).opacity(0.07)
+    /// Wiadomość, której Emma nie umie pokazać (ankieta, zdjęcie jednorazowe…).
+    public static let chatNoticeBackground = Color(hex: 0xFBF4E6)
+    public static let chatNoticeBorder = Color(hex: 0xEEDDBB)
+    public static let chatNoticeText = Color(hex: 0x7A5A26)
+    /// Karta pliku: kolor znacznika rozszerzenia.
+    public static let filePDF = Color(hex: 0xC8463D)
+    public static let fileWord = Color(hex: 0x2F64B5)
+    public static let fileSheet = Color(hex: 0x23824F)
+    public static let fileOther = Color(hex: 0x6B7C92)
+    /// Kafel zdjęcia/filmu bez podglądu.
+    public static let mediaTileStart = Color(hex: 0xDCE6F2)
+    public static let mediaTileEnd = Color(hex: 0xC9D7E8)
     /// Ptaszki „odczytane” na liście — błękit WhatsAppa.
     public static let chatReadTicks = Color(hex: 0x53BDEB)
     public static let chatDayChip = Color(hex: 0xE5EAF0)

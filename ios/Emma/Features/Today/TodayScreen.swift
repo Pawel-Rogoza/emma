@@ -594,7 +594,7 @@ struct TodayScreen: View {
             dependencies.openThread(row.thread.id)
         } label: {
             HStack(alignment: .top, spacing: 11) {
-                PersonAvatar(initials: row.client.initials, style: .identity(row.client.id), diameter: 38)
+                ChatAvatar(client: row.client, diameter: 38)
                     .overlay(alignment: .topTrailing) {
                         UnreadBadge(count: row.unreadCount, compact: true)
                             .offset(x: 5, y: -4)

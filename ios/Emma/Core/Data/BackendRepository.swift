@@ -636,9 +636,13 @@ public struct BackendRepository: EmmaRepository, Sendable {
     /// `/threads` (starszy backend: 404 ze stroną HTML). Wtedy rozmów po prostu
     /// nie ma — ekran pokazuje stan pusty zamiast błędu, a karta klienta,
     /// która też czyta rozmowy, nadal się otwiera.
-    private func threadList() async throws -> BackendThreadList? {
+    ///
+    /// `includeUnassigned` — także rozmowy spoza kartoteki. Stan odczytu
+    /// i licznik nowych liczymy dla **wszystkich** rozmów (03.10.2026): wcześniej
+    /// odczyt rozmowy bez osoby nie miał się gdzie zapisać.
+    private func threadList(includeUnassigned: Bool = false) async throws -> BackendThreadList? {
         do {
-            return try await api.threads()
+            return try await api.threads(includeUnassigned: includeUnassigned)
         } catch BackendRepositoryError.notAvailableInBackend {
             return nil
         }
@@ -678,7 +682,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
     }
 
     public func readStates(userID: UserID) async throws -> [ThreadUserState] {
-        try await threadList()?.items.map { Self.mapUserState($0, userID: userID) } ?? []
+        try await threadList(includeUnassigned: true)?.items.map { Self.mapUserState($0, userID: userID) } ?? []
     }
 
     public func saveThreadPreferences(_ state: ThreadUserState) async throws -> ThreadUserState {
@@ -690,7 +694,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
     /// odrzuca cofnięcie). Konflikt wersji (drugie urządzenie) ponawiamy raz,
     /// na świeżym stanie.
     private func writeThreadState(_ state: ThreadUserState, retryOnConflict: Bool = true) async throws -> ThreadUserState {
-        guard let summary = try await api.threads().items.first(where: { $0.id == state.threadID.rawValue }) else {
+        guard let summary = try await api.threads(includeUnassigned: true).items.first(where: { $0.id == state.threadID.rawValue }) else {
             throw BackendRepositoryError.notFound
         }
         let body = BackendReadStateBody(
@@ -728,7 +732,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
     }
 
     public func unreadTotal(userID: UserID) async throws -> Int {
-        try await threadList()?.unreadTotal ?? 0
+        try await threadList(includeUnassigned: true)?.unreadTotal ?? 0
     }
 
     // MARK: Mapowanie rozmów

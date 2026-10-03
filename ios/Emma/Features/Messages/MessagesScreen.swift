@@ -86,10 +86,6 @@ final class MessagesStore: ObservableObject {
         var allRows: [Row]
         var searchQuery: String
         var filter: Filter
-        /// Rozmowy bez osoby w kartotece (np. z historii WhatsApp Business)
-        /// po wyszukiwaniu; `allUnassigned` — pełny zbiór.
-        var unassigned: [UnassignedConversation] = []
-        var allUnassigned: [UnassignedConversation] = []
 
         func count(_ filter: Filter) -> Int {
             allRows.filter(filter.includes).count
@@ -142,15 +138,30 @@ final class MessagesStore: ObservableObject {
             async let threadsTask = repository.threads()
             async let statesTask = repository.readStates(userID: userID)
             async let clientsTask = repository.clients(matching: "", stage: nil)
+            // Rozmowy spoza kartoteki nie blokują listy: starszy serwer albo
+            // błąd tego jednego zapytania zostawia resztę rozmów na ekranie.
+            async let contactsTask: [UnassignedConversation] = (try? await repository.unassignedConversations()) ?? []
             let threads = try await threadsTask
             let states = try await statesTask
             let clients = try await clientsTask
+            let contacts = await contactsTask
             let clientsByID = Dictionary(clients.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
+            // Jedna lista dla wszystkich (03.10.2026): rozmówca spoza kartoteki
+            // jest zwykłym wierszem z nazwą z WhatsAppa albo numerem.
+            var conversations: [(thread: ConversationThread, client: Client)] = threads.compactMap { thread in
+                clientsByID[thread.clientID].map { (thread: thread, client: $0) }
+            }
+            let listed = Set(conversations.map(\.thread.id))
+            let today = dependencies.today
+            conversations += contacts
+                .filter { !listed.contains($0.threadID) }
+                .map { (thread: ConversationThread.whatsAppContact($0), client: Client.whatsAppContact($0, createdAt: today)) }
 
             // Wiadomości wątków pobieramy równolegle. Po kolei — przy prawdziwym
             // WhatsApp i kilkudziesięciu rozmowach — lista wczytywała się
             // kilka sekund, bo każdy wątek to osobne zapytanie do serwera.
-            let visible = threads.filter { clientsByID[$0.clientID] != nil }
+            let visible = conversations.map(\.thread)
             let limit = Self.messagesPerThread
             let messagesByThread = try await withThrowingTaskGroup(of: (ThreadID, [Message]).self) { group in
                 for thread in visible {
@@ -166,8 +177,7 @@ final class MessagesStore: ObservableObject {
             }
 
             var rows: [Row] = []
-            for thread in visible {
-                guard let client = clientsByID[thread.clientID] else { continue }
+            for (thread, client) in conversations {
                 let messages = messagesByThread[thread.id] ?? []
                 let state = states.first { $0.threadID == thread.id }
                     ?? ThreadUserState(userID: userID, threadID: thread.id)
@@ -199,19 +209,13 @@ final class MessagesStore: ObservableObject {
                 )
             }
 
-            // Rozmowy bez osoby nie blokują listy: starszy serwer albo błąd
-            // tego jednego zapytania zostawia resztę rozmów na ekranie.
-            let unassigned = (try? await repository.unassignedConversations()) ?? []
-
             // Pełny zbiór zapisujemy osobno, a filtrowanie liczymy z niego — nie z wyniku.
             let allRows = rows
             let model = Model(
                 rows: filterAndSort(allRows),
                 allRows: allRows,
                 searchQuery: searchText,
-                filter: filter,
-                unassigned: filterUnassigned(unassigned),
-                allUnassigned: unassigned
+                filter: filter
             )
             if wasLoaded {
                 // Zmiana stanu (przeczytane, przypięte) przenosi kartę między
@@ -244,20 +248,6 @@ final class MessagesStore: ObservableObject {
             .sorted { $0.sortKey < $1.sortKey }
     }
 
-    /// Rozmowy bez osoby widać przy „Wszystkie” i w wyszukiwaniu — nie są
-    /// ani nowe, ani do odpowiedzi w sensie filtrów (to zwykle historia).
-    private func filterUnassigned(_ items: [UnassignedConversation]) -> [UnassignedConversation] {
-        let query = searchText
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard filter == .all || !trimmed.isEmpty else { return [] }
-        return items
-            .filter { item in
-                SearchText.matches(query, in: [item.name, item.preview?.previewText ?? ""])
-                    || SearchText.matchesPhone(query, phone: item.phone)
-            }
-            .sorted { ($0.preview?.sentAt ?? .distantPast) > ($1.preview?.sentAt ?? .distantPast) }
-    }
-
     /// Ponowne filtrowanie bez odpytywania repozytorium — używane przy zmianie
     /// filtra i wpisywaniu tekstu. Liczone jest z pełnego zbioru `allRows`, więc
     /// wyczyszczenie zapytania przywraca całą listę (F11).
@@ -268,9 +258,7 @@ final class MessagesStore: ObservableObject {
                 rows: filterAndSort(model.allRows),
                 allRows: model.allRows,
                 searchQuery: searchText,
-                filter: filter,
-                unassigned: filterUnassigned(model.allUnassigned),
-                allUnassigned: model.allUnassigned
+                filter: filter
             )
         )
     }
@@ -288,11 +276,6 @@ struct MessagesScreen: View {
     /// ostatni stan i zachowuje filtr.
     @ObservedObject var store: MessagesStore
     @FocusState private var searchFocused: Bool
-    /// Otwarta rozmowa bez osoby (podgląd historii i „Zrób leada”).
-    @State private var openedUnassigned: UnassignedConversation?
-    /// Historia z telefonu bywa długa — pokazujemy najpierw kilka rozmów.
-    @State private var showsAllUnassigned = false
-    private static let unassignedPreviewLimit = 8
 
     var body: some View {
         List {
@@ -315,10 +298,6 @@ struct MessagesScreen: View {
                 await store.load(dependencies, silent: true)
                 dependencies.refreshUnreadTotal()
             }
-        }
-        .sheet(item: $openedUnassigned) { conversation in
-            UnassignedConversationSheet(conversation: conversation)
-                .environmentObject(dependencies)
         }
         .onChange(of: store.searchText) { _, _ in
             Task { await store.applyLocalFilter() }
@@ -403,7 +382,7 @@ struct MessagesScreen: View {
             }
             .emmaListRow(top: 0, bottom: 0, horizontal: layout.horizontalPadding)
         case .loaded(let model):
-            if model.rows.isEmpty && model.unassigned.isEmpty {
+            if model.rows.isEmpty {
                 emptyState(model)
                     .emmaListRow(top: 6, bottom: 0, horizontal: layout.horizontalPadding)
             } else {
@@ -413,8 +392,7 @@ struct MessagesScreen: View {
                     conversationRow(row, index: offset)
                 }
             }
-            unassignedSection(model)
-            disclosure(hasThreads: !model.allRows.isEmpty || !model.allUnassigned.isEmpty)
+            disclosure(hasThreads: !model.allRows.isEmpty)
                 .emmaListRow(top: 12, bottom: EmmaSpacing.contentBottom, horizontal: layout.horizontalPadding)
         }
     }
@@ -487,6 +465,13 @@ struct MessagesScreen: View {
         } label: {
             Label(row.isPinned ? "Odepnij rozmowę" : "Przypnij rozmowę", systemImage: row.isPinned ? "pin.slash" : "pin")
         }
+        if let whatsAppURL = row.client.phone.flatMap(ContactLinks.whatsAppURL) {
+            Button {
+                openURL(whatsAppURL)
+            } label: {
+                Label("Otwórz w WhatsApp", systemImage: "arrow.up.forward.app")
+            }
+        }
         if let phoneURL = row.client.phone.flatMap(ContactLinks.phoneURL) {
             Button {
                 openURL(phoneURL)
@@ -494,10 +479,18 @@ struct MessagesScreen: View {
                 Label("Zadzwoń", systemImage: "phone")
             }
         }
-        Button {
-            dependencies.openPerson(row.client.id)
-        } label: {
-            Label("Karta klienta", systemImage: "person")
+        if row.client.isWhatsAppContact {
+            Button {
+                Task { await addToLeads(row) }
+            } label: {
+                Label("Dodaj do „Nowych”", systemImage: "person.badge.plus")
+            }
+        } else {
+            Button {
+                dependencies.openPerson(row.client.id)
+            } label: {
+                Label("Karta klienta", systemImage: "person")
+            }
         }
         Button {
             dependencies.present(.conversationOptions(row.thread.id))
@@ -506,43 +499,17 @@ struct MessagesScreen: View {
         }
     }
 
-    // MARK: Rozmowy bez osoby
-
-    @ViewBuilder
-    private func unassignedSection(_ model: MessagesStore.Model) -> some View {
-        if !model.unassigned.isEmpty {
-            let searching = !model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            let visible = showsAllUnassigned || searching
-                ? model.unassigned
-                : Array(model.unassigned.prefix(Self.unassignedPreviewLimit))
-            GroupHeader(
-                title: "Bez osoby w kartotece",
-                count: model.unassigned.count,
-                tone: EmmaTheme.mutedSoft,
-                emphasized: false
-            )
-            .emmaListRow(top: 12, bottom: 2, horizontal: layout.horizontalPadding)
-
-            ForEach(visible) { conversation in
-                UnassignedConversationRow(conversation: conversation) {
-                    openedUnassigned = conversation
-                }
-                .emmaListRow(top: 0, bottom: 0, horizontal: layout.horizontalPadding)
-            }
-
-            if visible.count < model.unassigned.count {
-                Button("Pokaż wszystkie (\(model.unassigned.count))") {
-                    withAnimation(EmmaMotion.smooth) { showsAllUnassigned = true }
-                }
-                .font(EmmaTypography.caption(.medium))
-                .foregroundStyle(EmmaTheme.accent)
-                .frame(maxWidth: .infinity, minHeight: EmmaSpacing.hitTarget)
-                .emmaListRow(top: 0, bottom: 0, horizontal: layout.horizontalPadding)
-            }
-        }
-    }
-
     // MARK: Czynności
+
+    /// Rozmówca spoza kartoteki trafia do „Nowych” razem z całą rozmową.
+    private func addToLeads(_ row: MessagesStore.Row) async {
+        let created: Void? = await dependencies.perform {
+            try await dependencies.repository.createLead(fromThread: row.thread.id)
+        }
+        guard created != nil else { return }
+        EmmaHaptics.success()
+        dependencies.showToast("\(row.client.displayName) jest w „Nowych”")
+    }
 
     /// Emma pisze szkic odpowiedzi prosto w polu rozmowy — do sprawdzenia,
     /// nic nie wysyła (wcześniej przez zakładkę Emmy i szablon).
