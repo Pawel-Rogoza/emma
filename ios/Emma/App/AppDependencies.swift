@@ -709,7 +709,7 @@ public final class AppDependencies: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             guard let leads = try? await self.repository.clients(matching: "", stage: .new) else { return }
-            self.leadsNeedingAction = leads.count
+            self.leadsNeedingAction = LeadWorkflow.needsActionCount(leads)
         }
     }
 

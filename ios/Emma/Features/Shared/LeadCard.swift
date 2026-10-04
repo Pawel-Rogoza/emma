@@ -42,15 +42,34 @@ enum LeadStatusStyle {
     }
 
     /// „Termin z rezerwacji: Jutro, 10:00”; termin, który już minął, mówi to wprost.
-    static func bookingText(_ booking: LeadBooking, dateText: DateTextFormatter, today: LocalDate) -> String {
-        var text = "Termin z rezerwacji: \(dateText.dayLabel(booking.day))"
+    /// Z wariantem rezerwacji: „Konsultacja: Jutro, 10:00 · 60 min · 490 zł”.
+    static func bookingText(
+        _ booking: LeadBooking,
+        consultation: ConsultationRequest? = nil,
+        dateText: DateTextFormatter,
+        today: LocalDate
+    ) -> String {
+        let variant = consultation?.variantText
+        var text = (variant == nil ? "Termin z rezerwacji: " : "Konsultacja: ") + dateText.dayLabel(booking.day)
         if let time = booking.time {
             text += ", \(time.hhmm)"
+        }
+        if let variant {
+            text += " · \(variant)"
         }
         if booking.day < today {
             text += " · minął"
         }
         return text
+    }
+
+    /// Linia rezerwacji dla zgłoszenia: termin z wariantem, a bez terminu —
+    /// sam wariant („Konsultacja 60 min · 490 zł”).
+    static func consultationLine(for client: Client, dateText: DateTextFormatter, today: LocalDate) -> String? {
+        if let booking = LeadWorkflow.booking(of: client) {
+            return bookingText(booking, consultation: client.consultation, dateText: dateText, today: today)
+        }
+        return client.consultation?.variantText.map { "Konsultacja \($0)" }
     }
 }
 
@@ -235,8 +254,9 @@ struct LeadCard: View {
                         .font(.system(size: 12, weight: .semibold))
                     Text(footer.text)
                         .font(EmmaTypography.caption(.medium))
-                        .lineLimit(1)
+                        .lineLimit(2)
                         .minimumScaleFactor(0.85)
+                        .multilineTextAlignment(.leading)
                 }
                 .foregroundStyle(footer.isSoon ? EmmaTheme.accent : EmmaTheme.mutedSoft)
             }
@@ -292,17 +312,22 @@ struct LeadCard: View {
     private func footerLine(_ topic: LeadTopic) -> Footer? {
         let today = dependencies.today
         if let nextEvent {
+            var text = "Spotkanie: \(dependencies.dateText.dayLabel(nextEvent.day)), \(nextEvent.time.hhmm)"
+            if let variant = client.consultation?.variantText {
+                text += " · \(variant)"
+            }
             return Footer(
                 systemImage: "calendar",
-                text: "Spotkanie: \(dependencies.dateText.dayLabel(nextEvent.day)), \(nextEvent.time.hhmm)",
+                text: text,
                 isSoon: nextEvent.day >= today && nextEvent.day <= today.adding(days: 1)
             )
         }
-        if let booking = topic.booking {
+        if let text = LeadStatusStyle.consultationLine(for: client, dateText: dependencies.dateText, today: today) {
+            let day = LeadWorkflow.booking(of: client)?.day
             return Footer(
                 systemImage: "calendar.badge.clock",
-                text: LeadStatusStyle.bookingText(booking, dateText: dependencies.dateText, today: today),
-                isSoon: booking.day >= today && booking.day <= today.adding(days: 1)
+                text: text,
+                isSoon: day.map { $0 >= today && $0 <= today.adding(days: 1) } ?? false
             )
         }
         return nil

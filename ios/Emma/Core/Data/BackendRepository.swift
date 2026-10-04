@@ -1055,7 +1055,21 @@ extension BackendRepository {
             receivedAt: dto.receivedAt.flatMap(MobileAuthClient.parseISO8601),
             phone: nonEmpty(dto.phone),
             email: nonEmpty(dto.email),
-            version: Version(dto.version)
+            version: Version(dto.version),
+            consultation: dto.consultation.map { mapConsultation($0) },
+            replyTemplate: nonEmpty(dto.replyTemplate)
+        )
+    }
+
+    /// Termin rezerwacji przychodzi w UTC; w aplikacji to dzień i godzina
+    /// w strefie kancelarii — tak, jak klient wybrał je na stronie.
+    static func mapConsultation(_ dto: BackendConsultationDTO) -> ConsultationRequest {
+        let instant = dto.at.flatMap(MobileAuthClient.parseISO8601)
+        return ConsultationRequest(
+            minutes: dto.minutes,
+            priceGrosze: dto.priceGrosze,
+            day: instant.map { localDate(of: $0) },
+            time: instant.flatMap { localTime(of: $0) }
         )
     }
 
@@ -1264,6 +1278,14 @@ extension BackendRepository {
             month: components.month ?? 1,
             day: components.day ?? 1
         )
+    }
+
+    private static func localTime(of instant: Date) -> TimeOfDay? {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: EmmaTime.referenceTimeZone) ?? .gmt
+        let components = calendar.dateComponents([.hour, .minute], from: instant)
+        guard let hour = components.hour, let minute = components.minute else { return nil }
+        return TimeOfDay(hhmm: String(format: "%02d:%02d", hour, minute))
     }
 
     static func mapTime(_ raw: String?) throws -> TimeOfDay? {

@@ -995,9 +995,13 @@ struct BackendClientDTO: Decodable {
     let phone: String?
     let email: String?
     let version: Int
+    /// Rozszerzenie 04.10.2026 (opcjonalne): rezerwacja konsultacji ze strony
+    /// i gotowa odpowiedź na lead. Starszy backend ich nie wysyła.
+    let consultation: BackendConsultationDTO?
+    let replyTemplate: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, initials, language, topic, stage, source, briefing, version, phone, email
+        case id, initials, language, topic, stage, source, briefing, version, phone, email, consultation
         case displayName = "display_name"
         case createdAt = "created_at"
         case incomingMessage = "incoming_message"
@@ -1005,6 +1009,19 @@ struct BackendClientDTO: Decodable {
         case incomingTime = "incoming_time"
         case needsReply = "needs_reply"
         case receivedAt = "received_at"
+        case replyTemplate = "reply_template"
+    }
+}
+
+struct BackendConsultationDTO: Decodable {
+    let minutes: Int?
+    let priceGrosze: Int?
+    /// Termin w ISO UTC.
+    let at: String?
+
+    enum CodingKeys: String, CodingKey {
+        case minutes, at
+        case priceGrosze = "price_gr"
     }
 }
 

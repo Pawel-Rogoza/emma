@@ -30,7 +30,10 @@ ROOT = Path(__file__).resolve().parent.parent / "Emma"
 # Typ współdzielony -> pliki, w których szukamy jego deklaracji.
 DECLARATION_SOURCES = {
     "dependencies": ["App/AppDependencies.swift"],
-    "repository": ["Core/Voice/VoiceServices.swift", "PreviewSupport/MockRepository.swift"],
+    # `BackendRepository` też: ekrany wołają jego składowe po rzutowaniu
+    # (`dependencies.repository as? BackendRepository`), np. `voiceUsage()`.
+    "repository": ["Core/Voice/VoiceServices.swift", "PreviewSupport/MockRepository.swift",
+                   "Core/Data/BackendRepository.swift"],
     "voice": ["Core/Voice/VoiceSessionCoordinator.swift"],
     "clock": ["Core/Domain/ClockAndFormatting.swift"],
     "dataset": ["PreviewSupport/DemoFixtures.swift"],
@@ -159,7 +162,10 @@ def main() -> int:
             stripped = line.strip()
             if stripped.startswith("//") or stripped.startswith("///"):
                 continue
-            for holder, member in USAGE_PATTERN.findall(line):
+            # Napisy pomijamy: nazwa symbolu SF („clock.badge.exclamationmark”)
+            # to nie odwołanie do zależności `clock`.
+            code = re.sub(r'"(?:[^"\\]|\\.)*"', '""', line)
+            for holder, member in USAGE_PATTERN.findall(code):
                 # Pomijamy dostęp do składowych własnych obiektów przekazanych jako
                 # parametr o tej samej nazwie (np. `repository.clients` w protokole).
                 if (holder, member) in IGNORED_USAGES:
@@ -178,7 +184,7 @@ def main() -> int:
                         f"{path.relative_to(ROOT)}:{line_number}: {holder}.{member} nie istnieje "
                         f"w zadeklarowanych składowych"
                     )
-            for holder, member in SYSTEM_USAGE_PATTERN.findall(line):
+            for holder, member in SYSTEM_USAGE_PATTERN.findall(code):
                 if member in SYSTEM_MEMBERS[holder] or member in system_members[holder]:
                     continue
                 checked += 1

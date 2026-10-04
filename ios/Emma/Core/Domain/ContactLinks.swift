@@ -36,6 +36,15 @@ public enum ContactLinks {
         internationalDigits(raw).flatMap { URL(string: "https://wa.me/\($0)") }
     }
 
+    /// WhatsApp z gotową wiadomością w polu (wysyła adwokat). Treść kodujemy
+    /// ściśle — także „+” i „&”: luźne kodowanie zamieniało „+48 579…” w spację.
+    public static func whatsAppURL(_ raw: String, text: String) -> URL? {
+        guard let digits = internationalDigits(raw) else { return nil }
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+        guard let encoded = text.addingPercentEncoding(withAllowedCharacters: allowed) else { return nil }
+        return URL(string: "https://wa.me/\(digits)?text=\(encoded)")
+    }
+
     /// Adres pochodzi z publicznego formularza strony, więc jest niezaufany:
     /// `a@b.pl?bcc=obcy@x.pl&body=…` dopisałby do wiadomości ukrytego odbiorcę
     /// i treść, a przecinek — kolejnych adresatów. Przepuszczamy tylko jeden

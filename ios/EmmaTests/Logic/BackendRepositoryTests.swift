@@ -74,6 +74,21 @@ final class BackendRepositoryTests: XCTestCase {
         XCTAssertNil(clients[1].phone)
         XCTAssertNil(clients[1].email)
         XCTAssertNil(clients[1].receivedAt)
+        // Rezerwacja ze strony: termin w strefie kancelarii (22:30Z = 00:30
+        // następnego dnia w Warszawie), wariant i gotowa odpowiedź.
+        XCTAssertEqual(
+            clients[0].consultation,
+            ConsultationRequest(
+                minutes: 60,
+                priceGrosze: 49_000,
+                day: LocalDate(iso: "2026-09-25"),
+                time: TimeOfDay(hhmm: "00:30")
+            )
+        )
+        XCTAssertEqual(clients[0].replyTemplate, "Dzień dobry! Potwierdzam konsultację.")
+        // Starszy serwer nie wysyła tych pól.
+        XCTAssertNil(clients[1].consultation)
+        XCTAssertNil(clients[1].replyTemplate)
     }
 
     func testInContactStageAndImportSourceMapToKnownValues() async throws {
@@ -1079,7 +1094,9 @@ final class BackendRepositoryTests: XCTestCase {
        "topic":"Termin: 2026-09-24 10:00 Rozwód","stage":"new","source":"web_form","created_at":"2026-09-22",
        "briefing":null,"incoming_message":null,"incoming_translation":null,"incoming_time":null,
        "needs_reply":false,"received_at":"2026-09-22T14:05:12.345Z","phone":"+48 600 700 800",
-       "email":"ihor@example.com","version":1},
+       "email":"ihor@example.com","version":1,
+       "consultation":{"minutes":60,"price_gr":49000,"at":"2026-09-24T22:30:00.000Z"},
+       "reply_template":"Dzień dobry! Potwierdzam konsultację."},
       {"id":"lead-9","display_name":"Anna Nowak","initials":"AN","language":"pl",
        "topic":"Spadek","stage":"new","source":"manual","created_at":"2026-09-20",
        "briefing":null,"incoming_message":null,"incoming_translation":null,"incoming_time":null,

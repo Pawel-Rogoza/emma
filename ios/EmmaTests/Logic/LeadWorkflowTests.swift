@@ -27,21 +27,86 @@ final class LeadWorkflowTests: XCTestCase {
     private func lead(
         _ id: String,
         stage: ClientStage = .new,
+        source: ClientSource = .webForm,
         created: String,
-        receivedAt: Date? = nil
+        receivedAt: Date? = nil,
+        topic: String = "Temat",
+        consultation: ConsultationRequest? = nil
     ) -> Client {
         Client(
             id: ClientID(id),
             displayName: "Osoba \(id)",
             initials: "OS",
             language: .pl,
-            topic: "Temat",
+            topic: topic,
             stage: stage,
-            source: .webForm,
+            source: source,
             createdAt: LocalDate(iso: created)!,
             briefing: "",
-            receivedAt: receivedAt
+            receivedAt: receivedAt,
+            consultation: consultation
         )
+    }
+
+    // MARK: Bez rozmów WhatsApp (review 04.10.2026)
+
+    func testInboxSkipsWhatsAppConversations() {
+        let now = instant("2026-10-04", "10:00")
+        let clients = [
+            lead("lead-web", created: "2026-10-04", receivedAt: instant("2026-10-04", "09:00")),
+            lead("lead-whatsapp", source: .whatsApp, created: "2026-10-04", receivedAt: instant("2026-10-04", "09:10")),
+            lead("lead-manual", source: .manual, created: "2026-10-04", receivedAt: instant("2026-10-04", "09:20")),
+            lead("lead-whatsapp-contact", stage: .inContact, source: .whatsApp, created: "2026-10-01"),
+            lead("lead-web-contact", stage: .inContact, created: "2026-10-01")
+        ]
+
+        let inbox = LeadWorkflow.inbox(clients, now: now)
+
+        // Ręcznie dodany lead zostaje — „+” na liście nie może tworzyć niewidocznych wpisów.
+        XCTAssertEqual(inbox.fresh.map(\.id.rawValue), ["lead-manual", "lead-web"])
+        XCTAssertEqual(inbox.inContact.map(\.id.rawValue), ["lead-web-contact"])
+        XCTAssertEqual(LeadWorkflow.needsActionCount(clients), 2, "Plakietka nie liczy rozmów WhatsApp")
+        XCTAssertFalse(LeadWorkflow.isLead(lead("client-1", stage: .client, created: "2026-01-01")))
+    }
+
+    func testBookingPrefersReservationDataOverTopicPrefix() {
+        let reserved = lead(
+            "lead-booking",
+            created: "2026-10-04",
+            topic: "Termin: 2026-10-08 10:00 Wiza",
+            consultation: ConsultationRequest(
+                minutes: 60,
+                priceGrosze: 49_000,
+                day: LocalDate(iso: "2026-10-09")!,
+                time: TimeOfDay(hhmm: "14:00")
+            )
+        )
+        XCTAssertEqual(
+            LeadWorkflow.booking(of: reserved),
+            LeadBooking(day: LocalDate(iso: "2026-10-09")!, time: TimeOfDay(hhmm: "14:00"))
+        )
+        XCTAssertEqual(reserved.consultation?.variantText, "60 min · 490 zł")
+
+        // Starszy serwer: termin tylko w treści zgłoszenia.
+        let legacy = lead("lead-legacy", created: "2026-10-04", topic: "Termin: 2026-10-08 10:00 Wiza")
+        XCTAssertEqual(LeadWorkflow.booking(of: legacy)?.day, LocalDate(iso: "2026-10-08"))
+    }
+
+    func testConsultationPriceText() {
+        XCTAssertEqual(ConsultationRequest.priceText(29_000), "290 zł")
+        XCTAssertEqual(ConsultationRequest.priceText(29_050), "290,50 zł")
+        XCTAssertEqual(ConsultationRequest.priceText(29_005), "290,05 zł")
+        XCTAssertNil(ConsultationRequest(minutes: nil, priceGrosze: nil, day: nil, time: nil).variantText)
+        XCTAssertEqual(ConsultationRequest(minutes: 30, priceGrosze: nil, day: nil, time: nil).variantText, "30 min")
+    }
+
+    func testWhatsAppLinkCarriesReplyTextWithEncodedPlus() {
+        let url = ContactLinks.whatsAppURL("+48 600 100 200", text: "BLIK na +48 579 910 709 & dzięki")
+        XCTAssertEqual(
+            url?.absoluteString,
+            "https://wa.me/48600100200?text=BLIK%20na%20%2B48%20579%20910%20709%20%26%20dzi%C4%99ki"
+        )
+        XCTAssertNil(ContactLinks.whatsAppURL("abc", text: "x"))
     }
 
     // MARK: Status
