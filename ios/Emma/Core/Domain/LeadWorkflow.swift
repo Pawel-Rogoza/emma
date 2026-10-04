@@ -149,13 +149,38 @@ public enum LeadWorkflow {
         }
     }
 
+    /// Czy kontakt należy do „Leadów”. Review właściciela 04.10.2026: w leadach
+    /// było „wszystko” — każdy numer, który napisał na WhatsApp, zakładał
+    /// zgłoszenie. Leady to teraz zgłoszenia ze strony (rezerwacja konsultacji,
+    /// formularz kontaktowy, pytanie z bazy wiedzy) i te, które adwokat dodał
+    /// sam przyciskiem „+” — inaczej świeżo dodany lead znikałby z listy.
+    /// Rozmowy WhatsApp mają swoje miejsce w „Rozmowach”.
+    public static func isLead(_ client: Client) -> Bool {
+        client.source != .whatsApp && client.stage != .client
+    }
+
+    /// Ile leadów czeka na pierwszy kontakt — plakietka zakładki.
+    public static func needsActionCount(_ clients: [Client]) -> Int {
+        clients.filter { isLead($0) && $0.stage == .new }.count
+    }
+
+    /// Termin konsultacji: z danych rezerwacji, a przy starszym serwerze —
+    /// z prefiksu „Termin:” w treści zgłoszenia.
+    public static func booking(of client: Client) -> LeadBooking? {
+        if let day = client.consultation?.day {
+            return LeadBooking(day: day, time: client.consultation?.time)
+        }
+        return LeadTopic.parse(client.topic).booking
+    }
+
     /// Podział listy kontaktów na kolejkę pracy. Kartoteki (`client`) nie
-    /// należą do żadnej grupy — to już nie są zgłoszenia.
+    /// należą do żadnej grupy — to już nie są zgłoszenia. Rozmowy WhatsApp
+    /// też nie (`isLead`).
     public static func inbox(_ clients: [Client], now: Date) -> LeadInbox {
         var waiting: [Client] = []
         var fresh: [Client] = []
         var inContact: [Client] = []
-        for client in clients {
+        for client in clients where isLead(client) {
             switch status(of: client, now: now) {
             case .waiting: waiting.append(client)
             case .fresh: fresh.append(client)

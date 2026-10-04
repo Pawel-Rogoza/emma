@@ -102,6 +102,12 @@ struct ClientCardScreen: View {
                 .padding(.bottom, 4)
             }
 
+            if client.stage != .client, let reply = client.replyTemplate {
+                LeadReplyPanel(client: client, text: reply, threadID: model.threadID)
+                    .padding(.top, 12)
+                    .padding(.bottom, 4)
+            }
+
             // Sekcje wchodzą kaskadowo — ten sam ruch co listy (audyt 29.09.2026).
             linkedCaseSection(model)
                 .emmaAppear(1)
@@ -198,16 +204,20 @@ struct ClientCardScreen: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 5)
-            if let booking = topic.booking {
-                Label(
-                    LeadStatusStyle.bookingText(booking, dateText: dependencies.dateText, today: dependencies.today),
-                    systemImage: "calendar.badge.clock"
-                )
-                .font(EmmaTypography.caption(.medium))
-                .foregroundStyle(EmmaTheme.accent)
-                .padding(.top, 9)
+            let consultationLine = LeadStatusStyle.consultationLine(
+                for: client,
+                dateText: dependencies.dateText,
+                today: dependencies.today
+            )
+            if let consultationLine {
+                Label(consultationLine, systemImage: "calendar.badge.clock")
+                    .font(EmmaTypography.caption(.medium))
+                    .foregroundStyle(EmmaTheme.accent)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 9)
             }
-            if topic.booking == nil, let next = nextEvent(model) {
+            if LeadWorkflow.booking(of: client) == nil, let next = nextEvent(model) {
                 Button {
                     dependencies.present(.eventDetail(next.id))
                 } label: {

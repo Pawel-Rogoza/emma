@@ -48,7 +48,7 @@ final class ClientsStore: ObservableObject {
                 phase = .loaded(model)
             }
             // Plakietka zakładki liczona z tych samych danych co lista.
-            dependencies.leadsNeedingAction = clients.filter { $0.stage == .new }.count
+            dependencies.leadsNeedingAction = LeadWorkflow.needsActionCount(clients)
         } catch {
             if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać bazy kancelarii.") {
                 dependencies.showToast(message)

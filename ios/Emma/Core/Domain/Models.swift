@@ -80,6 +80,12 @@ public struct Client: Identifiable, Hashable, Codable, Sendable {
     public var phone: String?
     public var email: String?
     public var version: Version
+    /// Konsultacja zarezerwowana na stronie (długość, cena, termin). `nil`,
+    /// gdy zgłoszenie nie pochodzi z rezerwacji.
+    public var consultation: ConsultationRequest?
+    /// Gotowa odpowiedź na zgłoszenie ze strony (serwer, PL albo RU):
+    /// podziękowanie, potwierdzenie konsultacji i prośba o płatność BLIK.
+    public var replyTemplate: String?
 
     public init(
         id: ClientID,
@@ -98,7 +104,9 @@ public struct Client: Identifiable, Hashable, Codable, Sendable {
         receivedAt: Date? = nil,
         phone: String? = nil,
         email: String? = nil,
-        version: Version = .initial
+        version: Version = .initial,
+        consultation: ConsultationRequest? = nil,
+        replyTemplate: String? = nil
     ) {
         self.id = id
         self.displayName = displayName
@@ -117,6 +125,41 @@ public struct Client: Identifiable, Hashable, Codable, Sendable {
         self.phone = phone
         self.email = email
         self.version = version
+        self.consultation = consultation
+        self.replyTemplate = replyTemplate
+    }
+}
+
+/// Konsultacja wybrana przez klienta na stronie: 30 min za 290 zł albo
+/// 60 min za 490 zł, z terminem. Pola bywają puste przy starych rezerwacjach.
+public struct ConsultationRequest: Hashable, Codable, Sendable {
+    public var minutes: Int?
+    /// Cena w groszach (290 zł = 29 000).
+    public var priceGrosze: Int?
+    /// Termin w strefie kancelarii.
+    public var day: LocalDate?
+    public var time: TimeOfDay?
+
+    public init(minutes: Int?, priceGrosze: Int?, day: LocalDate?, time: TimeOfDay?) {
+        self.minutes = minutes
+        self.priceGrosze = priceGrosze
+        self.day = day
+        self.time = time
+    }
+
+    /// „60 min · 490 zł”; `nil`, gdy nie znamy ani długości, ani ceny.
+    public var variantText: String? {
+        var parts: [String] = []
+        if let minutes { parts.append("\(minutes) min") }
+        if let priceGrosze { parts.append(Self.priceText(priceGrosze)) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// „490 zł”, a z groszami „290,50 zł”.
+    public static func priceText(_ grosze: Int) -> String {
+        let zloty = grosze / 100
+        let rest = grosze % 100
+        return rest == 0 ? "\(zloty) zł" : "\(zloty),\(rest < 10 ? "0" : "")\(rest) zł"
     }
 }
 

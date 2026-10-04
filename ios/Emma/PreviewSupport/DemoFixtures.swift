@@ -83,7 +83,28 @@ public enum DemoFixtures {
         incomingTime: TimeOfDay(hhmm: "09:03"),
         needsReply: true,
         receivedAt: instant(referenceDay, "09:03"),
-        email: "maria.sokolowa@example.com"
+        email: "maria.sokolowa@example.com",
+        consultation: ConsultationRequest(
+            minutes: 60,
+            priceGrosze: 49_000,
+            day: referenceDay.adding(days: 3),
+            time: TimeOfDay(hhmm: "14:00")
+        ),
+        replyTemplate: """
+        Здравствуйте, Maria Sokołowa!
+
+        Спасибо за запись на консультацию через наш сайт. Подтверждаю консультацию: понедельник, 14 сентября, 14:00 (60 min).
+
+        Стоимость консультации: 490 зл. Пожалуйста, оплатите консультацию до встречи — достаточно прислать подтверждение перевода в этот чат.
+
+        • BLIK на номер телефона: +48 579 910 709
+
+        После оплаты, пожалуйста, пришлите подтверждение — тогда запись будет окончательно подтверждена.
+
+        С уважением
+        адвокат Томаш Рогоза
+        Адвокатская канцелярия
+        """
     )
 
     public static let dmytro = Client(

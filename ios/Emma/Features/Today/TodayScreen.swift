@@ -120,7 +120,7 @@ final class TodayStore: ObservableObject {
             } else {
                 phase = .loaded(model)
             }
-            dependencies.leadsNeedingAction = clients.filter { $0.stage == .new }.count
+            dependencies.leadsNeedingAction = LeadWorkflow.needsActionCount(clients)
             dependencies.spotlight.update(cases: cases, clients: clients)
         } catch {
             if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać dnia.") {
