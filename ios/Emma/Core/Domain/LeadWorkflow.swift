@@ -61,6 +61,67 @@ public struct LeadBooking: Hashable, Sendable {
     }
 }
 
+/// Konsultacja leada w postaci do pokazania. Review właściciela 04.10.2026:
+/// na ekranie głównym i na karcie leada ma być od razu widać, że to
+/// konsultacja, na ile i na kiedy — a nie drobna linijka pod tematem.
+public struct ConsultationSummary: Hashable, Sendable {
+    public enum Timing: Sendable {
+        case past, today, tomorrow, later, unscheduled
+    }
+
+    public let minutes: Int?
+    public let priceGrosze: Int?
+    public let day: LocalDate?
+    public let time: TimeOfDay?
+
+    public init(minutes: Int?, priceGrosze: Int?, day: LocalDate?, time: TimeOfDay?) {
+        self.minutes = minutes
+        self.priceGrosze = priceGrosze
+        self.day = day
+        self.time = time
+    }
+
+    /// „60 min · 490 zł”; `nil`, gdy nie znamy ani długości, ani ceny.
+    public var variantText: String? {
+        ConsultationRequest(minutes: minutes, priceGrosze: priceGrosze, day: nil, time: nil).variantText
+    }
+
+    /// „Jutro, 9 października · 14:00”; `nil` bez terminu.
+    public func whenText(_ dateText: DateTextFormatter) -> String? {
+        guard let day else { return nil }
+        let title = dateText.dayTitle(day)
+        return time.map { "\(title) · \($0.hhmm)" } ?? title
+    }
+
+    /// Zwięźle do wiersza listy: „Jutro 14:00”, „9 paź 14:00”.
+    public func shortWhenText(_ dateText: DateTextFormatter) -> String? {
+        guard let day else { return nil }
+        let label = dateText.dayLabel(day)
+        return time.map { "\(label) \($0.hhmm)" } ?? label
+    }
+
+    /// „Konsultacja 60 min · Jutro 14:00” — jedna linia na ekran główny;
+    /// z ceną: „Konsultacja 60 min · 490 zł · Jutro 14:00”. Bez terminu cena
+    /// jest zawsze, żeby linia mówiła coś poza samym słowem.
+    public func compactText(_ dateText: DateTextFormatter, withPrice: Bool = false) -> String {
+        var parts = ["Konsultacja" + (minutes.map { " \($0) min" } ?? "")]
+        let when = shortWhenText(dateText)
+        if let priceGrosze, withPrice || when == nil {
+            parts.append(ConsultationRequest.priceText(priceGrosze))
+        }
+        if let when { parts.append(when) }
+        return parts.joined(separator: " · ")
+    }
+
+    public func timing(today: LocalDate) -> Timing {
+        guard let day else { return .unscheduled }
+        if day < today { return .past }
+        if day == today { return .today }
+        if day == today.adding(days: 1) { return .tomorrow }
+        return .later
+    }
+}
+
 /// Temat zgłoszenia rozdzielony na termin z rezerwacji i właściwą treść.
 public struct LeadTopic: Hashable, Sendable {
     public let booking: LeadBooking?
@@ -238,6 +299,20 @@ public enum LeadWorkflow {
         case .inContact, .client:
             return current.title
         }
+    }
+
+    /// Konsultacja zgłoszenia do wyeksponowania: ile trwa, ile kosztuje i kiedy.
+    /// `nil`, gdy zgłoszenie nie ma ani terminu, ani wariantu.
+    public static func consultation(of client: Client) -> ConsultationSummary? {
+        let booking = booking(of: client)
+        let variant = client.consultation
+        guard booking != nil || variant?.variantText != nil else { return nil }
+        return ConsultationSummary(
+            minutes: variant?.minutes,
+            priceGrosze: variant?.priceGrosze,
+            day: booking?.day,
+            time: booking?.time
+        )
     }
 
     // MARK: Pomocnicze

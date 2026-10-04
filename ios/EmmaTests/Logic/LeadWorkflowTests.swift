@@ -92,6 +92,35 @@ final class LeadWorkflowTests: XCTestCase {
         XCTAssertEqual(LeadWorkflow.booking(of: legacy)?.day, LocalDate(iso: "2026-10-08"))
     }
 
+    func testConsultationSummarySaysHowLongAndWhen() {
+        let dateText = DateTextFormatter(today: LocalDate(iso: "2026-10-08")!)
+        let reserved = lead(
+            "lead-booking",
+            created: "2026-10-04",
+            consultation: ConsultationRequest(
+                minutes: 60,
+                priceGrosze: 49_000,
+                day: LocalDate(iso: "2026-10-09")!,
+                time: TimeOfDay(hhmm: "14:00")
+            )
+        )
+        let summary = LeadWorkflow.consultation(of: reserved)
+        XCTAssertEqual(summary?.variantText, "60 min · 490 zł")
+        XCTAssertEqual(summary?.whenText(dateText), "Jutro, 9 października · 14:00")
+        XCTAssertEqual(summary?.compactText(dateText), "Konsultacja 60 min · Jutro 14:00")
+        XCTAssertEqual(summary?.compactText(dateText, withPrice: true), "Konsultacja 60 min · 490 zł · Jutro 14:00")
+        XCTAssertEqual(summary?.timing(today: LocalDate(iso: "2026-10-08")!), .tomorrow)
+        XCTAssertEqual(summary?.timing(today: LocalDate(iso: "2026-10-10")!), .past)
+
+        // Bez terminu: wariant z ceną, żeby linia mówiła „ile”.
+        let noDate = ConsultationSummary(minutes: 30, priceGrosze: 29_000, day: nil, time: nil)
+        XCTAssertEqual(noDate.compactText(dateText), "Konsultacja 30 min · 290 zł")
+        XCTAssertNil(noDate.whenText(dateText))
+
+        // Zgłoszenie bez rezerwacji nie udaje konsultacji.
+        XCTAssertNil(LeadWorkflow.consultation(of: lead("lead-plain", created: "2026-10-04", topic: "Wiza")))
+    }
+
     func testConsultationPriceText() {
         XCTAssertEqual(ConsultationRequest.priceText(29_000), "290 zł")
         XCTAssertEqual(ConsultationRequest.priceText(29_050), "290,50 zł")

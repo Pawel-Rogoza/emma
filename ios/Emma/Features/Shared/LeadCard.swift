@@ -73,6 +73,91 @@ enum LeadStatusStyle {
     }
 }
 
+// MARK: - Konsultacja leada
+//
+// Review właściciela 04.10.2026: ma być od razu widać, że lead to konsultacja,
+// na ile i na kiedy. Kapsuła idzie na listy (ekran główny, „Leady”), kafelek
+// — na kartę leada, zaraz pod nazwiskiem.
+
+/// Niebieska kapsuła „Konsultacja 60 min · Jutro 14:00”; termin, który minął — bursztynowa.
+struct ConsultationChip: View {
+    @EnvironmentObject private var dependencies: AppDependencies
+
+    let summary: ConsultationSummary
+    var withPrice = false
+
+    var body: some View {
+        let isPast = summary.timing(today: dependencies.today) == .past
+        let colors: (background: Color, text: Color) = isPast
+            ? StatusPill.Kind.amber.colors
+            : (EmmaTheme.accentSoft, EmmaTheme.accent)
+        let text = summary.compactText(dependencies.dateText, withPrice: withPrice) + (isPast ? " · minął" : "")
+        HStack(spacing: 5) {
+            Image(systemName: "calendar.badge.clock")
+                .font(.system(size: 11, weight: .semibold))
+            Text(text)
+                .font(EmmaTypography.caption(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .foregroundStyle(colors.text)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(colors.background, in: Capsule())
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Kafelek na karcie leada: „KONSULTACJA / 60 min · 490 zł / Jutro, 9 października · 14:00”.
+struct ConsultationTile: View {
+    @EnvironmentObject private var dependencies: AppDependencies
+
+    let summary: ConsultationSummary
+
+    var body: some View {
+        let when = summary.whenText(dependencies.dateText)
+        let headline = summary.variantText ?? when ?? "Konsultacja"
+        let detail = summary.variantText == nil ? nil : (when ?? "Termin do ustalenia")
+        let isPast = summary.timing(today: dependencies.today) == .past
+        HStack(alignment: .center, spacing: 13) {
+            Image(systemName: "calendar.badge.clock")
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(EmmaTheme.primaryButtonText)
+                .frame(width: 42, height: 42)
+                .background(EmmaTheme.accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            VStack(alignment: .leading, spacing: 3) {
+                Text("KONSULTACJA")
+                    .font(EmmaTypography.ui(11, .semibold))
+                    .tracking(0.7)
+                    .foregroundStyle(EmmaTheme.accent)
+                Text(headline)
+                    .font(EmmaTypography.heading(19))
+                    .foregroundStyle(EmmaTheme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let detail {
+                    Text(detail)
+                        .font(EmmaTypography.ui(14, .medium))
+                        .foregroundStyle(EmmaTheme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if isPast {
+                    StatusPill("Termin minął", kind: .amber)
+                        .padding(.top, 3)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(14)
+        .background(EmmaTheme.accentSoft, in: RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
+                .strokeBorder(EmmaTheme.accent.opacity(0.18), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("lead-consultation")
+    }
+}
+
 /// Plakietka stanu z kropką: „● Oczekuje · 2 dni”.
 struct LeadStatusBadge: View {
     let status: LeadStatus
@@ -248,7 +333,9 @@ struct LeadCard: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
 
-            if let footer = footerLine(topic) {
+            if nextEvent == nil, let consultation = LeadWorkflow.consultation(of: client) {
+                ConsultationChip(summary: consultation, withPrice: true)
+            } else if let footer = footerLine(topic) {
                 HStack(spacing: 6) {
                     Image(systemName: footer.systemImage)
                         .font(.system(size: 12, weight: .semibold))
@@ -436,7 +523,8 @@ struct LeadCard: View {
 // MARK: - Wiersz leada na „Dzisiaj”
 
 /// Zwarty wiersz zgłoszenia do sekcji „Leady do obsługi” na ekranie głównym:
-/// awatar z kropką stanu, osoba, wiek i temat w jednej linii, przycisk „obsłużone”.
+/// awatar z kropką stanu, osoba, wiek i temat w jednej linii, pod nimi kapsuła
+/// konsultacji (ile i kiedy), przycisk „obsłużone”.
 struct LeadInboxRow: View {
 
     @EnvironmentObject private var dependencies: AppDependencies
@@ -450,6 +538,7 @@ struct LeadInboxRow: View {
     var body: some View {
         let status = LeadWorkflow.status(of: client, now: dependencies.now)
         let subtitle = subtitleText(status)
+        let consultation = LeadWorkflow.consultation(of: client)
         HStack(alignment: .center, spacing: 2) {
             Button(action: onOpen) {
                 HStack(alignment: .center, spacing: 11) {
@@ -471,6 +560,10 @@ struct LeadInboxRow: View {
                             .font(EmmaTypography.body(for: subtitle, size: 12))
                             .foregroundStyle(status == .waiting ? EmmaTheme.pillAmberText : EmmaTheme.muted)
                             .lineLimit(1)
+                        if let consultation {
+                            ConsultationChip(summary: consultation)
+                                .padding(.top, 3)
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -479,7 +572,11 @@ struct LeadInboxRow: View {
             }
             .buttonStyle(.plain)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(client.displayName), \(subtitle)")
+            .accessibilityLabel(
+                [client.displayName, subtitle, consultation?.compactText(dependencies.dateText, withPrice: true)]
+                    .compactMap { $0 }
+                    .joined(separator: ", ")
+            )
             .accessibilityHint("Otwiera kartę klienta")
             .accessibilityAddTraits(.isButton)
             .accessibilityIdentifier("today-lead-row")
