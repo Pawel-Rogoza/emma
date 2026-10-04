@@ -204,18 +204,11 @@ struct ClientCardScreen: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 5)
-            let consultationLine = LeadStatusStyle.consultationLine(
-                for: client,
-                dateText: dependencies.dateText,
-                today: dependencies.today
-            )
-            if let consultationLine {
-                Label(consultationLine, systemImage: "calendar.badge.clock")
-                    .font(EmmaTypography.caption(.medium))
-                    .foregroundStyle(EmmaTheme.accent)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 9)
+            // Konsultacja z rezerwacji — ile, za ile i kiedy — w kafelku pod
+            // nazwiskiem, a nie drobną linijką (review 04.10.2026).
+            if let consultation = LeadWorkflow.consultation(of: client) {
+                ConsultationTile(summary: consultation)
+                    .padding(.top, 14)
             }
             if LeadWorkflow.booking(of: client) == nil, let next = nextEvent(model) {
                 Button {
