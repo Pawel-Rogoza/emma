@@ -374,6 +374,7 @@ final class ThreadStore: ObservableObject {
         }
 
         guard let sent else { return }
+        EmmaHaptics.success()
         // Model czytany na nowo — w trakcie wysyłki mogło przyjść odświeżenie.
         model = phase.value ?? model
         // Odświeżenie mogło już przynieść tę wiadomość — bez dubla w `ForEach`.
@@ -990,7 +991,9 @@ struct ThreadScreen: View {
                 .accessibilityLabel(store.isDictating ? "Zakończ dyktowanie" : "Podyktuj wiadomość")
 
                 Button {
-                    EmmaHaptics.success()
+                    // Lekkie stuknięcie od razu, „sukces” dopiero po przyjęciu
+                    // wiadomości (wcześniej wibrował sukces także przy błędzie).
+                    EmmaHaptics.tap()
                     Task { await store.send(dependencies) }
                 } label: {
                     Image(systemName: "arrow.up")
