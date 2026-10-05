@@ -69,6 +69,11 @@ final class ThreadStore: ObservableObject {
         do {
             let repository = dependencies.repository
             let userID = dependencies.currentUser.id
+            // Stan odczytu i wiadomości nie zależą od osoby — pytamy o nie od
+            // razu, równolegle z wątkiem (05.10.2026). Wcześniej siedem zapytań
+            // szło po kolei i otwarcie rozmowy trwało sekundę albo dwie.
+            async let statesTask = repository.readStates(userID: userID)
+            async let messagesTask = repository.latestMessages(threadID: threadID, limit: pageSize)
             let thread: ConversationThread
             let client: Client
             if let known = try await repository.thread(id: threadID) {
@@ -86,11 +91,12 @@ final class ThreadStore: ObservableObject {
                 phase = .failed(ScreenLoad.failure(for: DomainError.notFound(resource: "rozmowa", id: threadID.rawValue), fallback: "Nie znaleziono rozmowy."))
                 return
             }
-            let states = try await repository.readStates(userID: userID)
+            async let caseTask = Self.legalCase(of: client, repository: repository)
+            let states = try await statesTask
             var threadState = states.first { $0.threadID == threadID }
                 ?? ThreadUserState(userID: userID, threadID: threadID)
 
-            let messages = try await repository.latestMessages(threadID: threadID, limit: pageSize)
+            let messages = try await messagesTask
             let sorted = MessageOrdering.sorted(messages)
             snapshotSequence = sorted.map(\.sequence).max() ?? 0
 
@@ -116,13 +122,8 @@ final class ThreadStore: ObservableObject {
                 snapshotSequenceAtOpen: snapshotSequence
             )
             threadState.manualUnread = false
-            threadState = (try? await repository.saveReadState(threadState)) ?? threadState
             state = threadState
-            dependencies.refreshUnreadTotal()
-            var legalCase: LegalCase?
-            if !client.isWhatsAppContact {
-                legalCase = try await repository.caseForClient(thread.clientID)
-            }
+            let legalCase = try await caseTask
 
             // Ostatni odczyt pola — po wszystkich `await`, żeby nie zgubić liter.
             if let localText = phase.value?.draft.text { draft.text = localText }
@@ -142,6 +143,15 @@ final class ThreadStore: ObservableObject {
                     )
                 )
             )
+            // Odczyt zapisujemy, gdy rozmowa jest już na ekranie — to dwa
+            // zapytania, na które adwokat nie musi czekać.
+            if let saved = try? await repository.saveReadState(threadState) {
+                // Szkic w stanie zmienia tylko `flushDraft` — nie nadpisujemy go.
+                var merged = saved
+                merged.draft = state?.draft ?? saved.draft
+                state = merged
+            }
+            dependencies.refreshUnreadTotal()
             applyPendingDraft(dependencies, threadID: threadID)
             if dependencies.pendingEmmaDraftThreadID == threadID {
                 dependencies.pendingEmmaDraftThreadID = nil
@@ -152,6 +162,15 @@ final class ThreadStore: ObservableObject {
                 dependencies.showToast(message)
             }
         }
+    }
+
+    /// Sprawa osoby z kartoteki; rozmówca spoza kartoteki spraw nie ma.
+    private nonisolated static func legalCase(
+        of client: Client,
+        repository: any EmmaRepository
+    ) async throws -> LegalCase? {
+        guard !client.isWhatsAppContact else { return nil }
+        return try await repository.caseForClient(client.id)
     }
 
     func loadEarlier(_ dependencies: AppDependencies) async {

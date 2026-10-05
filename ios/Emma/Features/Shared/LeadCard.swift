@@ -127,7 +127,7 @@ struct ConsultationTile: View {
                 .background(EmmaTheme.accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
                 Text("KONSULTACJA")
-                    .font(EmmaTypography.ui(11, .semibold))
+                    .font(EmmaTypography.ui(12, .semibold))
                     .tracking(0.7)
                     .foregroundStyle(EmmaTheme.accent)
                 Text(headline)

@@ -22,6 +22,8 @@ struct ConversationRow: View {
     let unreadCount: Int
     let isPinned: Bool
     let hasDraft: Bool
+    /// Treść szkicu — „Szkic: Dzień dobry…” jak w WhatsAppie.
+    var draftText: String? = nil
     let status: ConversationStatus
     let waitingSince: Date?
     /// Okno 24 h WhatsApp — ostrzeżenie pod linijką stanu, gdy się zamyka.
@@ -124,7 +126,11 @@ struct ConversationRow: View {
     }
 
     private var previewText: String {
-        if hasDraft { return "w toku" }
+        if hasDraft {
+            let text = draftText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            // Sam cytat bez tekstu to też zaczęta odpowiedź.
+            return text.isEmpty ? "odpowiedź w toku" : text
+        }
         return preview?.previewText ?? "Brak wiadomości"
     }
 
@@ -191,6 +197,7 @@ struct ConversationRow: View {
             parts.append(preview.isOutgoing ? "Twoja wiadomość: \(preview.previewText)" : preview.previewText)
             parts.append(timeLabel)
         }
+        if hasDraft { parts.append("szkic: \(previewText)") }
         if isPinned { parts.append("przypięta") }
         return parts.joined(separator: ", ")
     }

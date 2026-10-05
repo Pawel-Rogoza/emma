@@ -123,6 +123,28 @@ final class MessagesStore: ObservableObject {
     /// Ile ostatnich wiadomości wątku czytamy na liście (stan, czekanie, okno 24 h).
     private static let messagesPerThread = 60
 
+    /// Wiadomości wątków z poprzedniego wczytania razem z najwyższym numerem,
+    /// przy którym je pobrano. Lista odświeża się co 30 s i przy każdym wejściu
+    /// na „Dzisiaj” i „Klientów” — bez tej pamięci każde odświeżenie pytało
+    /// serwer o wiadomości **każdego** wątku (przy setkach rozmów WhatsApp
+    /// setki zapytań). Teraz pytamy tylko o wątki, w których coś się zmieniło.
+    private var messageCache: [ThreadID: CachedMessages] = [:]
+
+    private struct CachedMessages {
+        let watermark: Int
+        let messages: [Message]
+
+        /// Czy trzeba zapytać serwer ponownie. Nowa wiadomość podnosi numer
+        /// wątku; status dostarczenia (ptaszki) zmienia się bez nowego numeru,
+        /// więc nasza ostatnia wiadomość jeszcze nieprzeczytana też się odświeża.
+        /// Numer 0 to „serwer nie podał” — wtedy nie ufamy pamięci.
+        func isStale(watermark current: Int) -> Bool {
+            guard current > 0, current == watermark else { return true }
+            guard let last = messages.last, last.direction == .outgoing else { return false }
+            return last.transport != .read && last.transport != .failed
+        }
+    }
+
     /// `silent` — odświeżenie w tle (co pół minuty): błąd sieci nie pokazuje
     /// komunikatu ani ekranu błędu, lista zostaje taka, jaka była.
     func load(_ dependencies: AppDependencies, silent: Bool = false) async {
@@ -161,10 +183,14 @@ final class MessagesStore: ObservableObject {
             // Wiadomości wątków pobieramy równolegle. Po kolei — przy prawdziwym
             // WhatsApp i kilkudziesięciu rozmowach — lista wczytywała się
             // kilka sekund, bo każdy wątek to osobne zapytanie do serwera.
-            let visible = conversations.map(\.thread)
+            // Wątki bez zmian od poprzedniego wczytania biorą wiadomości z pamięci.
+            let cache = messageCache
+            let stale = conversations.map(\.thread).filter { thread in
+                cache[thread.id]?.isStale(watermark: thread.sequenceHighWatermark) ?? true
+            }
             let limit = Self.messagesPerThread
-            let messagesByThread = try await withThrowingTaskGroup(of: (ThreadID, [Message]).self) { group in
-                for thread in visible {
+            let fetched = try await withThrowingTaskGroup(of: (ThreadID, [Message]).self) { group in
+                for thread in stale {
                     group.addTask {
                         (thread.id, try await repository.latestMessages(threadID: thread.id, limit: limit))
                     }
@@ -175,6 +201,14 @@ final class MessagesStore: ObservableObject {
                 }
                 return result
             }
+            var messagesByThread: [ThreadID: [Message]] = [:]
+            var nextCache: [ThreadID: CachedMessages] = [:]
+            for (thread, _) in conversations {
+                let messages = fetched[thread.id] ?? cache[thread.id]?.messages ?? []
+                messagesByThread[thread.id] = messages
+                nextCache[thread.id] = CachedMessages(watermark: thread.sequenceHighWatermark, messages: messages)
+            }
+            messageCache = nextCache
 
             var rows: [Row] = []
             for (thread, client) in conversations {
@@ -195,7 +229,7 @@ final class MessagesStore: ObservableObject {
                             state: state,
                             threadID: thread.id
                         ),
-                        hasDraft: !(state.draft?.isEmpty ?? true),
+                        hasDraft: state.draft.map { !$0.isEmpty || $0.quote != nil } ?? false,
                         status: ConversationInbox.status(lastMessage: sorted.last, unreadCount: unread),
                         waitingSince: ConversationInbox.waitingSince(sorted),
                         state: state,
@@ -405,6 +439,7 @@ struct MessagesScreen: View {
             unreadCount: row.unreadCount,
             isPinned: row.isPinned,
             hasDraft: row.hasDraft,
+            draftText: row.state.draft?.text,
             status: row.status,
             waitingSince: row.waitingSince,
             replyWindow: row.replyWindow
