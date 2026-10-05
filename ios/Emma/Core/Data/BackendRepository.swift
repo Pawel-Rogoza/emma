@@ -14,17 +14,33 @@ import FoundationNetworking
 // „sprawdzone, nic nie ma”. Wyjątkiem są rozmowy: backend naprawdę nie prowadzi
 // jeszcze wątków, więc pusty wynik jest prawdą o stanie, nie atrapą.
 //
-// Typ jest niezmienną strukturą (`Sendable`), więc nie potrzebuje blokad —
-// nie ma współdzielonego stanu mutowalnego.
+// Typ jest niezmienną strukturą (`Sendable`), więc nie potrzebuje blokad.
+// Wspólny stan mieszka w dwóch aktorach: trwające zapytanie o listę rozmów
+// (`SharedRequest` — łączenie równoległych pytań, nie pamięć podręczna)
+// i szkice odpowiedzi bieżącej sesji (`LocalDraftStore`, serwer ich nie zna).
 
 public struct BackendRepository: EmmaRepository, Sendable {
 
     private let api: BackendAPIClient
+    /// Lista rozmów, o którą pytają naraz `threads`, `readStates`,
+    /// `unassignedConversations` i `unreadTotal` (jedno wczytanie „Rozmów”
+    /// to trzy z nich). Równoległe pytania dostają wynik jednego zapytania.
+    private let threadListRequest = SharedRequest<BackendThreadList>()
+    /// Szkice odpowiedzi w pamięci telefonu (05.10.2026). Serwer nie ma trasy
+    /// na szkic, więc `saveDraft` rzucał „niedostępne”: tekst pisany w rozmowie
+    /// i szkic od Emmy znikały po wyjściu z wątku, a cytowanie wiadomości
+    /// kończyło się błędem. Tylko w pamięci, nie na dysku — znika z procesem
+    /// aplikacji i przy wylogowaniu (`discardLocalDrafts`).
+    private let localDrafts = LocalDraftStore()
     /// Górny limit stron przy domykaniu stronicowania listy kontaktów.
-    /// Dziesięć stron po 30 pozycji to 300 kontaktów — więcej niż kancelaria
-    /// ma dzisiaj, a jednocześnie granica, która nie pozwala zapętlić się
-    /// w nieskończoność, gdyby serwer zwracał sprzeczne `has_more`.
-    private static let maxClientPages = 10
+    /// Dwadzieścia stron po 100 pozycji to 2000 kontaktów. Wcześniej było
+    /// 10 × 30 = 300 — leady z WhatsAppa przybywają codziennie, a powyżej tej
+    /// granicy reszta listy ginęła po cichu. Granica nadal nie pozwala
+    /// zapętlić się, gdyby serwer zwracał sprzeczne `has_more`.
+    private static let maxClientPages = 20
+    /// Pełna lista idzie największymi stronami, jakie przyjmuje serwer (100):
+    /// strony są pobierane po kolei, więc każda mniej to krótsze wczytanie.
+    private static let clientPageSize = 100
 
     /// Klucz idempotencji dla pojedynczego zamiaru zapisu.
     ///
@@ -82,7 +98,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
         var cursor: String?
         var pages = 0
         repeat {
-            let page = try await api.clients(query: query, stage: stage, cursor: cursor)
+            let page = try await api.clients(query: query, stage: stage, limit: Self.clientPageSize, cursor: cursor)
             collected.append(contentsOf: page.items)
             // Zabezpieczenie: gdyby serwer powiedział `has_more` bez kursora,
             // kończymy, zamiast zapętlić się w nieskończoność.
@@ -571,17 +587,15 @@ public struct BackendRepository: EmmaRepository, Sendable {
     // wersję stanu do zapisu bierze ze świeżej listy, a nie z pamięci podręcznej,
     // która mogłaby być nieaktualna po zmianie na drugim urządzeniu.
 
+    /// Lista z `include_unassigned=1` zawiera wszystko, co lista bez niego
+    /// (rozmowy bez osoby odpada `mapThread`), więc wszystkie odczyty dzielą
+    /// jedno zapytanie.
     public func threads() async throws -> [ConversationThread] {
         try await threadList()?.items.compactMap(Self.mapThread) ?? []
     }
 
     public func unassignedConversations() async throws -> [UnassignedConversation] {
-        let list: BackendThreadList
-        do {
-            list = try await api.threads(includeUnassigned: true)
-        } catch BackendRepositoryError.notAvailableInBackend {
-            return []
-        }
+        guard let list = try await threadList() else { return [] }
         return try list.items.compactMap { dto in
             guard dto.clientID == nil else { return nil }
             let phone = dto.contactPhone ?? ""
@@ -637,12 +651,13 @@ public struct BackendRepository: EmmaRepository, Sendable {
     /// nie ma — ekran pokazuje stan pusty zamiast błędu, a karta klienta,
     /// która też czyta rozmowy, nadal się otwiera.
     ///
-    /// `includeUnassigned` — także rozmowy spoza kartoteki. Stan odczytu
-    /// i licznik nowych liczymy dla **wszystkich** rozmów (03.10.2026): wcześniej
-    /// odczyt rozmowy bez osoby nie miał się gdzie zapisać.
-    private func threadList(includeUnassigned: Bool = false) async throws -> BackendThreadList? {
+    /// Zawsze z rozmowami spoza kartoteki. Stan odczytu i licznik nowych
+    /// liczymy dla **wszystkich** rozmów (03.10.2026): wcześniej odczyt rozmowy
+    /// bez osoby nie miał się gdzie zapisać.
+    private func threadList() async throws -> BackendThreadList? {
+        let api = self.api
         do {
-            return try await api.threads(includeUnassigned: includeUnassigned)
+            return try await threadListRequest.run { try await api.threads(includeUnassigned: true) }
         } catch BackendRepositoryError.notAvailableInBackend {
             return nil
         }
@@ -674,7 +689,10 @@ public struct BackendRepository: EmmaRepository, Sendable {
             // nie może wysłać klientowi drugiej wiadomości.
             idempotencyKey: draft.idempotencyKey
         )
-        return try Self.mapMessage(dto)
+        let message = try Self.mapMessage(dto)
+        // Wysłana wiadomość czyści szkic autora — jak w Demo.
+        await localDrafts.remove(threadID: draft.threadID)
+        return message
     }
 
     public func saveReadState(_ state: ThreadUserState) async throws -> ThreadUserState {
@@ -682,7 +700,14 @@ public struct BackendRepository: EmmaRepository, Sendable {
     }
 
     public func readStates(userID: UserID) async throws -> [ThreadUserState] {
-        try await threadList(includeUnassigned: true)?.items.map { Self.mapUserState($0, userID: userID) } ?? []
+        let states = try await threadList()?.items.map { Self.mapUserState($0, userID: userID) } ?? []
+        let drafts = await localDrafts.all()
+        guard !drafts.isEmpty else { return states }
+        return states.map { state in
+            var state = state
+            state.draft = drafts[state.threadID]
+            return state
+        }
     }
 
     public func saveThreadPreferences(_ state: ThreadUserState) async throws -> ThreadUserState {
@@ -720,7 +745,13 @@ public struct BackendRepository: EmmaRepository, Sendable {
     }
 
     public func saveDraft(_ draft: Draft?) async throws {
-        throw notAvailable("zapis szkicu wiadomości")
+        guard let draft else { return }
+        await localDrafts.save(draft)
+    }
+
+    /// Wylogowanie albo zmiana konta — szkice poprzedniej osoby znikają.
+    public func discardLocalDrafts() async {
+        await localDrafts.removeAll()
     }
 
     public func applyProviderStatus(
@@ -732,7 +763,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
     }
 
     public func unreadTotal(userID: UserID) async throws -> Int {
-        try await threadList(includeUnassigned: true)?.unreadTotal ?? 0
+        try await threadList()?.unreadTotal ?? 0
     }
 
     // MARK: Mapowanie rozmów
@@ -1343,3 +1374,46 @@ extension BackendRepository: CaseDocumentsRepository {
     }
 }
 
+// MARK: - Łączenie równoległych zapytań
+
+/// Jedno zapytanie dla wielu równoczesnych pytających. To nie jest pamięć
+/// podręczna: po zakończeniu zapytania następne pytanie idzie do serwera.
+/// Zapis stanu wątku i tak czyta wersję z osobnego, świeżego zapytania.
+actor SharedRequest<Value: Sendable> {
+    private var inFlight: (id: Int, task: Task<Value, any Error>)?
+    private var nextID = 0
+
+    func run(_ fetch: @escaping @Sendable () async throws -> Value) async throws -> Value {
+        if let inFlight { return try await inFlight.task.value }
+        nextID += 1
+        let id = nextID
+        let task = Task { try await fetch() }
+        inFlight = (id, task)
+        defer { if inFlight?.id == id { inFlight = nil } }
+        return try await task.value
+    }
+}
+
+// MARK: - Szkice w pamięci telefonu
+
+/// Szkice odpowiedzi bieżącej sesji. Pusty szkic (bez tekstu i cytatu) jest
+/// usuwany, żeby lista rozmów nie pokazywała „Szkic:” bez treści.
+actor LocalDraftStore {
+    private var drafts: [ThreadID: Draft] = [:]
+
+    func save(_ draft: Draft) {
+        drafts[draft.threadID] = draft.isEmpty && draft.quote == nil ? nil : draft
+    }
+
+    func all() -> [ThreadID: Draft] {
+        drafts
+    }
+
+    func remove(threadID: ThreadID) {
+        drafts[threadID] = nil
+    }
+
+    func removeAll() {
+        drafts = [:]
+    }
+}

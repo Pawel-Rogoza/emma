@@ -262,8 +262,16 @@ struct ClientCardScreen: View {
     private func quickActions(_ model: ClientCardModel) -> some View {
         let client = model.client
         let caseID = model.legalCase?.id
-        return QuickActions([
-            contactAction(model),
+        var actions = [contactAction(model)]
+        // Rozmowa WhatsApp w aplikacji (05.10.2026): przy znanym numerze pierwszy
+        // kafelek dzwoni, a do wątku nie było drogi z karty — przycisk
+        // „WhatsApp” niżej otwiera zewnętrzną aplikację, nie historię w Emmie.
+        if client.phone.flatMap(ContactLinks.phoneURL) != nil, let threadID = model.threadID {
+            actions.append(QuickActions.Action(systemImage: "bubble.left.and.bubble.right", title: "Rozmowa") {
+                dependencies.openThread(threadID)
+            })
+        }
+        return QuickActions(actions + [
             QuickActions.Action(systemImage: "sparkles", title: "Emma") {
                 dependencies.openEmma(clientID: client.id)
             },
@@ -329,8 +337,9 @@ struct ClientCardScreen: View {
         return "\(day), \(dependencies.dateText.clockTime(receivedAt))"
     }
 
-    /// WhatsApp i e-mail poza aplikacją — skrzynka WhatsApp w Emmie nie jest
-    /// jeszcze połączona z numerem kancelarii, a klient czeka na odpowiedź teraz.
+    /// WhatsApp i e-mail poza aplikacją — np. po 24 h od wiadomości klienta,
+    /// gdy z Emmy WhatsApp przyjmuje już tylko szablon, a z aplikacji WhatsApp
+    /// Business na telefonie kancelarii da się odpisać.
     @ViewBuilder
     private func contactLinks(_ client: Client) -> some View {
         let whatsApp = client.phone.flatMap(ContactLinks.whatsAppURL)

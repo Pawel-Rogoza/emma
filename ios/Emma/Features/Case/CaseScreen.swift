@@ -64,33 +64,36 @@ final class CaseStore: ObservableObject {
         // do stanu ładowania, więc sprawa zachowuje pozycję i wybraną zakładkę.
         if !phase.hasLoaded { phase = .loading }
         do {
-            guard let legalCase = try await dependencies.repository.legalCase(id: caseID) else {
-                phase = .failed(ScreenLoad.failure(for: DomainError.notFound(resource: "sprawa", id: caseID.rawValue), fallback: "Nie znaleziono sprawy."))
-                return
-            }
-            guard let client = try await dependencies.repository.client(id: legalCase.clientID) else {
-                phase = .failed(ScreenLoad.failure(for: DomainError.notFound(resource: "klient", id: legalCase.clientID.rawValue), fallback: "Nie znaleziono klienta."))
-                return
-            }
             let today = dependencies.today
             let repository = dependencies.repository
-            // Zapytania są niezależne, więc idą równolegle (wcześniej po kolei).
-            // Terminy tylko tego klienta i od niedawna: backend oddaje najwyżej
-            // 200 pozycji od najstarszej, więc szerokie okno dla wszystkich
-            // klientów gubiło nadchodzące terminy sprawy.
+            // Zadania, terminy sprawy i historia nie zależą od klienta — idą od
+            // razu, równolegle z odczytem sprawy (05.10.2026).
             async let tasksTask = repository.tasks(filter: TaskFilter(scope: .all, caseID: caseID))
-            async let eventsTask = repository.events(
-                in: DateIntervalFilter(from: today.adding(days: -30), through: today.adding(days: 365 * 2)),
-                clientID: legalCase.clientID
-            )
             // Audyt 28.09.2026: termin sprawy bez wpisanego klienta (rozprawa
             // z kalendarza sądu) nie przychodził z zapytania po kliencie, więc
             // znikał z ekranu sprawy. Drugie, krótsze okno bez filtra klienta.
             async let caseEventsTask = repository.events(
                 in: DateIntervalFilter(from: today.adding(days: -30), through: today.adding(days: 120))
             )
-            async let notesTask = repository.notes(clientID: legalCase.clientID, caseID: caseID)
             async let activityTask = repository.activity(caseID: caseID)
+            guard let legalCase = try await dependencies.repository.legalCase(id: caseID) else {
+                phase = .failed(ScreenLoad.failure(for: DomainError.notFound(resource: "sprawa", id: caseID.rawValue), fallback: "Nie znaleziono sprawy."))
+                return
+            }
+            // Zapytania są niezależne, więc idą równolegle (wcześniej po kolei).
+            // Terminy tylko tego klienta i od niedawna: backend oddaje najwyżej
+            // 200 pozycji od najstarszej, więc szerokie okno dla wszystkich
+            // klientów gubiło nadchodzące terminy sprawy.
+            async let eventsTask = repository.events(
+                in: DateIntervalFilter(from: today.adding(days: -30), through: today.adding(days: 365 * 2)),
+                clientID: legalCase.clientID
+            )
+            async let notesTask = repository.notes(clientID: legalCase.clientID, caseID: caseID)
+            async let clientTask = repository.client(id: legalCase.clientID)
+            guard let client = try await clientTask else {
+                phase = .failed(ScreenLoad.failure(for: DomainError.notFound(resource: "klient", id: legalCase.clientID.rawValue), fallback: "Nie znaleziono klienta."))
+                return
+            }
             let tasks = try await tasksTask
             let clientEvents = try await eventsTask
             let caseEvents = ((try? await caseEventsTask) ?? []).filter { $0.caseID == caseID }

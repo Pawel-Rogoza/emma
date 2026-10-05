@@ -720,7 +720,9 @@ public final class AppDependencies: ObservableObject {
         let userID = currentUser.id
         Task { [weak self] in
             guard let self else { return }
-            let total = (try? await self.repository.unreadTotal(userID: userID)) ?? 0
+            // Jak plakietka leadów: błąd sieci zostawia poprzednią liczbę,
+            // zamiast gasić licznik nieprzeczytanych do zera.
+            guard let total = try? await self.repository.unreadTotal(userID: userID) else { return }
             self.unreadTotal = total
         }
     }
@@ -780,6 +782,10 @@ public final class AppDependencies: ObservableObject {
         leadsNeedingAction = 0
         recentClients = RecentClients()
         UserDefaults.standard.removeObject(forKey: Self.recentClientsKey)
+        // Szkice odpowiedzi poprzedniej osoby (pamięć telefonu) — też znikają.
+        if let backend = repository as? BackendRepository {
+            Task { await backend.discardLocalDrafts() }
+        }
         dataVersion &+= 1
     }
 

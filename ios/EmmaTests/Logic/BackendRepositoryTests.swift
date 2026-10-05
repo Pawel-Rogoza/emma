@@ -844,6 +844,21 @@ final class BackendRepositoryTests: XCTestCase {
 
         let threads = try await repository.threads()
         XCTAssertEqual(threads.map(\.id.rawValue), ["thread-3"])
+        // Wszystkie odczyty listy rozmów pytają o tę samą listę — dzięki temu
+        // równoległe pytania jednego ekranu łączą się w jedno zapytanie.
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.query, "include_unassigned=1")
+    }
+
+    /// Kolejne, nie równoległe odczyty nie biorą starego wyniku: łączenie
+    /// zapytań to nie pamięć podręczna.
+    func testSequentialThreadReadsAskServerEachTime() async throws {
+        StubURLProtocol.respond(json: Data(Self.threadsJSON.utf8), status: 200)
+        let repository = makeRepository()
+
+        _ = try await repository.threads()
+        _ = try await repository.unreadTotal(userID: UserID("user-1"))
+
+        XCTAssertEqual(StubURLProtocol.requestCount, 2)
     }
 
     func testDraftReplyComesFromServerModel() async throws {
@@ -930,6 +945,41 @@ final class BackendRepositoryTests: XCTestCase {
         XCTAssertEqual(message.transport, .accepted)
         XCTAssertEqual(message.source, .app)
         XCTAssertEqual(message.providerMessageID, "wamid.X")
+    }
+
+    /// Serwer nie zna szkiców, więc telefon trzyma je sam: szkic wraca ze stanem
+    /// wątku (lista rozmów i ponowne wejście), wysyłka i wylogowanie go czyszczą.
+    func testDraftLivesOnPhoneUntilSentOrSignedOut() async throws {
+        let sent = #"{"id":"message-9","thread_id":"thread-3","direction":"outgoing","author_id":"user-1","author_label":null,"provider_message_id":null,"kind":"text","attachment_type":null,"text":"Dzień dobry","translation":null,"sent_at":"2026-09-30T10:00:00.000Z","sequence":5,"transport":"accepted","source":"app","origin":"api","version":2}"#
+        StubURLProtocol.respond { request, _ in
+            request.httpMethod == "POST" ? (202, Data(sent.utf8)) : (200, Data(Self.threadsJSON.utf8))
+        }
+        let repository = makeRepository()
+        let user = UserID("user-1")
+        let thread = ThreadID("thread-3")
+
+        try await repository.saveDraft(Draft(threadID: thread, text: "Dzień dobry", language: .pl))
+        var state = try await repository.readStates(userID: user).first
+        XCTAssertEqual(state?.draft?.text, "Dzień dobry")
+        // Stan z serwera zostaje nienaruszony obok szkicu.
+        XCTAssertEqual(state?.readCursorSequence, 2)
+
+        _ = try await repository.appendOutgoing(OutgoingMessageDraft(
+            threadID: thread, text: "Dzień dobry", authorID: user,
+            language: .pl, sentAt: Date(), idempotencyKey: "idem-3"
+        ))
+        state = try await repository.readStates(userID: user).first
+        XCTAssertNil(state?.draft)
+
+        try await repository.saveDraft(Draft(threadID: thread, text: "Jutro o 10?", language: .pl))
+        await repository.discardLocalDrafts()
+        state = try await repository.readStates(userID: user).first
+        XCTAssertNil(state?.draft)
+
+        // Pusty szkic to brak szkicu („Szkic:” bez treści na liście).
+        try await repository.saveDraft(Draft(threadID: thread, text: "  ", language: .pl))
+        state = try await repository.readStates(userID: user).first
+        XCTAssertNil(state?.draft)
     }
 
     /// Zamknięte okno 24 h: komunikat serwera trafia do użytkownika, a nie „błąd”.

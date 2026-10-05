@@ -503,7 +503,9 @@ struct TodayScreen: View {
                     dependencies.present(.eventForm(editing: nil, clientID: event.clientID, caseID: event.caseID, initialDay: nil))
                 }
                 debriefButton("Załatwione", systemImage: "checkmark") {
-                    Task { await EventActions.finish(event, dependencies: dependencies) }
+                    // Ta sama ścieżka co menu wiersza — z komunikatem błędu,
+                    // który wcześniej tu przepadał (termin „nie znikał” bez słowa).
+                    Task { await finishEvent(event) }
                 }
             }
         }

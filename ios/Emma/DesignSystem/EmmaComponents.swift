@@ -990,7 +990,10 @@ public struct QuickActions: View {
                             .font(EmmaTypography.caption(.medium))
                             .foregroundStyle(EmmaTheme.ink)
                             .multilineTextAlignment(.center)
-                            .lineLimit(2)
+                            // Pięć kafelków na 375 pt: jednowyrazowy podpis
+                            // („Zadzwoń”) zmniejsza się, zamiast łamać się w środku słowa.
+                            .lineLimit(actions.count > 4 ? 1 : 2)
+                            .minimumScaleFactor(actions.count > 4 ? 0.8 : 1)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, minHeight: EmmaMetrics.quickActionMinHeight)

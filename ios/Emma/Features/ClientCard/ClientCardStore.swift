@@ -30,18 +30,20 @@ final class ClientCardStore: ObservableObject {
         if !phase.hasLoaded { phase = .loading }
         do {
             let repository = dependencies.repository
-            guard let client = try await repository.client(id: clientID) else {
-                phase = .failed(LoadFailure(message: "Nie znaleziono karty klienta.", isRetryable: false))
-                return
-            }
-
             let window = ClientCardEventWindow.presentation(today: dependencies.today)
+            // Wszystkie odczyty idą od razu, razem z osobą (05.10.2026) —
+            // wcześniej reszta czekała, aż wróci karta klienta.
+            async let clientTask = repository.client(id: clientID)
             async let legalCaseTask = repository.caseForClient(clientID)
             async let eventsTask = repository.events(in: window, clientID: clientID)
             async let notesTask = repository.notes(clientID: clientID, caseID: nil)
             async let threadsTask = repository.threads()
             async let allCasesTask = repository.cases(status: nil)
 
+            guard let client = try await clientTask else {
+                phase = .failed(LoadFailure(message: "Nie znaleziono karty klienta.", isRetryable: false))
+                return
+            }
             let legalCase = try await legalCaseTask
             let events = try await eventsTask
             var notes = try await notesTask
