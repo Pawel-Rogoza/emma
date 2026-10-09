@@ -365,7 +365,7 @@ struct TodayScreen: View {
             parts.append(EmmaPlural.overdueTasks(summary.overdue))
         }
         if dependencies.unreadTotal > 0 {
-            parts.append(EmmaPlural.label(dependencies.unreadTotal, "nowa wiadomość", "nowe wiadomości", "nowych wiadomości"))
+            parts.append(EmmaPlural.unreadConversations(dependencies.unreadTotal))
         }
         return parts.isEmpty ? "Spokojny dzień — nic nie goni." : parts.joined(separator: " · ")
     }
@@ -646,7 +646,7 @@ struct TodayScreen: View {
                     .frame(width: 34, height: 34)
                     .background(EmmaTheme.unreadDivider, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(EmmaPlural.label(count, "nowa wiadomość", "nowe wiadomości", "nowych wiadomości"))
+                    Text(EmmaPlural.unreadConversations(count))
                         .font(EmmaTypography.ui(14, .semibold))
                         .foregroundStyle(EmmaTheme.ink)
                         .contentTransition(.numericText())

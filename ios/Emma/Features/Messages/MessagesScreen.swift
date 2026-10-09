@@ -91,9 +91,9 @@ final class MessagesStore: ObservableObject {
             allRows.filter(filter.includes).count
         }
 
-        /// Liczba nowych wiadomości (nie rozmów) — jak licznik na zakładce.
-        var unreadMessages: Int {
-            allRows.reduce(0) { $0 + $1.unreadCount }
+        /// Liczba rozmów z nowymi wiadomościami — jak licznik na zakładce.
+        var unreadConversations: Int {
+            allRows.filter { $0.unreadCount > 0 }.count
         }
 
         var repliedCount: Int {
