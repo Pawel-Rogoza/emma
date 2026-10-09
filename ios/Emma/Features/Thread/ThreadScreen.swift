@@ -155,7 +155,8 @@ final class ThreadStore: ObservableObject {
             applyPendingDraft(dependencies, threadID: threadID)
             if dependencies.pendingEmmaDraftThreadID == threadID {
                 dependencies.pendingEmmaDraftThreadID = nil
-                await draftWithEmma(dependencies)
+                // Rozmowa e-mail nie ma pola odpowiedzi — szkic nie miałby gdzie trafić.
+                if !thread.isEmail { await draftWithEmma(dependencies) }
             }
         } catch {
             if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać rozmowy.") {

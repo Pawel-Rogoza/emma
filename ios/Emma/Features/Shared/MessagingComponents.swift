@@ -194,6 +194,7 @@ struct ConversationRow: View {
 
     private var accessibilityLabel: String {
         var parts = [client.displayName]
+        if thread.isEmail { parts.append("e-mail") }
         if unreadCount > 0 { parts.append(EmmaPlural.unread(unreadCount)) }
         if isOverdue {
             parts.append("ponad 24 godziny bez odpowiedzi")

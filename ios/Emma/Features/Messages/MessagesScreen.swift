@@ -470,21 +470,34 @@ struct MessagesScreen: View {
                 Label(row.isPinned ? "Odepnij" : "Przypnij", systemImage: row.isPinned ? "pin.slash" : "pin")
             }
             .tint(EmmaTheme.pillAmberText)
-            Button {
-                prepareReply(row)
-            } label: {
-                Label("Emma", systemImage: "sparkles")
+            // Szkic Emmy trafia do pola odpowiedzi — rozmowa e-mail go nie ma.
+            if !row.thread.isEmail {
+                Button {
+                    prepareReply(row)
+                } label: {
+                    Label("Emma", systemImage: "sparkles")
+                }
+                .tint(EmmaTheme.primaryButton)
             }
-            .tint(EmmaTheme.primaryButton)
         }
     }
 
     @ViewBuilder
     private func rowMenu(_ row: MessagesStore.Row) -> some View {
-        Button {
-            prepareReply(row)
-        } label: {
-            Label("Przygotuj odpowiedź z Emmą", systemImage: "sparkles")
+        if let address = row.thread.emailAddress {
+            if let mailURL = ContactLinks.mailReplyURL(address, subject: row.preview?.subject) {
+                Button {
+                    openURL(mailURL)
+                } label: {
+                    Label("Odpowiedz w Poczcie", systemImage: "envelope")
+                }
+            }
+        } else {
+            Button {
+                prepareReply(row)
+            } label: {
+                Label("Przygotuj odpowiedź z Emmą", systemImage: "sparkles")
+            }
         }
         Button {
             Task { await toggleRead(row) }
