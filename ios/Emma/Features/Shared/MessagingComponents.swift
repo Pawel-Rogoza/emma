@@ -93,7 +93,8 @@ struct ConversationRow: View {
 
     /// Klient czeka ponad 24 h — WhatsApp przyjmie już tylko zatwierdzony szablon.
     private var isOverdue: Bool {
-        guard needsReply else { return false }
+        // Okno 24 h to reguła WhatsAppa — mail nie „przeterminowuje się”.
+        guard needsReply, !thread.isEmail else { return false }
         if replyWindow.isClosed { return true }
         guard let waitingSince else { return false }
         return dependencies.now.timeIntervalSince(waitingSince) >= ReplyWindow.duration
@@ -131,7 +132,13 @@ struct ConversationRow: View {
             // Sam cytat bez tekstu to też zaczęta odpowiedź.
             return text.isEmpty ? "odpowiedź w toku" : text
         }
-        return preview?.previewText ?? "Brak wiadomości"
+        guard let preview else { return "Brak wiadomości" }
+        // Mail: koperta i temat przed treścią — od razu widać, że to poczta.
+        if thread.isEmail {
+            let subject = preview.subject?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return subject.isEmpty ? "✉︎ \(preview.previewText)" : "✉︎ \(subject) — \(preview.previewText)"
+        }
+        return preview.previewText
     }
 
     /// Prawa kolumna pod godziną: licznik nowych, kropka „bez odpowiedzi”
@@ -441,6 +448,12 @@ struct MessageBubble: View {
                         .overlay(alignment: .bottomTrailing) { attachmentMeta }
                 }
             } else {
+                if let subject = message.subject?.trimmingCharacters(in: .whitespacesAndNewlines), !subject.isEmpty {
+                    Text(subject)
+                        .font(EmmaTypography.ui(15, .semibold))
+                        .foregroundStyle(EmmaTheme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 textWithMeta(message.text)
             }
         }

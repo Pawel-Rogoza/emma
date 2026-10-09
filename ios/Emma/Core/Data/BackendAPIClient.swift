@@ -562,7 +562,10 @@ public struct BackendAPIClient: Sendable {
     func threads(includeUnassigned: Bool = false) async throws -> BackendThreadList {
         try await get(
             Endpoint.threads.rawValue,
-            query: includeUnassigned ? [URLQueryItem(name: "include_unassigned", value: "1")] : []
+            // Rozmowy e-mail (poczta kancelarii) serwer daje tylko aplikacji,
+            // która umie je pokazać — starsze wersje dostają sam WhatsApp.
+            query: [URLQueryItem(name: "include_email", value: "1")]
+                + (includeUnassigned ? [URLQueryItem(name: "include_unassigned", value: "1")] : [])
         )
     }
 
@@ -1514,9 +1517,11 @@ struct BackendMessageDTO: Decodable {
     /// Rozszerzenie kontraktu: customer, business_app, api, history.
     let origin: String?
     let version: Int
+    /// Rozszerzenie 10.10.2026: temat maila (rozmowy e-mail).
+    let subject: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, direction, kind, text, translation, sequence, transport, source, origin, version
+        case id, direction, kind, text, translation, sequence, transport, source, origin, version, subject
         case threadID = "thread_id"
         case authorID = "author_id"
         case authorLabel = "author_label"
@@ -1545,9 +1550,13 @@ struct BackendThreadSummaryDTO: Decodable {
     /// Rozszerzenie 02.10.2026: numer rozmówcy i znacznik rozmowy bez osoby.
     let contactPhone: String?
     let isUnassigned: Bool?
+    /// Rozszerzenie 10.10.2026: kanał (`whatsapp` / `email`) i adres rozmówcy.
+    let channel: String?
+    let contactEmail: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, preview
+        case id, preview, channel
+        case contactEmail = "contact_email"
         case contactPhone = "contact_phone"
         case isUnassigned = "is_unassigned"
         case clientID = "client_id"

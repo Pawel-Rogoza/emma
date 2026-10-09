@@ -34,7 +34,7 @@ extension Client {
             displayName: conversation.name,
             initials: ChatIdentity.initials(conversation.name),
             language: .pl,
-            topic: "Spoza kartoteki",
+            topic: conversation.email == nil ? "Spoza kartoteki" : "E-mail spoza kartoteki",
             stage: .new,
             source: .whatsApp,
             createdAt: createdAt,
@@ -51,7 +51,8 @@ extension ConversationThread {
         ConversationThread(
             id: conversation.threadID,
             clientID: .whatsAppContact(conversation.threadID),
-            sequenceHighWatermark: conversation.preview?.sequence ?? 0
+            sequenceHighWatermark: conversation.preview?.sequence ?? 0,
+            emailAddress: conversation.email
         )
     }
 }

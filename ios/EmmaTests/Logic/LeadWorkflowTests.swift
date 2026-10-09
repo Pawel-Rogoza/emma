@@ -279,6 +279,17 @@ final class LeadWorkflowTests: XCTestCase {
         // Adres z formularza strony nie może dopisać ukrytych odbiorców ani treści.
         XCTAssertNil(ContactLinks.mailURL("anna@example.com?bcc=obcy@evil.test&body=x"))
         XCTAssertNil(ContactLinks.mailURL("anna@example.com,obcy@evil.test"))
+        // Odpowiedź na mail: temat „Re: …” zakodowany ściśle, bez doklejania drugiego „Re:”.
+        XCTAssertEqual(
+            ContactLinks.mailReplyURL("anna@example.com", subject: "Karta pobytu & termin")?.absoluteString,
+            "mailto:anna@example.com?subject=Re%3A%20Karta%20pobytu%20%26%20termin"
+        )
+        XCTAssertEqual(
+            ContactLinks.mailReplyURL("anna@example.com", subject: "RE: x")?.absoluteString,
+            "mailto:anna@example.com?subject=RE%3A%20x"
+        )
+        XCTAssertEqual(ContactLinks.mailReplyURL("anna@example.com", subject: nil)?.absoluteString, "mailto:anna@example.com")
+        XCTAssertNil(ContactLinks.mailReplyURL("anna@example.com?bcc=x@y.z", subject: "x"))
         XCTAssertNil(ContactLinks.mailURL("anna@example.com%0Abcc:obcy@evil.test"))
         XCTAssertNil(ContactLinks.mailURL("anna@@example.com"))
         XCTAssertNil(ContactLinks.mailURL("anna@localhost"))

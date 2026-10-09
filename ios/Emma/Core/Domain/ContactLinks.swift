@@ -60,6 +60,18 @@ public enum ContactLinks {
         return URL(string: "mailto:\(trimmed)")
     }
 
+    /// Odpowiedź na mail w programie pocztowym: adres jak w `mailURL` plus
+    /// temat „Re: …” zakodowany ściśle (temat pochodzi od nadawcy maila).
+    public static func mailReplyURL(_ raw: String, subject: String?) -> URL? {
+        guard let base = mailURL(raw) else { return nil }
+        let original = subject?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !original.isEmpty else { return base }
+        let reply = original.lowercased().hasPrefix("re:") ? original : "Re: \(original)"
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~")
+        guard let encoded = reply.addingPercentEncoding(withAllowedCharacters: allowed) else { return base }
+        return URL(string: "\(base.absoluteString)?subject=\(encoded)")
+    }
+
     /// Nawigacja do miejsca terminu w Mapach Apple („Sąd Rejonowy, sala 214”).
     /// `nil` dla miejsc, do których się nie jedzie: kancelaria (to „u siebie”),
     /// rozmowa online i telefoniczna, pusty tekst. Sala („sala 214”, „s. 12”)
