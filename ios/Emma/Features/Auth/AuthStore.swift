@@ -64,6 +64,18 @@ final class AuthStore: ObservableObject {
     /// `signOut()` aktora sesji skasowałoby świeżo zalogowaną sesję.
     private var pendingSignOut: Task<Void, Never>?
 
+    /// Ile czasu w tle nie wymaga ponownego Face ID. Krótkie wyjście (WhatsApp,
+    /// telefon, zdjęcie dokumentu) wraca prosto do aplikacji; dłuższe — przez
+    /// odblokowanie. Blokada zasłania aplikację od razu przy wyjściu w tło,
+    /// więc zrzut w przełączniku aplikacji niczego nie pokazuje.
+    static let relockGracePeriod: TimeInterval = 5 * 60
+    /// Chwila ostatniego zablokowania żyjącej powłoki; `nil` po odblokowaniu.
+    private var lockedAt: Date?
+    private let now: @MainActor () -> Date
+    /// Czy aplikacja jest w tle. Face ID nie pytamy w tle — ekran blokady
+    /// pojawia się już przy wyjściu, a decyzja zapada przy powrocie.
+    private let isInBackground: @MainActor () -> Bool
+
     /// Powód zakończenia sesji. Rozdzielamy wylogowanie od zmiany konta, bo
     /// koordynator głosu kończy rozmowę inaczej w każdej z tych sytuacji
     /// (`handleUserLoggedOut` vs `handleAccountSwitched`) — patrz `EmmaApp`.
@@ -86,8 +98,12 @@ final class AuthStore: ObservableObject {
         authenticator: BiometricAuthenticating = LocalAuthenticationAuthenticator(),
         defaults: UserDefaults = .standard,
         session: MobileSessionKeeper? = nil,
-        deviceName: String = AuthStore.defaultDeviceName()
+        deviceName: String = AuthStore.defaultDeviceName(),
+        now: @escaping @MainActor () -> Date = { Date() },
+        isInBackground: @escaping @MainActor () -> Bool = { AuthStore.applicationIsInBackground() }
     ) {
+        self.now = now
+        self.isInBackground = isInBackground
         self.configuration = configuration
         self.authenticator = authenticator
         self.defaults = defaults
@@ -326,10 +342,33 @@ final class AuthStore: ObservableObject {
 
     // MARK: Blokada i Face ID
 
-    /// Blokujemy przy zejściu aplikacji w tło; powrót wymaga Face ID.
+    /// Blokujemy przy zejściu aplikacji w tło; powrót po dłuższej przerwie
+    /// (`relockGracePeriod`) wymaga Face ID.
     func lock() {
         guard state == .unlocked else { return }
+        lockedAt = now()
         state = .locked
+    }
+
+    /// Powrót na pierwszy plan: po krótkiej przerwie wpuszczamy bez Face ID.
+    /// Zwraca `true`, gdy aplikacja została odblokowana bez pytania.
+    @discardableResult
+    func resumeIfRecentlyLocked() -> Bool {
+        guard state == .locked, hasUnlockedSession, let lockedAt else { return false }
+        let elapsed = now().timeIntervalSince(lockedAt)
+        guard elapsed >= 0, elapsed < Self.relockGracePeriod else { return false }
+        self.lockedAt = nil
+        notice = nil
+        state = .unlocked
+        return true
+    }
+
+    static func applicationIsInBackground() -> Bool {
+        #if canImport(UIKit)
+        return UIApplication.shared.applicationState == .background
+        #else
+        return false
+        #endif
     }
 
     var availability: BiometricAvailability { authenticator.availability() }
@@ -353,13 +392,14 @@ final class AuthStore: ObservableObject {
     }
 
     func unlock() async {
-        guard state == .locked, !isAuthenticating else { return }
+        guard state == .locked, !isAuthenticating, !isInBackground() else { return }
         isAuthenticating = true
         defer { isAuthenticating = false }
 
         let unlocked = await authenticator.authenticate(reason: "Odblokuj aplikację Emma")
         if unlocked {
             notice = nil
+            lockedAt = nil
             state = .unlocked
             return
         }
