@@ -33,14 +33,20 @@ final class AuthStoreTests: XCTestCase {
     private func makeStore(
         signedIn: Bool = false,
         result: Bool = true,
-        availability: BiometricAvailability = .available(.faceID)
+        availability: BiometricAvailability = .available(.faceID),
+        inBackground: Bool = false
     ) -> AuthStore {
         if signedIn { defaults.set(true, forKey: signedInKey) }
         return AuthStore(
             authenticator: PreviewBiometricAuthenticator(result: result, availabilityResult: availability),
-            defaults: defaults
+            defaults: defaults,
+            now: { [unowned self] in self.clock },
+            isInBackground: { inBackground }
         )
     }
+
+    /// Zegar testu — przesuwany ręcznie, żeby sprawdzić czas łaski blokady.
+    private var clock = Date(timeIntervalSince1970: 1_800_000_000)
 
     // MARK: Stan początkowy
 
@@ -82,6 +88,36 @@ final class AuthStoreTests: XCTestCase {
         let store = makeStore()
         store.signIn(email: "kancelaria@emma.pl", password: "emma")
         store.lock()
+        XCTAssertEqual(store.state, .locked)
+    }
+
+    func testShortBackgroundResumesWithoutFaceID() {
+        let store = makeStore()
+        store.signIn(email: "kancelaria@emma.pl", password: "emma")
+        store.lock()
+        clock += AuthStore.relockGracePeriod - 1
+        XCTAssertTrue(store.resumeIfRecentlyLocked())
+        XCTAssertEqual(store.state, .unlocked)
+    }
+
+    func testLongBackgroundRequiresFaceID() {
+        let store = makeStore()
+        store.signIn(email: "kancelaria@emma.pl", password: "emma")
+        store.lock()
+        clock += AuthStore.relockGracePeriod
+        XCTAssertFalse(store.resumeIfRecentlyLocked())
+        XCTAssertEqual(store.state, .locked)
+    }
+
+    func testColdStartLockIsNotSkippedByGracePeriod() {
+        let store = makeStore(signedIn: true)
+        XCTAssertFalse(store.resumeIfRecentlyLocked())
+        XCTAssertEqual(store.state, .locked)
+    }
+
+    func testUnlockDoesNotAskForFaceIDInBackground() async {
+        let store = makeStore(signedIn: true, result: true, inBackground: true)
+        await store.unlock()
         XCTAssertEqual(store.state, .locked)
     }
 

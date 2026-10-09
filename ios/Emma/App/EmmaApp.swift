@@ -141,6 +141,13 @@ struct EmmaApp: App {
                 syncLockOverlay()
                 Task { await dependencies.voice.handleApplicationBackgrounded() }
             case .active:
+                // Krótka przerwa (`relockGracePeriod`) nie wymaga Face ID.
+                // Po dłuższej pytamy dopiero teraz: ekran blokady pojawił się
+                // w tle, a Face ID w tle nie startuje.
+                if !auth.resumeIfRecentlyLocked(), auth.state == .locked, auth.canUseBiometrics {
+                    Task { await auth.unlock() }
+                }
+                syncLockOverlay()
                 // Powrót na pierwszy plan: pytamy backend o faktyczny stan sesji,
                 // żeby przejęcie przez inne urządzenie nie uszło uwadze (§5.6).
                 Task { await dependencies.voice.handleApplicationForegrounded() }
