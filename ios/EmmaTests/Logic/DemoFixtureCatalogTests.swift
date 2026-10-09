@@ -95,6 +95,6 @@ final class DemoFixtureCatalogTests: XCTestCase {
             artificialLatency: 0
         )
         let total = try await repository.unreadTotal(userID: .kancelaria)
-        XCTAssertEqual(total, 3, "Andrii 2 + Maria 1, reszta przeczytana")
+        XCTAssertEqual(total, 2, "Rozmowy Andrii i Maria — liczymy osoby, nie wiadomości")
     }
 }

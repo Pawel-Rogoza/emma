@@ -121,7 +121,7 @@ public struct EmmaTabBar: View {
 
     private func accessibilityLabel(for tab: AppTab) -> String {
         if tab == .messages && unreadCount > 0 {
-            return "\(tab.title), \(EmmaPlural.unread(unreadCount))"
+            return "\(tab.title), \(EmmaPlural.unreadConversations(unreadCount))"
         }
         if tab == .clients && leadCount > 0 {
             return "\(tab.title), \(EmmaPlural.leads(leadCount)) do obsługi"

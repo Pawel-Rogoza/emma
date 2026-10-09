@@ -612,9 +612,11 @@ public actor MockRepository:
         return result
     }
 
-    /// Suma nieprzeczytanych wiadomości — plakietka na zakładce „Rozmowy”.
+    /// Liczba rozmów z nieprzeczytanymi — plakietka na zakładce „Rozmowy”.
+    /// Liczymy osoby, nie wiadomości (jak serwer): 100 wiadomości od jednego
+    /// klienta to jedna rozmowa czekająca na odpowiedź.
     public func unreadTotal(userID: UserID) async throws -> Int {
-        try await unreadCounts(userID: userID).values.reduce(0, +)
+        try await unreadCounts(userID: userID).values.filter { $0 > 0 }.count
     }
 
     public func readStates(userID: UserID) async throws -> [ThreadUserState] {

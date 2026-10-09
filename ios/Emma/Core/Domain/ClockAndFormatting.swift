@@ -110,6 +110,11 @@ public enum EmmaPlural {
         label(count, "nieprzeczytana wiadomość", "nieprzeczytane wiadomości", "nieprzeczytanych wiadomości")
     }
 
+    /// „1 nowa rozmowa”, „3 nowe rozmowy” — plakietka liczy osoby, nie wiadomości.
+    public static func unreadConversations(_ count: Int) -> String {
+        label(count, "nowa rozmowa", "nowe rozmowy", "nowych rozmów")
+    }
+
     /// „1 dzień”, „2 dni”, „5 dni” — wiek zgłoszenia.
     public static func days(_ count: Int) -> String {
         label(count, "dzień", "dni", "dni")
