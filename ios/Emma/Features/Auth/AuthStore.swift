@@ -68,7 +68,7 @@ final class AuthStore: ObservableObject {
     /// telefon, zdjęcie dokumentu) wraca prosto do aplikacji; dłuższe — przez
     /// odblokowanie. Blokada zasłania aplikację od razu przy wyjściu w tło,
     /// więc zrzut w przełączniku aplikacji niczego nie pokazuje.
-    static let relockGracePeriod: TimeInterval = 5 * 60
+    static let relockGracePeriod: TimeInterval = 30 * 60
     /// Chwila ostatniego zablokowania żyjącej powłoki; `nil` po odblokowaniu.
     private var lockedAt: Date?
     private let now: @MainActor () -> Date
