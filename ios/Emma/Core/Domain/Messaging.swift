@@ -402,6 +402,9 @@ public struct Draft: Hashable, Codable, Sendable {
 
 public enum ReadStatePolicy {
 
+    /// Odstęp, w którym kolejne załączniki klienta uznajemy za jedną wysyłkę.
+    public static let attachmentBurstInterval: TimeInterval = 2 * 60
+
     /// Kursor, jaki powstaje po otwarciu wątku przy znanym snapshocie końca.
     /// Nigdy nie cofa kursora i nigdy nie wyprzedza znanego snapshotu.
     public static func cursorAfterOpeningThread(
@@ -424,8 +427,27 @@ public enum ReadStatePolicy {
 
     /// Licznik prezentowany na liście i w pasku zakładek.
     /// `manualUnread` podnosi wynik do co najmniej 1, nie tworzy fałszywej wiadomości.
+    ///
+    /// WhatsApp wysyła każde zdjęcie albumu jako osobną wiadomość, więc seria
+    /// nieprzeczytanych załączników (kolejne w wątku, odstępy ≤
+    /// `attachmentBurstInterval`) liczy się jako jedna. Tę samą regułę ma
+    /// serwer (`countUnread` w backendzie).
     public static func unreadCount(in messages: [Message], state: ThreadUserState) -> Int {
-        let natural = unreadMessages(in: messages, state: state).count
+        var natural = 0
+        var previous: Message?
+        for message in messages.sorted(by: { $0.sequence < $1.sequence }) {
+            defer { previous = message }
+            guard message.direction == .incoming, message.sequence > state.readCursorSequence else { continue }
+            if let previous,
+               previous.direction == .incoming,
+               previous.sequence > state.readCursorSequence,
+               previous.kind.isAttachment,
+               message.kind.isAttachment,
+               abs(message.sentAt.timeIntervalSince(previous.sentAt)) <= attachmentBurstInterval {
+                continue
+            }
+            natural += 1
+        }
         if natural > 0 { return natural }
         return state.manualUnread ? 1 : 0
     }

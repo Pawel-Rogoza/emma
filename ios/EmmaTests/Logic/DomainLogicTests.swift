@@ -136,6 +136,36 @@ final class ReadStateTests: XCTestCase {
         XCTAssertNil(ReadStatePolicy.firstUnreadMessageID(in: readMessages, state: flagged))
     }
 
+    func testAttachmentAlbumCountsAsOneUnreadMessage() {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        func incoming(_ sequence: Int, _ kind: MessageKind, after seconds: TimeInterval) -> Message {
+            Message(
+                id: MessageID("album-\(sequence)"),
+                threadID: DemoFixtures.andriiThread,
+                direction: .incoming,
+                authorID: nil,
+                kind: kind,
+                text: kind == .text ? "To wszystko" : "[Zdjęcie]",
+                sentAt: start.addingTimeInterval(seconds),
+                sequence: sequence,
+                transport: .delivered,
+                source: .whatsAppInbound
+            )
+        }
+        let album = (1...50).map { incoming($0, .image, after: TimeInterval($0)) }
+        XCTAssertEqual(ReadStatePolicy.unreadCount(in: album, state: state(cursor: 0)), 1)
+
+        // Tekst po albumie i zdjęcie po dłuższej przerwie liczą się osobno.
+        let more = album + [
+            incoming(51, .text, after: 60),
+            incoming(52, .image, after: 61),
+            incoming(53, .image, after: 61 + ReadStatePolicy.attachmentBurstInterval + 1),
+        ]
+        XCTAssertEqual(ReadStatePolicy.unreadCount(in: more, state: state(cursor: 0)), 4)
+        // Przeczytana część albumu nie pochłania nowych zdjęć.
+        XCTAssertEqual(ReadStatePolicy.unreadCount(in: album, state: state(cursor: 25)), 1)
+    }
+
     func testFirstUnreadSeparatorPointsAtOldestUnread() {
         let first = ReadStatePolicy.firstUnreadMessageID(in: andriiMessages, state: state(cursor: 0))
         XCTAssertEqual(first, MessageID("msg-andrii-1"))
