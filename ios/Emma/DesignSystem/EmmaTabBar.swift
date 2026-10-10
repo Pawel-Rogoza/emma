@@ -32,7 +32,7 @@ public struct EmmaTabBar: View {
         HStack(alignment: .center, spacing: 0) {
             ForEach(AppTab.allCases) { tab in
                 if tab.isEmmaChip {
-                    emmaButton(tab)
+                    slot
                 } else {
                     tabButton(tab)
                 }
@@ -44,9 +44,36 @@ public struct EmmaTabBar: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
         .glassEffect(.regular.interactive(), in: Capsule())
+        // Emma leży **nad** szkłem, nie w nim. Treść wewnątrz `glassEffect`
+        // jest przycinana do kapsuły przy każdym przerysowaniu szkła (zmiana
+        // zakładki, przenikanie treści pod spodem), więc wystająca nad pasek
+        // górna część okręgu mrugała i znikała. Ten sam rząd miejsc co pod
+        // spodem trzyma ją dokładnie w środkowym gnieździe.
+        .overlay {
+            HStack(alignment: .center, spacing: 0) {
+                ForEach(AppTab.allCases) { tab in
+                    if tab.isEmmaChip {
+                        emmaButton(tab)
+                    } else {
+                        slot
+                    }
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+        }
         .padding(.horizontal, 14)
         .padding(.top, 14)
         .padding(.bottom, 2)
+    }
+
+    /// Puste gniazdo tej samej szerokości co zakładka — w szkle zamiast Emmy,
+    /// a w warstwie Emmy zamiast zwykłych zakładek. Nie łapie dotyku.
+    private var slot: some View {
+        Color.clear
+            .frame(maxWidth: .infinity, minHeight: EmmaMetrics.tabItemMinHeight)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 
     private func select(_ tab: AppTab) {
