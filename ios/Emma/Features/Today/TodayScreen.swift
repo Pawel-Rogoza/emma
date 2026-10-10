@@ -239,10 +239,14 @@ struct TodayScreen: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
         }
 
-        VStack(alignment: .leading, spacing: 0) {
-            attentionSection(model, inbox: inbox)
+        // Pusta kolejka znika — „nic nie goni” mówi już zdanie pod powitaniem.
+        if attentionCount(model, inbox: inbox) > 0 {
+            VStack(alignment: .leading, spacing: 0) {
+                attentionSection(model, inbox: inbox)
+            }
+            .emmaAppear(2)
+            .transition(.opacity.combined(with: .move(edge: .top)))
         }
-        .emmaAppear(2)
 
         // Areszt albo koniec legalnego pobytu — liczniki dni pod kolejką.
         ForEach(model.watches) { watch in
@@ -295,17 +299,25 @@ struct TodayScreen: View {
         let writers = Array((messages.phase.value?.unreadWhatsAppRows ?? []).prefix(3))
         let pendingUnread = messages.phase.value == nil ? dependencies.unreadTotal : 0
         let summary = TaskGrouping.summary(model.tasks, today: model.today)
-        let count = model.missedDeadlines.count + inbox.needsAction.count
-            + (messages.phase.value?.unreadWhatsAppRows.count ?? (pendingUnread > 0 ? 1 : 0))
-            + (summary.open > 0 ? 1 : 0)
+        let count = attentionCount(model, inbox: inbox)
 
         SectionHeader(count > 0 ? "Wymaga Ciebie · \(count)" : "Wymaga Ciebie", compact: true)
+
+        // Kreski są **nad** wierszem (oprócz pierwszego) — kolejka może się
+        // skończyć na dowolnej grupie, a karta nie ma pustej kreski na dole.
+        let showsMoreMissed = model.missedDeadlines.count > missed.count
+        let showsMoreLeads = inbox.needsAction.count > leads.count
+        let moreWriters = (messages.phase.value?.unreadWhatsAppRows.count ?? 0) - writers.count
+        let beforeLeads = !missed.isEmpty
+        let beforeWriters = beforeLeads || !leads.isEmpty || showsMoreLeads
+        let beforeTasks = beforeWriters || !writers.isEmpty || moreWriters > 0 || pendingUnread > 0
 
         SurfaceCard(padding: EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0)) {
             VStack(alignment: .leading, spacing: 0) {
                 if !missed.isEmpty {
                     VStack(spacing: 0) {
-                        ForEach(missed) { event in
+                        ForEach(Array(missed.enumerated()), id: \.element.id) { index, event in
+                            if index > 0 { attentionDivider }
                             Button {
                                 dependencies.present(.eventDetail(event.id))
                             } label: {
@@ -317,9 +329,9 @@ struct TodayScreen: View {
                             }
                             .buttonStyle(EmmaCardButtonStyle())
                             .contextMenu { missedMenu(event) }
-                            attentionDivider
                         }
-                        if model.missedDeadlines.count > missed.count {
+                        if showsMoreMissed {
+                            attentionDivider
                             Button {
                                 dependencies.clientMode = .cases
                                 dependencies.go(to: .clients, resetStack: true)
@@ -330,48 +342,60 @@ struct TodayScreen: View {
                                     .frame(maxWidth: .infinity, minHeight: 40)
                             }
                             .buttonStyle(.plain)
-                            attentionDivider
                         }
                     }
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("today-missed-deadlines")
                 }
 
-                ForEach(leads) { client in
+                ForEach(Array(leads.enumerated()), id: \.element.id) { index, client in
+                    if beforeLeads || index > 0 { attentionDivider }
                     LeadInboxRow(
                         client: client,
                         onOpen: { dependencies.openPerson(client.id) },
                         onMarkHandled: { await LeadActions.markInContact(client, dependencies: dependencies) }
                     )
-                    attentionDivider
                 }
-                if inbox.needsAction.count > leads.count {
+                if showsMoreLeads {
+                    if beforeLeads || !leads.isEmpty { attentionDivider }
                     attentionLink("Wszystkie leady do obsługi · \(inbox.needsAction.count)") {
                         dependencies.openLeads(filter: .needsAction)
                     }
-                    attentionDivider
                 }
 
-                ForEach(writers) { row in
+                ForEach(Array(writers.enumerated()), id: \.element.id) { index, row in
+                    if beforeWriters || index > 0 { attentionDivider }
                     writerRow(row)
-                    attentionDivider
                 }
-                if let all = messages.phase.value?.unreadWhatsAppRows, all.count > writers.count {
-                    attentionLink("Jeszcze \(all.count - writers.count) · wszystkie nowe") {
+                if moreWriters > 0 {
+                    if beforeWriters || !writers.isEmpty { attentionDivider }
+                    attentionLink("Jeszcze \(moreWriters) · wszystkie nowe") {
                         openUnreadConversations()
                     }
-                    attentionDivider
                 } else if pendingUnread > 0 {
+                    if beforeWriters { attentionDivider }
                     attentionLink(EmmaPlural.unreadConversations(pendingUnread)) {
                         openUnreadConversations()
                     }
-                    attentionDivider
                 }
 
-                tasksAttentionRow(summary)
+                if summary.open > 0 {
+                    if beforeTasks { attentionDivider }
+                    tasksAttentionRow(summary)
+                }
             }
         }
         .animation(EmmaMotion.smooth, value: writers.map(\.id))
+    }
+
+    /// Ile pozycji czeka w „Wymaga Ciebie”. Zadania liczą się jako jedna
+    /// pozycja i tylko wtedy, gdy coś jest otwarte.
+    private func attentionCount(_ model: TodayStore.Model, inbox: LeadInbox) -> Int {
+        let pendingUnread = messages.phase.value == nil ? dependencies.unreadTotal : 0
+        let summary = TaskGrouping.summary(model.tasks, today: model.today)
+        return model.missedDeadlines.count + inbox.needsAction.count
+            + (messages.phase.value?.unreadWhatsAppRows.count ?? (pendingUnread > 0 ? 1 : 0))
+            + (summary.open > 0 ? 1 : 0)
     }
 
     private var attentionDivider: some View {
@@ -392,7 +416,8 @@ struct TodayScreen: View {
         .buttonStyle(.plain)
     }
 
-    /// Ostatni wiersz kolejki — zadania na dziś. Gdy nic nie czeka, mówi to wprost.
+    /// Ostatni wiersz kolejki — zadania na dziś. Bez otwartych zadań go nie ma
+    /// (właściciel: „Zadania na dziś zrobione” to szum na ekranie głównym).
     private func tasksAttentionRow(_ summary: TaskGrouping.Summary) -> some View {
         Button {
             EmmaHaptics.tap()
@@ -400,11 +425,11 @@ struct TodayScreen: View {
         } label: {
             HStack(spacing: 12) {
                 AttentionIcon(
-                    systemName: summary.open > 0 ? "checklist" : "checkmark",
-                    tint: summary.hasOverdue ? EmmaTheme.warning : (summary.open > 0 ? EmmaTheme.accent : EmmaTheme.positive)
+                    systemName: "checklist",
+                    tint: summary.hasOverdue ? EmmaTheme.warning : EmmaTheme.accent
                 )
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(summary.open > 0 ? "Zadania na dziś · \(summary.open)" : "Zadania na dziś zrobione")
+                    Text("Zadania na dziś · \(summary.open)")
                         .font(EmmaTypography.ui(15, .semibold))
                         .foregroundStyle(EmmaTheme.ink)
                     if summary.hasOverdue {
@@ -966,29 +991,26 @@ struct TodayScreen: View {
     private func tasksSection(_ model: TodayStore.Model) -> some View {
         let summary = TaskGrouping.summary(model.tasks, today: model.today)
         let groups = TaskGrouping.groups(model.tasks, today: model.today)
-        let entries = groups.flatMap { group in
+        let allEntries = groups.flatMap { group in
             group.tasks.map { TaskEntry(bucket: group.bucket, task: $0) }
         }
+        // Ekran główny to podgląd, nie lista — reszta jest pod „Wszystkie zadania”.
+        let entries = Array(allEntries.prefix(Self.tasksPreviewLimit))
 
-        SurfaceCard(padding: EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0)) {
-            VStack(alignment: .leading, spacing: 0) {
-                if summary.open > 0 {
-                    Text(summaryLabel(summary))
-                        .font(EmmaTypography.caption())
-                        .foregroundStyle(summary.hasOverdue ? EmmaTheme.pillUrgentText : EmmaTheme.muted)
-                        .padding(.horizontal, 15)
-                        .padding(.top, 12)
-                        .padding(.bottom, 2)
-                }
+        // Bez otwartych zadań zostaje sam nagłówek z wejściem do listy —
+        // bez karty „wszystko zrobione” (decyzja właściciela, 0.22.1).
+        if !entries.isEmpty {
+            SurfaceCard(padding: EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0)) {
+                VStack(alignment: .leading, spacing: 0) {
+                    if summary.open > 0 {
+                        Text(summaryLabel(summary))
+                            .font(EmmaTypography.caption())
+                            .foregroundStyle(summary.hasOverdue ? EmmaTheme.pillUrgentText : EmmaTheme.muted)
+                            .padding(.horizontal, 15)
+                            .padding(.top, 12)
+                            .padding(.bottom, 2)
+                    }
 
-                if entries.isEmpty {
-                    Text("Wszystkie zadania na dziś wykonane.")
-                        .font(EmmaTypography.caption())
-                        .foregroundStyle(EmmaTheme.muted)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 15)
-                        .padding(.vertical, 16)
-                } else {
                     ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                         if index == 0 || entries[index - 1].bucket != entry.bucket {
                             groupLabel(entry.bucket)
@@ -1010,10 +1032,18 @@ struct TodayScreen: View {
                             Divider().overlay(EmmaTheme.rowSeparator).padding(.horizontal, 15)
                         }
                     }
+                    if allEntries.count > entries.count {
+                        Divider().overlay(EmmaTheme.rowSeparator).padding(.horizontal, 15)
+                        attentionLink("Jeszcze \(allEntries.count - entries.count) · wszystkie zadania") {
+                            dependencies.openTasks()
+                        }
+                    }
                 }
             }
         }
     }
+
+    private static let tasksPreviewLimit = 5
 
     private func summaryLabel(_ summary: TaskGrouping.Summary) -> String {
         if summary.hasOverdue {
