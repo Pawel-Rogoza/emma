@@ -2,20 +2,41 @@ import SwiftUI
 
 // MARK: - Tokeny kolorów
 //
-// Wartości przeniesione z referencji po rozstrzygnięciu kaskady CSS
-// (`reference/prototype/style.css`, warstwy z linii 2, 4, 11–24).
-// Szczegóły i pochodzenie każdego tokenu: docs/ios/DESIGN_CONTRACT.md §1.
+// Redesign 0.22.0: kończymy zamrożony kontrakt z referencją HTML. Kolory mają
+// znaczenie, a nie pochodzenie z selektora CSS:
 //
-// Zasada: widoki nie zawierają literałów kolorów. Wyłącznie te tokeny.
+//   • `accent`   — czynności, wybrana zakładka, linki,
+//   • `emma`     — wszystko, co przygotowała Emma (szkic, propozycja, zakładka),
+//   • `critical` — termin procesowy dziś / po terminie, areszt, zamknięte okno 24 h,
+//   • `warning`  — termin w 1–3 dni, okno 24 h się zamyka, zadanie po terminie,
+//   • `positive` — nowe w WhatsAppie, załatwione, zapłacone.
 //
-// Kontrast (F09 audytu UX): tokeny tekstowe, które wypadały poniżej 4,5:1 dla
-// zwykłego tekstu, mają ciemniejsze wartości — ale wyłącznie takie, które już
-// występują w regułach referencji (kontrola `design-token-diff.py` zgłosiłaby
-// „kolory spoza referencji” jako błąd). Np. `mutedSoft` 3,50:1 → 4,89:1,
-// `taskDateText` 3,00:1 → 4,64:1, `dockStatusText` 2,68:1 → 4,93:1.
-// Każda zmiana jest zarejestrowana w docs/ios/DESIGN_DEVIATIONS.md.
+// Czerwony (`critical`) jest **tylko** dla terminów. Starsze nazwy tokenów
+// zostają jako aliasy semantycznych, żeby ekrany nie musiały zmieniać się naraz.
+// Bramka `scripts/check-color-tokens.py` pilnuje, że widoki nie mają literałów
+// kolorów; `check-readability.py` — kontrastu tekstu (≥ 4,5:1).
+//
+// Motyw jest jasny (decyzja właściciela 10.10.2026 — tryb ciemny niepotrzebny).
 
 public enum EmmaTheme {
+
+    // MARK: Semantyka
+
+    /// Akcent czynności: przyciski tekstowe, wybrana zakładka, linki.
+    public static let accent = Color(hex: 0x2F5BD3)
+    public static let accentSoft = Color(hex: 0xE9EFFC)
+    /// Kolor Emmy — szkice, propozycje i środkowa zakładka.
+    public static let emma = Color(hex: 0x6B4FD8)
+    public static let emmaSoft = Color(hex: 0xEFEBFC)
+    /// Termin dziś lub po terminie. Jedyny „krzyk” w aplikacji.
+    public static let critical = Color(hex: 0xC2362B)
+    public static let criticalSoft = Color(hex: 0xFBEAE8)
+    /// Termin wkrótce, okno 24 h się zamyka.
+    public static let warning = Color(hex: 0x9A5A0C)
+    public static let warningSoft = Color(hex: 0xFCF1E2)
+    /// Załatwione, zapłacone.
+    public static let positive = Color(hex: 0x1E7346)
+    public static let positiveSoft = Color(hex: 0xE6F3EB)
 
     // Powierzchnie i tekst
     public static let bg = Color(hex: 0xF5F6F8)
@@ -31,9 +52,7 @@ public enum EmmaTheme {
     public static let taskDateText = Color(hex: 0x66768B)
 
     // Akcenty
-    public static let accent = Color(hex: 0x3B61D9)
-    public static let accentSoft = Color(hex: 0xEDF2F8)
-    public static let unreadBadge = Color(hex: 0x365FD0)
+    public static let unreadBadge = accent
     public static let unreadDivider = Color(hex: 0xE1E9F5)
     public static let unreadDividerText = Color(hex: 0x365D98)
 
@@ -101,20 +120,20 @@ public enum EmmaTheme {
     // odpowiedników. Rejestr: docs/ios/DESIGN_DEVIATIONS.md.
 
     // Status i komunikaty
-    public static let danger = Color(hex: 0xA1533E)
+    public static let danger = critical
     public static let toastBackground = Color(hex: 0x213953)
     public static let pillNeutralBackground = Color(hex: 0xF0F3FC)
     public static let pillNeutralText = Color(hex: 0x5770AB)
-    public static let pillGreenBackground = Color(hex: 0xEDF4EF)
-    public static let pillGreenText = Color(hex: 0x4B7966)
-    public static let pillAmberBackground = Color(hex: 0xFAF0E5)
-    public static let pillAmberText = Color(hex: 0x986B36)
-    public static let pillUrgentBackground = Color(hex: 0xFBF0E3)
-    public static let pillUrgentText = Color(hex: 0xA47740)
+    public static let pillGreenBackground = positiveSoft
+    public static let pillGreenText = positive
+    public static let pillAmberBackground = warningSoft
+    public static let pillAmberText = warning
+    public static let pillUrgentBackground = warningSoft
+    public static let pillUrgentText = warning
     /// Plakietka „termin dziś / za 2 dni” na liście spraw — jedyny czerwony
     /// akcent listy, żeby pilna sprawa nie wyglądała jak „czeka na klienta”.
-    public static let pillDangerBackground = Color(hex: 0xF8ECE8)
-    public static let pillDangerText = Color(hex: 0xA1533E)
+    public static let pillDangerBackground = criticalSoft
+    public static let pillDangerText = critical
 
     // Awatary
     // Tokeny awatara zalogowanego użytkownika (`avatarBackground`/`avatarText`)
@@ -133,9 +152,9 @@ public enum EmmaTheme {
     // Pasek zakładek
     public static let tabBarBackground = Color(hex: 0xFBFCFD)
     public static let tabBarBorder = Color(hex: 0xE1E7EE)
-    public static let tabActive = Color(hex: 0x254D9D)
+    public static let tabActive = accent
     public static let tabInactive = Color(hex: 0x5F6D7D)
-    public static let tabEmmaChip = Color(hex: 0x1A2E47)
+    public static let tabEmmaChip = emma
     public static let tabEmmaChipText = Color.white
 
     // Pozostałe

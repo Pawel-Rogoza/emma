@@ -5,42 +5,29 @@ import UIKit
 
 // MARK: - Typografia
 //
-// Nazwy PostScript odczytane z tablicy `name` plików czcionek (ID 6), nie zgadywane:
-//   DMSans-Regular, DMSans-Medium, DMSans-SemiBold, Manrope-Bold, Manrope-ExtraBold
+// Redesign 0.22.0 (iOS 26): interfejs i treść piszemy **czcionką systemową
+// (SF Pro)**. Wcześniej DM Sans z referencji HTML nie miała cyrylicy, więc
+// rosyjskie imiona i wiadomości wpadały w SF Pro, a polskie w DM Sans — dwie
+// czcionki w jednym wierszu listy. SF Pro ma polskie znaki i cyrylicę, cyfry
+// tabelaryczne i pełny Dynamic Type.
 //
-// Zmierzona kontrola pokrycia glifów wykazała, że **DM Sans nie zawiera cyrylicy**,
-// a Manrope zawiera. Dlatego `EmmaTypography.body(for:)` wybiera czcionkę jawnie:
-// tekst łaciński — DM Sans (zgodnie z referencją), tekst cyrylicki — czcionka systemowa,
-// dokładnie tak, jak robi to układ referencji `'DM Sans',-apple-system,…`.
-// Szczegóły: docs/ios/DESIGN_CONTRACT.md §3 oraz DESIGN_DEVIATIONS.md (D-01).
+// Manrope (ma cyrylicę) zostaje wyłącznie w dużych tytułach i liczbach-bohaterach
+// — to jedyny akcent charakteru marki w typografii.
 
 public enum EmmaFontName {
-    public static let dmSansRegular = "DMSans-Regular"
-    public static let dmSansMedium = "DMSans-Medium"
-    public static let dmSansSemiBold = "DMSans-SemiBold"
     public static let manropeBold = "Manrope-Bold"
     public static let manropeExtraBold = "Manrope-ExtraBold"
 
-    /// Wszystkie nazwy czcionek wymagane przy starcie aplikacji. Używane przez
-    /// kontrolę rejestracji czcionek z §2.3 planu.
-    public static let all = [dmSansRegular, dmSansMedium, dmSansSemiBold, manropeBold, manropeExtraBold]
+    /// Czcionki dołączone do aplikacji, sprawdzane przy starcie.
+    public static let all = [manropeBold, manropeExtraBold]
 }
 
-/// Waga czcionki z rodziny DM Sans.
+/// Waga tekstu interfejsu.
 public enum EmmaWeight: Sendable {
     case regular
     case medium
     case semibold
 
-    public var postScriptName: String {
-        switch self {
-        case .regular: return EmmaFontName.dmSansRegular
-        case .medium: return EmmaFontName.dmSansMedium
-        case .semibold: return EmmaFontName.dmSansSemiBold
-        }
-    }
-
-    /// Waga systemowa używana przy tekście cyrylickim (odpowiednik optyczny).
     public var systemWeight: Font.Weight {
         switch self {
         case .regular: return .regular
@@ -64,48 +51,21 @@ public enum EmmaWeight: Sendable {
 public enum EmmaTypography {
 
     // MARK: Dynamic Type
-
-    // Plan wymaga, aby przy dużym Dynamic Type treść i obsługa zostały zachowane
-    // (karty mogą urosnąć, nie wymagamy zgodności pikselowej z domyślnym rozmiarem).
-    // Skalowanie dzieje się **tylko tutaj**: wszystkie style przechodzą przez trzy
-    // konstruktory poniżej, więc żaden ekran nie musi o tym wiedzieć.
     //
-    // Wszystkie style skalują się względem stylu treści `.body`. To świadomie jedna
-    // krzywa zamiast dziewięciu: przewidywalne zachowanie jest ważniejsze niż
-    // „optymalna” krzywa dla każdego rozmiaru. Przy domyślnej wielkości tekstu
-    // wynik jest identyczny z referencją, bo mnożnik wynosi wtedy 1.
-    //
-    // Odstępy i szerokości pozostają stałe (siatka karty z referencji). Tekst rośnie,
-    // a kontenery mają minimalne wysokości, więc treść nie jest obcinana.
+    // Wszystkie style skalują się względem stylu `.body` (jedna, przewidywalna
+    // krzywa). Przy domyślnym rozmiarze tekstu mnożnik wynosi 1.
 
     // MARK: Podstawa
 
-    /// Czcionka treści z jawnym wyborem ze względu na pismo.
-    /// To jedyne miejsce, w którym decydujemy, czy użyć DM Sans, czy czcionki systemowej.
+    /// Czcionka treści. Pismo nie ma już znaczenia — SF Pro obsługuje łacinę
+    /// i cyrylicę — parametr `text` zostaje, żeby miejsca wywołań się nie zmieniały.
     public static func body(for text: String, size: CGFloat, weight: EmmaWeight = .regular) -> Font {
-        body(script: LanguageCode.detectedScript(of: text), size: size, weight: weight)
+        system(size, weight)
     }
 
-    /// Wariant dla miejsc, w których pismo jest już znane.
-    public static func body(script: ScriptKind, size: CGFloat, weight: EmmaWeight = .regular) -> Font {
-        switch script {
-        case .cyrillic, .mixed:
-            // DM Sans nie ma glifów cyrylickich. Referencja w przeglądarce również
-            // spada wtedy na `-apple-system`, więc zachowanie jest zgodne.
-            #if canImport(UIKit)
-            let font = UIFont.systemFont(ofSize: size, weight: weight.uiWeight)
-            return Font(UIFontMetrics(forTextStyle: .body).scaledFont(for: font))
-            #else
-            return .system(size: size, weight: weight.systemWeight)
-            #endif
-        case .latin, .unknown:
-            return .custom(weight.postScriptName, size: size, relativeTo: .body)
-        }
-    }
-
-    /// Czcionka interfejsu (etykiety, przyciski) — zawsze DM Sans.
+    /// Czcionka interfejsu (etykiety, przyciski, treść).
     public static func ui(_ size: CGFloat, _ weight: EmmaWeight = .regular) -> Font {
-        .custom(weight.postScriptName, size: size, relativeTo: .body)
+        system(size, weight)
     }
 
     /// Czcionka nagłówków — Manrope (obsługuje cyrylicę, więc nie ma wariantu).
@@ -117,6 +77,16 @@ public enum EmmaTypography {
         )
     }
 
+    /// SF Pro w danym rozmiarze, skalowana z ustawieniem rozmiaru tekstu.
+    private static func system(_ size: CGFloat, _ weight: EmmaWeight) -> Font {
+        #if canImport(UIKit)
+        let font = UIFont.systemFont(ofSize: size, weight: weight.uiWeight)
+        return Font(UIFontMetrics(forTextStyle: .body).scaledFont(for: font))
+        #else
+        return .system(size: size, weight: weight.systemWeight)
+        #endif
+    }
+
     // MARK: Skala tekstu
 
     /// Metadana i podpis — **najniższy dopuszczalny rozmiar tekstu** w interfejsie.
@@ -125,7 +95,7 @@ public enum EmmaTypography {
     /// 10–11 pt z kontrastem poniżej 4,5:1. Teraz każda metadana przechodzi przez
     /// ten styl (12 pt), więc skala jest jedna, a próg kontrastu dotyczy znanego
     /// rozmiaru. Ekrany nie deklarują już własnych rozmiarów.
-    public static func caption(_ weight: EmmaWeight = .regular) -> Font { ui(12, weight) }
+    public static func caption(_ weight: EmmaWeight = .regular) -> Font { ui(13, weight) }
 
     // MARK: Style interfejsu (DESIGN_CONTRACT §3)
 

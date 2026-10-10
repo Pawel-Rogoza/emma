@@ -37,6 +37,12 @@ MIN_TEXT_SIZE = 12
 
 # Token tekstowy → (tło, gdzie w interfejsie).
 TEXT_TOKENS: dict[str, tuple[str, str]] = {
+    # Tokeny semantyczne (0.22.0) na swoich miękkich tłach (pigułki, ikony stanu).
+    "accent": ("#E9EFFC", "akcent na tle accentSoft"),
+    "emma": ("#EFEBFC", "tekst Emmy na tle emmaSoft"),
+    "critical": ("#FBEAE8", "plakietka terminu na tle criticalSoft"),
+    "warning": ("#FCF1E2", "plakietka ostrzeżenia na tle warningSoft"),
+    "positive": ("#E6F3EB", "plakietka „załatwione” na tle positiveSoft"),
     "mutedSoft": ("#F5F6F8", "podpisy i metadane na tle aplikacji"),
     "taskMetaText": ("#FFFFFF", "metadane zadania w białej karcie"),
     "taskDateText": ("#FFFFFF", "termin zadania w białej karcie"),
