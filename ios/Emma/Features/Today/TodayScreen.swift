@@ -546,8 +546,7 @@ struct TodayScreen: View {
     /// po liczniku na zakładce.
     private func openUnreadConversations() {
         EmmaHaptics.tap()
-        messages.searchText = ""
-        messages.filter = .unread
+        messages.showUnread()
         dependencies.go(to: .messages)
     }
 
