@@ -32,7 +32,10 @@ public struct EmmaTabBar: View {
         HStack(alignment: .center, spacing: 0) {
             ForEach(AppTab.allCases) { tab in
                 if tab.isEmmaChip {
-                    slot
+                    // Niewidoczna kopia trzyma w szkle miejsce i wysokość Emmy.
+                    emmaButton(tab)
+                        .hidden()
+                        .accessibilityHidden(true)
                 } else {
                     tabButton(tab)
                 }
@@ -55,7 +58,10 @@ public struct EmmaTabBar: View {
                     if tab.isEmmaChip {
                         emmaButton(tab)
                     } else {
-                        slot
+                        Color.clear
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
                     }
                 }
             }
@@ -65,15 +71,6 @@ public struct EmmaTabBar: View {
         .padding(.horizontal, 14)
         .padding(.top, 14)
         .padding(.bottom, 2)
-    }
-
-    /// Puste gniazdo tej samej szerokości co zakładka — w szkle zamiast Emmy,
-    /// a w warstwie Emmy zamiast zwykłych zakładek. Nie łapie dotyku.
-    private var slot: some View {
-        Color.clear
-            .frame(maxWidth: .infinity, minHeight: EmmaMetrics.tabItemMinHeight)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
     }
 
     private func select(_ tab: AppTab) {
