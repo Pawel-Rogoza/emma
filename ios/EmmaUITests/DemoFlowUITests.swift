@@ -85,10 +85,17 @@ final class DemoFlowUITests: XCTestCase {
         let client = application.staticTexts["Andrii Melnyk"]
         XCTAssertTrue(client.waitForExistence(timeout: 10), "Brak klienta z danych przykładowych")
         client.tap()
-        XCTAssertTrue(
-            application.staticTexts["Andrii Melnyk"].waitForExistence(timeout: 5),
-            "Karta klienta nie otworzyła się"
-        )
+        let opened = application.navigationBars["Karta klienta"].waitForExistence(timeout: 10)
+        XCTAssertTrue(opened, "Karta klienta nie otworzyła się. Ekran: \(screenSummary())")
+    }
+
+    /// Krótki opis ekranu do komunikatu porażki — widoczny w adnotacji CI
+    /// bez pobierania logów i zrzutów.
+    private func screenSummary() -> String {
+        let bars = application.navigationBars.allElementsBoundByIndex.map(\.identifier).joined(separator: ",")
+        let sheets = application.sheets.count
+        let texts = application.staticTexts.allElementsBoundByIndex.prefix(14).map(\.label).joined(separator: " | ")
+        return "paski=[\(bars)] arkusze=\(sheets) teksty=[\(texts)]"
     }
 
     /// Rozmowy muszą jawnie mówić, że WhatsApp nie jest połączony — żadnego udawania.

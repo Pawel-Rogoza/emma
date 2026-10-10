@@ -107,8 +107,14 @@ jobs:
             passed=$(grep -cE "Test Case .* passed" "$LOG")
             failed=$(grep -cE "Test Case .* failed" "$LOG")
             echo "::notice title=Testy UI::Zaliczone: ${passed} · Niezaliczone: ${failed}"
-            grep -E "error: -\[" "$LOG" | sort -u | head -30 | cut -c1-400 \
-              | sed -E 's/^.*error: -\[EmmaUITests\.([^ ]+) ([^]]+)\] : (.*)$/::error title=\1.\2::\3/' || true
+            # GitHub pokazuje najwyżej 10 adnotacji błędu na krok — pełna lista
+            # porażek idzie jedną adnotacją (wiersze sklejone przez %0A).
+            all=$(grep -E "error: -\[" "$LOG" | sort -u | head -60 | cut -c1-900 \
+              | sed -E 's/^.*error: -\[EmmaUITests\.([^ ]+) ([^]]+)\] : (.*)$/\1.\2: \3/' \
+              | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            if [[ -n "$all" ]]; then
+              echo "::error title=Wszystkie porażki testów UI::${all}"
+            fi
           fi
 
       - uses: actions/upload-artifact@v4
