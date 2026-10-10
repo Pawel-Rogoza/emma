@@ -82,14 +82,11 @@ struct VoiceMiniPanel: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Zakończ rozmowę")
         }
-        .padding(.horizontal, 15)
-        .padding(.vertical, 6)
+        .padding(.leading, 12)
+        .padding(.trailing, 4)
+        .padding(.vertical, 2)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(EmmaTheme.dockBackground)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(EmmaTheme.dockBorder)
-                .frame(height: 1)
-        }
+        // iOS 26: pigułka w szkle nad paskiem zakładek, obwiedziona kolorem Emmy.
+        .glassEffect(.regular.tint(EmmaTheme.emmaSoft.opacity(0.5)).interactive(), in: Capsule())
     }
 }

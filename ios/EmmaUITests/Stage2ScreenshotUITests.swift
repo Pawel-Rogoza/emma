@@ -38,8 +38,8 @@ final class Stage2ScreenshotUITests: XCTestCase {
             let row = application.staticTexts["Andrii Melnyk"]
             guard row.waitForExistence(timeout: 10) else { return "brak klienta w liście" }
             row.tap()
-            guard application.buttons["Wróć"].waitForExistence(timeout: 10) else {
-                return "brak własnego powrotu w nagłówku"
+            guard application.navigationBars.buttons.firstMatch.waitForExistence(timeout: 10) else {
+                return "brak powrotu w pasku nawigacji"
             }
             return nil
         }
@@ -82,7 +82,7 @@ final class Stage2ScreenshotUITests: XCTestCase {
             let row = application.staticTexts["Andrii Melnyk"]
             guard row.waitForExistence(timeout: 10) else { return "brak klienta przy dużym tekście" }
             row.tap()
-            guard application.buttons["Wróć"].waitForExistence(timeout: 10) else {
+            guard application.navigationBars.buttons.firstMatch.waitForExistence(timeout: 10) else {
                 return "brak nagłówka przy dużym tekście"
             }
             return nil

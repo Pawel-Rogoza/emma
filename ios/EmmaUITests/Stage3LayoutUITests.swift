@@ -60,7 +60,7 @@ final class Stage3LayoutUITests: XCTestCase {
             application.staticTexts["Zadania"].waitForExistence(timeout: 10),
             "Lista zadań się nie otworzyła"
         )
-        XCTAssertTrue(application.buttons["Wróć"].exists, "Brak powrotu na liście zadań")
+        XCTAssertTrue(application.navigationBars.buttons.firstMatch.exists, "Brak powrotu na liście zadań")
     }
 
     /// Zadania otwarte są pogrupowane, a nie płaskie.

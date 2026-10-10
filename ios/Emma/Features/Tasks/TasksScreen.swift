@@ -71,27 +71,6 @@ struct TasksScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // F12 audytu: u góry były jednocześnie systemowy powrót i osobny
-                // nagłówek, co dawało podwójną, pustą strefę. Teraz jest jeden
-                // `DetailHeader`: powrót, tytuł i „Dodaj zadanie” w tym samym wierszu.
-                DetailHeader(
-                    caption: "Wspólna lista",
-                    title: "Zadania",
-                    onBack: { dependencies.back() }
-                ) {
-                    IconButton(
-                        systemName: "plus",
-                        accessibilityLabel: "Dodaj zadanie"
-                    ) {
-                        dependencies.present(.taskForm(editing: nil, clientID: nil, caseID: nil))
-                    }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: EmmaRadii.iconButton, style: .continuous)
-                            .strokeBorder(EmmaTheme.fieldBorder, lineWidth: 1)
-                    }
-                }
-                .padding(.bottom, 12)
-
                 SegmentedFilter(items: TasksStore.Scope.allCases, selection: $store.scope) { $0.rawValue }
                     .padding(.bottom, 14)
 
@@ -112,8 +91,20 @@ struct TasksScreen: View {
         }
         .background(EmmaTheme.bg)
         .scrollIndicators(.hidden)
-        .navigationBarBackButtonHidden(true)
-        .emmaPreservesSwipeBack()
+        // iOS 26: tytuł i „Dodaj zadanie” w systemowym pasku nawigacji.
+        .navigationTitle("Zadania")
+        .navigationSubtitle("Wspólna lista")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    dependencies.present(.taskForm(editing: nil, clientID: nil, caseID: nil))
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Dodaj zadanie")
+            }
+        }
         .refreshable { await store.load(dependencies) }
         .task(id: dependencies.dataVersion) { await store.load(dependencies) }
         .onChange(of: store.scope) { _, _ in Task { await store.load(dependencies) } }

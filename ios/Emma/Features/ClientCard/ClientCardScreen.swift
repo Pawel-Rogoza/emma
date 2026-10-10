@@ -33,11 +33,11 @@ struct ClientCardScreen: View {
                 .padding(.bottom, EmmaSpacing.contentBottom)
         }
         .background(EmmaTheme.bg)
-        // F12 audytu: karta klienta miała **dwa** powroty — systemowy i własny
-        // w `DetailHeader`. Zostaje jeden (własny), a gest krawędzi wraca przez
-        // `emmaPreservesSwipeBack()`.
-        .navigationBarBackButtonHidden(true)
-        .emmaPreservesSwipeBack()
+        // iOS 26: systemowy pasek nawigacji w szkle — jeden powrót (systemowy)
+        // i natywny gest krawędzi; własny `DetailHeader` zniknął (0.22.0).
+        .navigationTitle("Karta klienta")
+        .navigationSubtitle(store.phase.value?.client.source.rawValue ?? "")
+        .navigationBarTitleDisplayMode(.inline)
         .refreshable { await store.load(dependencies, clientID: clientID) }
         .task(id: dependencies.dataVersion) {
             await store.load(dependencies, clientID: clientID)
@@ -80,12 +80,6 @@ struct ClientCardScreen: View {
     private func loaded(_ model: ClientCardModel) -> some View {
         let client = model.client
         return VStack(alignment: .leading, spacing: 0) {
-            DetailHeader(
-                caption: client.source.rawValue,
-                title: "Karta klienta",
-                onBack: dependencies.back
-            )
-
             hero(model)
 
             quickActions(model)

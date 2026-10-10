@@ -515,7 +515,6 @@ struct ThreadScreen: View {
                 }
                 .frame(maxHeight: .infinity, alignment: .top)
             case .loaded(let model):
-                header(model)
                 contextStrip(model)
                 transcript(model)
                 if model.thread.isEmail {
@@ -526,8 +525,24 @@ struct ThreadScreen: View {
             }
         }
         .background(EmmaTheme.chatBackground)
-        .navigationBarBackButtonHidden(true)
-        .emmaPreservesSwipeBack()
+        // iOS 26: rozmówca w systemowym pasku nawigacji (szkło), systemowy
+        // powrót i gest krawędzi. Pasek zakładek w rozmowie znika (RootShell).
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let model = store.phase.value {
+                ToolbarItem(placement: .principal) {
+                    header(model)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        dependencies.present(.conversationOptions(model.thread.id))
+                    } label: {
+                        Image(systemName: "ellipsis")
+                    }
+                    .accessibilityLabel("Opcje rozmowy")
+                }
+            }
+        }
         .task(id: dependencies.dataVersion) { await store.load(dependencies, threadID: threadID) }
         // Rozmowa już otwarta, a Emma podsuwa szkic — bez ponownego wczytania.
         .onChange(of: dependencies.pendingThreadDraft) { _, _ in
@@ -550,19 +565,7 @@ struct ThreadScreen: View {
 
     @ViewBuilder
     private func header(_ model: ThreadStore.Model) -> some View {
-        HStack(spacing: 6) {
-            Button {
-                dependencies.back()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(EmmaTheme.ink)
-                    .frame(width: EmmaSpacing.hitTarget, height: EmmaSpacing.hitTarget)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Wróć do rozmów")
-
+        Group {
             Button {
                 if model.client.isWhatsAppContact {
                     showsContactActions = true
@@ -570,8 +573,8 @@ struct ThreadScreen: View {
                     dependencies.openPerson(model.client.id)
                 }
             } label: {
-                HStack(spacing: 10) {
-                    ChatAvatar(client: model.client, diameter: EmmaMetrics.threadHeaderAvatar)
+                HStack(spacing: 8) {
+                    ChatAvatar(client: model.client, diameter: 32)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(model.client.displayName)
                             .font(EmmaTypography.chatHeader)
@@ -583,8 +586,9 @@ struct ThreadScreen: View {
                             .font(EmmaTypography.caption())
                             .foregroundStyle(EmmaTheme.mutedSoft)
                     }
-                    Spacer(minLength: 0)
+                    .lineLimit(1)
                 }
+                .padding(.trailing, 6)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -605,24 +609,6 @@ struct ThreadScreen: View {
             } message: {
                 Text(model.thread.isEmail ? "Tego adresu nie ma jeszcze w kartotece." : "Tego numeru nie ma jeszcze w kartotece.")
             }
-
-            Button {
-                dependencies.present(.conversationOptions(model.thread.id))
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(EmmaTheme.muted)
-                    .frame(width: EmmaSpacing.hitTarget, height: EmmaSpacing.hitTarget)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Opcje rozmowy")
-        }
-        .padding(.horizontal, layout.threadHorizontalPadding)
-        .padding(.vertical, 6)
-        .background(EmmaTheme.chatDockBackground)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(EmmaTheme.chatHeaderBorder).frame(height: 0.5)
         }
     }
 
@@ -653,12 +639,13 @@ struct ThreadScreen: View {
                     .font(.system(size: 13, weight: .semibold))
             }
             .foregroundStyle(EmmaTheme.contextStripText)
-            .padding(.horizontal, layout.threadHorizontalPadding)
+            .padding(.horizontal, 14)
             .frame(minHeight: 38)
-            .background(EmmaTheme.contextStripBackground)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(EmmaTheme.contextStripBorder).frame(height: 0.5)
-            }
+            // Kontekst przypięty pod paskiem nawigacji jak przypięta wiadomość:
+            // pigułka w szkle zamiast pełnej belki (0.22.0).
+            .glassEffect(.regular.interactive(), in: Capsule())
+            .padding(.horizontal, layout.threadHorizontalPadding)
+            .padding(.vertical, 6)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -684,12 +671,13 @@ struct ThreadScreen: View {
                     .font(.system(size: 12, weight: .semibold))
             }
             .foregroundStyle(EmmaTheme.contextStripText)
-            .padding(.horizontal, layout.threadHorizontalPadding)
+            .padding(.horizontal, 14)
             .frame(minHeight: 38)
-            .background(EmmaTheme.contextStripBackground)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(EmmaTheme.contextStripBorder).frame(height: 0.5)
-            }
+            // Kontekst przypięty pod paskiem nawigacji jak przypięta wiadomość:
+            // pigułka w szkle zamiast pełnej belki (0.22.0).
+            .glassEffect(.regular.interactive(), in: Capsule())
+            .padding(.horizontal, layout.threadHorizontalPadding)
+            .padding(.vertical, 6)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

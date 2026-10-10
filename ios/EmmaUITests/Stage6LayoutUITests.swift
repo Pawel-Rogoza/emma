@@ -86,7 +86,7 @@ final class Stage6LayoutUITests: XCTestCase {
         guard withinWindow(row, named: "wiersz listy") else { return "wiersz listy poza oknem" }
         row.tap()
 
-        let back = application.buttons["Wróć"]
+        let back = application.navigationBars.buttons.firstMatch
         guard back.waitForExistence(timeout: 15) else { return "karta klientki się nie otworzyła" }
         return back.isHittable ? nil : "przycisk „Wróć” nieosiągalny przy największym tekście"
     }

@@ -19,41 +19,44 @@ public struct RootShell: View {
     public init() {}
 
     public var body: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                EmmaTheme.bg
-                // Zakładki przenikają się zamiast przeskakiwać (animację
-                // uruchamia pasek zakładek; `go(to:)` z kodu zostaje natychmiastowe).
-                content
-                    .id(dependencies.tab)
-                    .transition(.opacity)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ZStack {
+            EmmaTheme.bg
+            // Zakładki przenikają się zamiast przeskakiwać (animację
+            // uruchamia pasek zakładek; `go(to:)` z kodu zostaje natychmiastowe).
+            content
+                .id(dependencies.tab)
+                .transition(.opacity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Pasek zakładek i mini-panel głosu pływają nad treścią (iOS 26):
+        // `safeAreaInset` odsuwa koniec list, ale treść przewija się pod szkłem.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 8) {
+                // Mini-panel sesji (§4, F06): na ekranie Emmy jest pełny panel
+                // sterowania, a nad arkuszem panel rysuje sam arkusz — tutaj go
+                // wtedy nie ma, żeby nie istniała druga kopia sterowania.
+                if dependencies.voiceState.showsGlobalVoicePanel,
+                   dependencies.tab != .emma,
+                   dependencies.sheet == nil {
+                    VoiceMiniPanel(
+                        state: dependencies.voiceState,
+                        onOpen: { dependencies.go(to: .emma) },
+                        onToggleMicrophone: { Task { await dependencies.toggleVoiceMicrophone() } },
+                        onEnd: { Task { await dependencies.endVoiceSession() } }
+                    )
+                    .padding(.horizontal, 14)
+                }
 
-            // Mini-panel sesji (§4, F06): nad paskiem zakładek i **z rezerwacją
-            // miejsca w układzie**, więc nie zasłania treści. Na ekranie Emmy
-            // jest pełny panel sterowania, a nad arkuszem panel rysuje sam
-            // arkusz — tutaj go wtedy nie ma, żeby nie istniała druga, ukryta
-            // kopia tego samego sterowania (VoiceOver i testy trafiłyby w nią).
-            if dependencies.voiceState.showsGlobalVoicePanel,
-               dependencies.tab != .emma,
-               dependencies.sheet == nil {
-                VoiceMiniPanel(
-                    state: dependencies.voiceState,
-                    onOpen: { dependencies.go(to: .emma) },
-                    onToggleMicrophone: { Task { await dependencies.toggleVoiceMicrophone() } },
-                    onEnd: { Task { await dependencies.endVoiceSession() } }
-                )
+                if showsTabBar {
+                    EmmaTabBar(
+                        selection: $dependencies.tab,
+                        unreadCount: dependencies.unreadTotal,
+                        leadCount: dependencies.leadsNeedingAction
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
-
-            if !keyboardVisible {
-                EmmaTabBar(
-                    selection: $dependencies.tab,
-                    unreadCount: dependencies.unreadTotal,
-                    leadCount: dependencies.leadsNeedingAction
-                )
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
+            .animation(EmmaMotion.smooth, value: showsTabBar)
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             // Klawiatura arkusza nie dotyczy powłoki pod spodem.
@@ -119,6 +122,14 @@ public struct RootShell: View {
                 dependencies.showToast(notice)
             }
         }
+    }
+
+    /// Pasek znika przy klawiaturze i w otwartej rozmowie — jak w Wiadomościach
+    /// i WhatsAppie: wątek potrzebuje całej wysokości na historię i pole odpowiedzi.
+    private var showsTabBar: Bool {
+        guard !keyboardVisible else { return false }
+        if case .thread(_)? = dependencies.visibleRoute { return false }
+        return true
     }
 
     private func consumeQuickAction() {
@@ -245,12 +256,14 @@ struct SheetHost: View {
                         onToggleMicrophone: { Task { await dependencies.toggleVoiceMicrophone() } },
                         onEnd: { Task { await dependencies.endVoiceSession() } }
                     )
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 6)
                 }
             }
         }
         .presentationDetents(sheet.detents)
         .presentationDragIndicator(.visible)
-        .presentationCornerRadius(EmmaRadii.sheet)
+        // Narożniki arkusza bierzemy z systemu (iOS 26 dopasowuje je do ekranu).
         .presentationBackground(EmmaTheme.sheetBackground)
     }
 }
@@ -261,9 +274,10 @@ private extension AppSheet {
         switch self {
         case .conversationOptions, .messageOptions, .emmaContextSelection, .resetDemo:
             return [.height(320), .large]
-        case .profile, .newLead, .startCase, .note, .taskForm, .taskDetail, .eventForm:
+        case .profile, .newLead, .startCase, .note, .taskForm, .eventForm:
             return [.large]
-        case .caseSettings, .newConversation, .eventDetail:
+        // Szczegóły mieszczą się w połowie ekranu — lista pod spodem zostaje widoczna.
+        case .caseSettings, .newConversation, .eventDetail, .taskDetail:
             return [.medium, .large]
         }
     }

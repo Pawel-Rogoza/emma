@@ -241,7 +241,7 @@ final class BackendLoginUITests: XCTestCase {
         attachScreenshot("M3-01-zapis-przez-aplikacje")
 
         // Wracamy na listę i usuwamy to, co właśnie powstało.
-        let back = application.buttons["Wróć"]
+        let back = application.navigationBars.buttons.firstMatch
         if back.waitForExistence(timeout: 5) {
             back.tap()
         }
@@ -319,7 +319,7 @@ final class BackendLoginUITests: XCTestCase {
             "Zadanie bez terminu nie pojawiło się na liście"
         )
         attachScreenshot("AUDYT-03-zadanie-bez-terminu")
-        application.buttons["Wróć"].firstMatch.tap()
+        application.navigationBars.buttons.firstMatch.tap()
 
         // Szczegół najbliższego terminu.
         let details = application.buttons["Szczegóły"]

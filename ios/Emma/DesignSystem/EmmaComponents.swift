@@ -121,57 +121,6 @@ public struct ScreenHeader: View {
     }
 }
 
-/// Nagłówek ekranu szczegółu: przycisk powrotu, podpis i tytuł.
-public struct DetailHeader: View {
-    private let caption: String
-    private let title: String
-    private let onBack: () -> Void
-    private let trailing: AnyView?
-
-    public init(
-        caption: String,
-        title: String,
-        onBack: @escaping () -> Void,
-        @ViewBuilder trailing: () -> some View = { EmptyView() }
-    ) {
-        self.caption = caption
-        self.title = title
-        self.onBack = onBack
-        self.trailing = AnyView(trailing())
-    }
-
-    public var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Button {
-                onBack()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(EmmaTheme.ink)
-                    .frame(width: EmmaSpacing.hitTarget, height: EmmaSpacing.hitTarget)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Wróć")
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(caption.uppercased())
-                    .font(EmmaTypography.caption(.semibold))
-                    .tracking(1)
-                    .foregroundStyle(EmmaTheme.mutedSoft)
-                Text(title)
-                    .font(EmmaTypography.detailTitle)
-                    .foregroundStyle(EmmaTheme.ink)
-                    .lineLimit(2)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            trailing
-        }
-        .padding(.bottom, 12)
-    }
-}
-
 // MARK: - Awatary
 
 public struct PersonAvatar: View {

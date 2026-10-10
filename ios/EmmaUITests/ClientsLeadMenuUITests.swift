@@ -92,10 +92,10 @@ final class ClientsLeadMenuUITests: XCTestCase {
         // a potem wracamy na listę, żeby zobaczyć zgłoszenie w kolejce „Do obsługi”.
         let cardTitle = application.staticTexts["Anna Testowa"]
         XCTAssertTrue(cardTitle.waitForExistence(timeout: 20), "Nie otworzyła się karta nowego kontaktu")
-        XCTAssertTrue(application.staticTexts["DODANO RĘCZNIE"].exists, "Nowy kontakt nie ma źródła „Dodano ręcznie”")
+        XCTAssertTrue(application.staticTexts["Dodano ręcznie"].exists, "Nowy kontakt nie ma źródła „Dodano ręcznie”")
         attachScreenshot(name: "nowy-kontakt-na-liscie")
 
-        let back = application.buttons["Wróć"]
+        let back = application.navigationBars.buttons.firstMatch
         if back.waitForExistence(timeout: 5) {
             back.tap()
         }
