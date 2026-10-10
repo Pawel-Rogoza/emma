@@ -35,22 +35,18 @@ final class Stage2LayoutUITests: XCTestCase {
         tab.tap()
     }
 
-    // MARK: F12 — jeden powrót
+    // MARK: F12 — jeden powrót (od 0.22.0 systemowy, w pasku nawigacji iOS 26)
 
-    /// Karta klienta: brak systemowego powrotu, jest jeden własny „Wróć”.
+    /// Karta klienta: jeden powrót — systemowy przycisk w pasku nawigacji.
     func testClientCardHasSingleBackControl() {
         openTab("clients")
         let client = application.staticTexts["Andrii Melnyk"]
         XCTAssertTrue(client.waitForExistence(timeout: 10), "Brak klienta w liście")
         client.tap()
 
-        let back = application.buttons["Wróć"]
-        XCTAssertTrue(back.waitForExistence(timeout: 10), "Brak własnego przycisku „Wróć”")
-        XCTAssertEqual(
-            application.navigationBars.buttons.count,
-            0,
-            "Systemowy przycisk powrotu nadal jest widoczny — to dwa powroty na jednym ekranie"
-        )
+        let back = application.navigationBars.buttons.firstMatch
+        XCTAssertTrue(back.waitForExistence(timeout: 10), "Brak systemowego powrotu")
+        XCTAssertFalse(application.buttons["Wróć"].exists, "Własny przycisk „Wróć” nadal jest na ekranie — dwa powroty")
     }
 
     /// Gest przesunięcia od lewej krawędzi wraca na listę klientów.
@@ -59,7 +55,7 @@ final class Stage2LayoutUITests: XCTestCase {
         let client = application.staticTexts["Andrii Melnyk"]
         XCTAssertTrue(client.waitForExistence(timeout: 10), "Brak klienta w liście")
         client.tap()
-        XCTAssertTrue(application.buttons["Wróć"].waitForExistence(timeout: 10))
+        XCTAssertTrue(application.navigationBars.buttons.firstMatch.waitForExistence(timeout: 10))
 
         let start = application.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
         let end = application.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5))
@@ -69,14 +65,9 @@ final class Stage2LayoutUITests: XCTestCase {
             application.buttons["tab.clients"].waitForExistence(timeout: 5),
             "Po geście krawędzi nie wróciliśmy na listę klientów"
         )
-        XCTAssertEqual(
-            application.navigationBars.buttons.count,
-            0,
-            "Po powrocie na ekran główny nie powinno być przycisku nawigacji"
-        )
     }
 
-    /// Zadania: jeden nagłówek z powrotem, bez systemowego paska u góry.
+    /// Zadania: tytuł raz (w pasku nawigacji), powrót i „Dodaj zadanie” w pasku.
     func testTasksScreenHasSingleHeader() {
         openTab("today")
         let entry = application.buttons["Wszystkie zadania"]
@@ -84,7 +75,8 @@ final class Stage2LayoutUITests: XCTestCase {
         entry.tap()
 
         XCTAssertTrue(application.staticTexts["Zadania"].waitForExistence(timeout: 10))
-        XCTAssertTrue(application.buttons["Wróć"].exists, "Brak powrotu w nagłówku zadań")
+        XCTAssertTrue(application.navigationBars.buttons.firstMatch.exists, "Brak powrotu w pasku zadań")
+        XCTAssertTrue(application.buttons["Dodaj zadanie"].exists, "Brak „Dodaj zadanie” w pasku")
         XCTAssertEqual(
             application.staticTexts.matching(
                 NSPredicate(format: "label ==[c] 'Zadania'")
@@ -92,7 +84,6 @@ final class Stage2LayoutUITests: XCTestCase {
             1,
             "Tytuł „Zadania” jest na ekranie więcej niż raz — to podwójny nagłówek"
         )
-        XCTAssertEqual(application.navigationBars.buttons.count, 0)
     }
 
     // MARK: F13 — kolumna znaczników

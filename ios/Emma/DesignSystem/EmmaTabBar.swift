@@ -2,11 +2,14 @@ import SwiftUI
 
 // MARK: - Pasek zakładek
 //
-// Odtworzenie `nav()` z referencji: pięć zakładek, środkowa (Emma) w ciemnym
-// „chipie”, plakietka nieprzeczytanych na zakładce „Rozmowy”.
+// Redesign 0.22.0 (iOS 26): pływająca kapsuła z materiałem Liquid Glass nad
+// treścią (treść przewija się pod nią), cztery zwykłe zakładki i **Emma
+// w środku** jako wyeksponowany, uniesiony przycisk z jej portretem — decyzja
+// właściciela: Emma zostaje środkową zakładką, ale ma się wyróżniać.
 //
-// Świadomie **nie** używamy `TabView`: referencja ma własny pasek z chipem Emmy,
-// a natywny pasek iOS nie pozwala odtworzyć tego wyglądu bez utraty zgodności.
+// Świadomie nie używamy `TabView`: systemowy pasek nie pozwala wyróżnić jednej
+// zakładki. Materiał (`glassEffect`) jest jednak systemowy, więc pasek wygląda
+// jak reszta iOS 26.
 
 public struct EmmaTabBar: View {
     @EnvironmentObject private var dependencies: AppDependencies
@@ -14,10 +17,9 @@ public struct EmmaTabBar: View {
     private let unreadCount: Int
     /// Zgłoszenia do obsługi — plakietka na zakładce „Klienci”.
     private let leadCount: Int
-    /// Licznik „odbić” ikony — tylko nowo wybrana zakładka podskakuje
-    /// (efekt na samym `isSelected` ruszałby też ikonę, którą opuszczamy).
+    /// Licznik „odbić” ikony — tylko nowo wybrana zakładka podskakuje.
     @State private var bounces: [AppTab: Int] = [:]
-    /// Pigułka pod wybraną ikoną przesuwa się między zakładkami (audyt 29.09.2026).
+    /// Pigułka pod wybraną ikoną przesuwa się między zakładkami.
     @Namespace private var selectionSpace
 
     public init(selection: Binding<AppTab>, unreadCount: Int, leadCount: Int = 0) {
@@ -27,95 +29,134 @@ public struct EmmaTabBar: View {
     }
 
     public var body: some View {
-        HStack(alignment: .top, spacing: 0) {
+        HStack(alignment: .center, spacing: 0) {
             ForEach(AppTab.allCases) { tab in
-                tabButton(tab)
+                if tab.isEmmaChip {
+                    emmaButton(tab)
+                } else {
+                    tabButton(tab)
+                }
             }
         }
         // Liczniki pojawiają się i zmieniają sprężyście, a nie skokiem.
         .animation(EmmaMotion.bouncy, value: unreadCount)
         .animation(EmmaMotion.bouncy, value: leadCount)
         .padding(.horizontal, 6)
-        .padding(.top, EmmaMetrics.tabBarTopPadding)
-        .padding(.bottom, EmmaMetrics.tabBarBottomPadding)
-        .background(EmmaTheme.tabBarBackground)
-        .overlay(alignment: .top) {
-            Rectangle().fill(EmmaTheme.tabBarBorder).frame(height: 0.5)
+        .padding(.vertical, 4)
+        .glassEffect(.regular.interactive(), in: Capsule())
+        .padding(.horizontal, 14)
+        .padding(.top, 14)
+        .padding(.bottom, 2)
+    }
+
+    private func select(_ tab: AppTab) {
+        // Ponowne dotknięcie aktywnej zakładki wraca do jej ekranu głównego.
+        if tab == selection {
+            dependencies.go(to: tab, resetStack: true)
+        } else {
+            EmmaHaptics.selection()
+            bounces[tab, default: 0] += 1
+            withAnimation(EmmaMotion.smooth) { selection = tab }
         }
     }
 
-    @ViewBuilder
-    private func tabButton(_ tab: AppTab) -> some View {
+    // MARK: Emma — środek paska
+
+    private func emmaButton(_ tab: AppTab) -> some View {
         let isSelected = tab == selection
-        Button {
-            // Ponowne dotknięcie aktywnej zakładki wraca do jej ekranu głównego —
-            // zachowanie standardowe dla pasków zakładek (popToRoot).
-            if isSelected {
-                dependencies.go(to: tab, resetStack: true)
-            } else {
-                EmmaHaptics.selection()
-                bounces[tab, default: 0] += 1
-                withAnimation(EmmaMotion.smooth) { selection = tab }
-            }
+        return Button {
+            select(tab)
         } label: {
-            VStack(spacing: 3) {
-                if tab.isEmmaChip {
-                    Image(systemName: tab.systemImage)
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(isSelected ? EmmaTheme.tabEmmaChipText : EmmaTheme.ink)
-                        .frame(width: EmmaMetrics.tabEmmaChipWidth, height: EmmaMetrics.tabEmmaChipHeight)
-                        .background(isSelected ? EmmaTheme.tabEmmaChip : EmmaTheme.controlBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-                        .symbolEffect(.bounce, value: bounces[tab, default: 0])
-                } else {
-                    ZStack(alignment: .topTrailing) {
-                        Image(systemName: tab.systemImage)
-                            .font(.system(size: 19, weight: isSelected ? .semibold : .regular))
-                            .foregroundStyle(isSelected ? EmmaTheme.tabActive : EmmaTheme.tabInactive)
-                            // Wybrana ikona „odbija” — drobny, ale czytelny znak,
-                            // że przejście zaszło (audyt 28.09.2026).
-                            .symbolEffect(.bounce, value: bounces[tab, default: 0])
-                            .frame(width: 52, height: EmmaMetrics.tabEmmaChipHeight)
-                            .background {
-                                if isSelected {
-                                    Capsule()
-                                        .fill(EmmaTheme.accentSoft)
-                                        .matchedGeometryEffect(id: "tab-selection", in: selectionSpace)
-                                }
-                            }
-                        if tab == .messages && unreadCount > 0 {
-                            UnreadBadge(count: unreadCount, compact: true)
-                                .contentTransition(.numericText())
-                                .transition(.scale.combined(with: .opacity))
-                                .offset(x: 10, y: -4)
-                        }
-                        if tab == .clients && leadCount > 0 {
-                            CountBadge(count: leadCount, accessibilityText: EmmaPlural.leads(leadCount))
-                                .contentTransition(.numericText())
-                                .transition(.scale.combined(with: .opacity))
-                                .offset(x: 12, y: -4)
-                        }
-                    }
+            VStack(spacing: 2) {
+                ZStack {
+                    Circle()
+                        .fill(EmmaTheme.surface)
+                    EmmaOrb(size: .compact)
+                        .clipShape(Circle())
+                        .padding(3)
                 }
+                .frame(width: EmmaMetrics.tabEmmaButton, height: EmmaMetrics.tabEmmaButton)
+                .overlay {
+                    Circle()
+                        .strokeBorder(EmmaTheme.emma, lineWidth: isSelected ? 3 : 2)
+                }
+                .shadow(color: EmmaTheme.emma.opacity(isSelected ? 0.45 : 0.25), radius: isSelected ? 10 : 6, y: 3)
+                .scaleEffect(isSelected ? 1.04 : 1)
+                .symbolEffect(.bounce, value: bounces[tab, default: 0])
+                // Przycisk wystaje ponad kapsułę — znak, że to główne wejście.
+                .offset(y: -12)
+                .padding(.bottom, -12)
+
                 Text(tab.title)
                     .font(EmmaTypography.tabLabel)
-                    .foregroundStyle(isSelected ? EmmaTheme.tabActive : EmmaTheme.tabInactive)
-                    // Pięć stałych kolumn nie mieści etykiet przy największym tekście
-                    // dostępności: „Kalendarz” nachodziło na sąsiednie zakładki.
-                    // Pasek to nawigacja, nie treść — ograniczamy skalę i pozwalamy
-                    // etykiecie zmniejszyć się w jednej linii, zamiast się nakładać.
+                    .fontWeight(.semibold)
+                    .foregroundStyle(EmmaTheme.emma)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.65)
                     .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             }
             .frame(maxWidth: .infinity, minHeight: EmmaMetrics.tabItemMinHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .animation(EmmaMotion.bouncy, value: isSelected)
+        .accessibilityLabel("Emma, asystentka")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .accessibilityIdentifier("tab.\(tab.rawValue)")
+    }
+
+    // MARK: Zwykła zakładka
+
+    @ViewBuilder
+    private func tabButton(_ tab: AppTab) -> some View {
+        let isSelected = tab == selection
+        Button {
+            select(tab)
+        } label: {
+            VStack(spacing: 2) {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: tab.systemImage)
+                        .font(.system(size: 18, weight: isSelected ? .semibold : .regular))
+                        .symbolVariant(isSelected ? .fill : .none)
+                        .foregroundStyle(isSelected ? EmmaTheme.tabActive : EmmaTheme.tabInactive)
+                        .symbolEffect(.bounce, value: bounces[tab, default: 0])
+                        .frame(width: 48, height: 30)
+                    if tab == .messages && unreadCount > 0 {
+                        UnreadBadge(count: unreadCount, compact: true)
+                            .contentTransition(.numericText())
+                            .transition(.scale.combined(with: .opacity))
+                            .offset(x: 8, y: -4)
+                    }
+                    if tab == .clients && leadCount > 0 {
+                        CountBadge(count: leadCount, accessibilityText: EmmaPlural.leads(leadCount))
+                            .contentTransition(.numericText())
+                            .transition(.scale.combined(with: .opacity))
+                            .offset(x: 10, y: -4)
+                    }
+                }
+                Text(tab.title)
+                    .font(EmmaTypography.tabLabel)
+                    .foregroundStyle(isSelected ? EmmaTheme.tabActive : EmmaTheme.tabInactive)
+                    // Pasek to nawigacja, nie treść — przy największym tekście
+                    // etykieta zmniejsza się w jednej linii, zamiast nachodzić.
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+            }
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, minHeight: EmmaMetrics.tabItemMinHeight)
+            .background {
+                if isSelected {
+                    Capsule()
+                        .fill(EmmaTheme.accentSoft)
+                        .matchedGeometryEffect(id: "tab-selection", in: selectionSpace)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel(for: tab))
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-        // Identyfikator dla testów interfejsu: etykieta zmienia się wraz z licznikiem
-        // nieprzeczytanych, więc nie nadaje się na stały uchwyt.
+        // Identyfikator dla testów interfejsu: etykieta zmienia się wraz z licznikiem.
         .accessibilityIdentifier("tab.\(tab.rawValue)")
     }
 

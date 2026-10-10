@@ -12,7 +12,7 @@ name: Emma
 options:
   bundleIdPrefix: pl.kancelaria.emma
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "26.0"
   createIntermediateGroups: true
   groupSortPosition: top
   generateEmptyDirectories: false
@@ -32,7 +32,7 @@ configFiles:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
     TARGETED_DEVICE_FAMILY: "1"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     SWIFT_STRICT_CONCURRENCY: complete
@@ -42,7 +42,7 @@ settings:
     SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: $(EMMA_DEVELOPMENT_TEAM)
-    MARKETING_VERSION: "0.21.0"
+    MARKETING_VERSION: "0.22.0"
     CURRENT_PROJECT_VERSION: "1"
     # Daty i liczby w logach niezależne od ustawień maszyny dewelopera.
     SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited)

@@ -1,5 +1,10 @@
 # DESIGN_CONTRACT.md
 
+> **Zakończony 10.10.2026 (0.22.0).** Aplikacja nie odtwarza już prototypu HTML.
+> Obowiązują tokeny semantyczne z `EmmaTheme.swift`, SF Pro + Manrope i komponenty
+> systemowe iOS 26 — szczegóły w `REDESIGN_IOS26_2026-10-10.md`. Poniższy tekst
+> zostaje jako historia decyzji.
+
 Zamrożony kontrakt wyglądu dla natywnej aplikacji Emma na iPhone.
 Źródło: `reference/prototype/` z commita `b97685b5e2c2cd3d6f78b172b9c0b5cee114270b`
 (opublikowana wersja 5), sumy kontrolne zgodne z `reference/manifest.json` (patrz `BASELINE.md` §2).

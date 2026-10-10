@@ -124,9 +124,9 @@ iPhonie bez wykonania tych kroków.
 **Co robić:**
 1. Sprawdzić, czy to podgląd, czy kod. Podgląd jest rekonstrukcją w HTML — błąd
    w podglądzie **nie** jest jeszcze błędem aplikacji.
-2. Uruchomić `python3 scripts/design-token-diff.py <komponent>` i porównać wartości
-   użyte w Swift z regułami referencji. Kategoria `✗ kolory spoza referencji` to błąd
-   zawsze; `· token współdzielony` wymaga oka.
+2. Od 0.22.0 referencja HTML nie jest wzorcem (koniec kontraktu, patrz
+   `REDESIGN_IOS26_2026-10-10.md`). `python3 scripts/check-color-tokens.py`
+   sprawdza tylko, czy kolory pochodzą z motywu.
 3. Jeśli różnica jest w kodzie — naprawić kod i token, nie podgląd.
 4. Jeśli różnica jest w podglądzie — naprawić podgląd (to tylko narzędzie).
 

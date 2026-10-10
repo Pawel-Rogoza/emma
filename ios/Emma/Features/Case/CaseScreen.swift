@@ -150,27 +150,28 @@ struct CaseScreen: View {
         }
         .background(EmmaTheme.bg)
         .scrollIndicators(.hidden)
-        .navigationBarBackButtonHidden(true)
-        .emmaPreservesSwipeBack()
+        // iOS 26: systemowy pasek nawigacji (szkło), opcje sprawy w pasku.
+        .navigationTitle("Prowadzona sprawa")
+        .navigationSubtitle(store.phase.value?.legalCase.referenceNumber ?? "")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if let model = store.phase.value {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        dependencies.present(.caseSettings(model.legalCase.id))
+                    } label: {
+                        Image(systemName: "ellipsis")
+                    }
+                    .accessibilityLabel("Zmień status i opiekuna sprawy")
+                }
+            }
+        }
         .refreshable { await store.load(dependencies, caseID: caseID) }
         .task(id: dependencies.dataVersion) { await store.load(dependencies, caseID: caseID) }
     }
 
     @ViewBuilder
     private func loaded(_ model: CaseStore.Model) -> some View {
-        DetailHeader(
-            caption: model.legalCase.referenceNumber,
-            title: "Prowadzona sprawa",
-            onBack: { dependencies.back() }
-        ) {
-            IconButton(
-                systemName: "ellipsis",
-                accessibilityLabel: "Zmień status i opiekuna sprawy"
-            ) {
-                dependencies.present(.caseSettings(model.legalCase.id))
-            }
-        }
-
         caseTitle(model)
             .padding(.bottom, 12)
             .emmaAppear(0)

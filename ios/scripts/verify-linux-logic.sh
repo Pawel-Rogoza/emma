@@ -100,17 +100,12 @@ else
 fi
 
 echo
-echo "== 6/9 · Kontrola tokenów koloru wobec referencji =="
-# Wymóg: żaden kolor użyty w Swift nie może być wymyślony — każdy musi mieć
-# odpowiednik w regułach referencji. Kategoria „✗ kolory spoza referencji” to błąd.
+echo "== 6/9 · Kontrola tokenów koloru =="
+# Od 0.22.0 (koniec zamrożonego kontraktu z prototypem HTML): literały kolorów
+# tylko w motywie, ekrany używają tokenów semantycznych.
 if command -v python3 >/dev/null 2>&1; then
-  token_report="$(python3 scripts/design-token-diff.py 2>&1)"
-  invented="$(printf '%s\n' "$token_report" | grep -c '✗ kolory spoza referencji' || true)"
-  shared="$(printf '%s\n' "$token_report" | grep -c '· kolory spoza reguł' || true)"
-  echo "Kolory spoza referencji: $invented · tokeny współdzielone (do oka): $shared"
-  if (( invented > 0 )); then
-    printf '%s\n' "$token_report" | grep '✗ kolory spoza referencji' | sed 's/^/  /'
-    echo "[BŁĄD] Kolor użyty w kodzie nie występuje w referencji." >&2
+  if ! python3 scripts/check-color-tokens.py; then
+    echo "[BŁĄD] Kolor poza motywem albo brak tokenu semantycznego." >&2
     exit 1
   fi
 else

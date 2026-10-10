@@ -89,7 +89,9 @@ jobs:
           # Bez wpisywania nazwy modelu na sztywno: zestaw symulatorów na runnerze
           # zmienia się między obrazami. Preferujemy iPhone 16, a gdy go nie ma —
           # pierwszy dostępny iPhone.
-          LIST=$(xcrun simctl list devices available)
+          # Aplikacja wymaga iOS 26 (0.22.0): bierzemy tylko symulatory z runtime iOS 26+,
+          # inaczej xcodebuild nie znajdzie celu i kończy się kodem 70.
+          LIST=$(xcrun simctl list devices available | awk '/^-- /{ok = ($0 ~ /^-- iOS (2[6-9]|[3-9][0-9])/)} ok')
           UDID_PATTERN='[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}'
           DEVICE_ID=$(printf '%s\n' "$LIST" | grep -i 'iPhone 16' | grep -oE "$UDID_PATTERN" | head -1 || true)
           if [[ -z "$DEVICE_ID" ]]; then
@@ -140,11 +142,21 @@ jobs:
             -resultBundlePath "$ARTIFACTS/unit-tests.xcresult" \
             -only-testing:EmmaTests \
             CODE_SIGNING_ALLOWED=NO \
-            > "$ARTIFACTS/unit-tests.log" 2>&1
+            > "$ARTIFACTS/unit-tests.log" 2>&1 &
+          # Bezpiecznik: testy trwają ~3 min; po 15 min przerywamy, zamiast czekać
+          # do limitu zadania (0.22.0 — pierwsze przebiegi na iOS 26 wisiały).
+          test_pid=$!
+          ( sleep 900; echo "[CI] Testy przekroczyły 15 min — przerywam." >> "$ARTIFACTS/unit-tests.log"; kill "$test_pid" 2>/dev/null ) &
+          watchdog=$!
+          wait "$test_pid"
           status=$?
+          kill "$watchdog" 2>/dev/null || true
           set -e
           tail -200 "$ARTIFACTS/unit-tests.log"
           if [[ $status -ne 0 ]]; then
+            # Końcówka logu jako jedna adnotacja — czytelna przez publiczne API.
+            tail_msg=$(tail -60 "$ARTIFACTS/unit-tests.log" | cut -c1-220 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=Koniec logu testów jednostkowych::${tail_msg}"
             echo "::group::Nieudane testy jednostkowe"
             grep -E "error:|' failed \(|XCTAssert|Fatal error" "$ARTIFACTS/unit-tests.log" | head -100 || true
             echo "::endgroup::"

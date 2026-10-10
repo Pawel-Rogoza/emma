@@ -34,9 +34,6 @@
 	     Nazwy plików muszą być zgodne z tymi w Resources/Fonts. -->
 	<key>UIAppFonts</key>
 	<array>
-		<string>DMSans-Regular.ttf</string>
-		<string>DMSans-Medium.ttf</string>
-		<string>DMSans-SemiBold.ttf</string>
 		<string>Manrope-Bold.ttf</string>
 		<string>Manrope-ExtraBold.ttf</string>
 	</array>

@@ -3,7 +3,7 @@ import UIKit
 
 // MARK: - Kontrola rejestracji czcionek
 //
-// Referencja używa DM Sans i Manrope. Nazwy PostScript zostały odczytane
+// Aplikacja dołącza Manrope (tytuły); reszta tekstu to SF Pro. Nazwy PostScript zostały odczytane
 // z tablicy `name` plików czcionek, ale **obecność pliku w pakiecie nie jest
 // dowodem, że czcionka jest zarejestrowana** — wymaga to wpisu `UIAppFonts`
 // w Info.plist. Ta kontrola sprawdza to w czasie działania i zgłasza brak,

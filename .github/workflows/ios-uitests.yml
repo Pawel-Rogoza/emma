@@ -51,7 +51,9 @@ jobs:
         id: simulator
         run: |
           set -euo pipefail
-          LIST=$(xcrun simctl list devices available)
+          # Aplikacja wymaga iOS 26 (0.22.0): bierzemy tylko symulatory z runtime iOS 26+,
+          # inaczej xcodebuild nie znajdzie celu i kończy się kodem 70.
+          LIST=$(xcrun simctl list devices available | awk '/^-- /{ok = ($0 ~ /^-- iOS (2[6-9]|[3-9][0-9])/)} ok')
           UDID='[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}'
           ID=$(printf '%s\n' "$LIST" | grep -i 'iPhone 16 ' | grep -oE "$UDID" | head -1 || true)
           [[ -z "$ID" ]] && ID=$(printf '%s\n' "$LIST" | grep -i 'iPhone' | grep -oE "$UDID" | head -1)

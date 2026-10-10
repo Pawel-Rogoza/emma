@@ -74,12 +74,11 @@ public enum EmmaMetrics {
     public static let conversationAvatar: CGFloat = 48
     public static let clientHeroAvatar: CGFloat = 63
     public static let threadHeaderAvatar: CGFloat = 39
-    public static let tabBarHeight: CGFloat = 74
-    public static let tabBarTopPadding: CGFloat = 8
-    public static let tabBarBottomPadding: CGFloat = 3
-    public static let tabItemMinHeight: CGFloat = 52
-    public static let tabEmmaChipWidth: CGFloat = 43
-    public static let tabEmmaChipHeight: CGFloat = 34
+    /// Wysokość pływającego paska zakładek razem z marginesem nad nim.
+    public static let tabBarHeight: CGFloat = 82
+    public static let tabItemMinHeight: CGFloat = 54
+    /// Środkowy przycisk Emmy w pasku zakładek (uniesiony ponad kapsułę).
+    public static let tabEmmaButton: CGFloat = 54
     public static let tabBadgeMinWidth: CGFloat = 17
     public static let tabBadgeHeight: CGFloat = 17
     public static let primaryButtonMinHeight: CGFloat = 44

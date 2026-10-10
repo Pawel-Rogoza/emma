@@ -27,8 +27,8 @@ final class Stage3LayoutUITests: XCTestCase {
 
     /// Najbliższy termin i wejście do zadań muszą być na pierwszym widoku.
     func testNextEventAndTaskEntryAreAboveTheFold() {
-        let section = application.staticTexts["Najbliższy termin"]
-        XCTAssertTrue(section.waitForExistence(timeout: 10), "Brak sekcji „Najbliższy termin”")
+        let section = application.staticTexts["Następne"]
+        XCTAssertTrue(section.waitForExistence(timeout: 10), "Brak sekcji „Następne”")
         XCTAssertTrue(section.isHittable, "Sekcja najbliższego terminu jest poza pierwszym widokiem")
 
         // Godzina referencyjnego terminu z danych demo (DemoClock = 09:41).
@@ -37,7 +37,7 @@ final class Stage3LayoutUITests: XCTestCase {
             "Brak godziny najbliższego terminu"
         )
 
-        // Od 0.3.0 wejściem do zadań w pierwszym widoku jest kafelek pulsu dnia.
+        // Od 0.22.0 wejściem do zadań jest ostatni wiersz kolejki „Wymaga Ciebie”.
         let entry = application.buttons["pulse-tasks"]
         XCTAssertTrue(entry.exists, "Brak kafelka zadań")
         XCTAssertTrue(entry.isHittable, "Wejście do zadań jest poza pierwszym widokiem")
@@ -60,7 +60,7 @@ final class Stage3LayoutUITests: XCTestCase {
             application.staticTexts["Zadania"].waitForExistence(timeout: 10),
             "Lista zadań się nie otworzyła"
         )
-        XCTAssertTrue(application.buttons["Wróć"].exists, "Brak powrotu na liście zadań")
+        XCTAssertTrue(application.navigationBars.buttons.firstMatch.exists, "Brak powrotu na liście zadań")
     }
 
     /// Zadania otwarte są pogrupowane, a nie płaskie.

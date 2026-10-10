@@ -32,7 +32,7 @@ final class Stage3ScreenshotUITests: XCTestCase {
     /// Zwykły tekst: pierwszy widok dnia, zadania i grupowanie.
     func testCaptureStage3Screens() {
         capture("21-dzisiaj-pierwszy-widok", description: "Dzisiaj — kompaktowa Emma, najbliższy termin i zadania bez przewijania") {
-            let section = application.staticTexts["Najbliższy termin"]
+            let section = application.staticTexts["Następne"]
             guard section.waitForExistence(timeout: 10) else { return "brak sekcji najbliższego terminu" }
             guard section.isHittable else { return "najbliższy termin poza pierwszym widokiem" }
             // Od 0.3.0 wejściem do zadań w pierwszym widoku jest kafelek pulsu dnia.
@@ -44,7 +44,7 @@ final class Stage3ScreenshotUITests: XCTestCase {
 
         capture("22-dzisiaj-dalsze-terminy", description: "Dzisiaj — dalsze terminy dnia po przewinięciu") {
             application.swipeUp()
-            guard application.staticTexts["Dalej dziś"].waitForExistence(timeout: 10) else {
+            guard application.staticTexts["Później dziś"].waitForExistence(timeout: 10) else {
                 return "brak sekcji dalszych terminów"
             }
             return nil
@@ -68,7 +68,7 @@ final class Stage3ScreenshotUITests: XCTestCase {
         relaunchWithLargestText()
 
         capture("24-duzy-tekst-dzisiaj", description: "Dzisiaj przy największym tekście dostępności") {
-            let section = application.staticTexts["Najbliższy termin"]
+            let section = application.staticTexts["Następne"]
             guard section.waitForExistence(timeout: 10) else {
                 return "ekran dnia nie wczytał się przy dużym tekście"
             }
