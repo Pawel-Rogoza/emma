@@ -270,7 +270,9 @@ struct TodayScreen: View {
 
         // Pod najbliższym terminem, nie nad nim — termin i kafelki zostają
         // w pierwszym widoku (test `testNextEventAndTaskEntryAreAboveTheFold`).
-        if let rows = messages.phase.value?.unreadRows, !rows.isEmpty {
+        // „Napisali” to tylko WhatsApp (10.10.2026) — poczta ma własną skrzynkę
+        // w „Rozmowach” i nie przepycha się na ekran główny.
+        if let rows = messages.phase.value?.unreadWhatsAppRows, !rows.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
                 SectionHeader("Napisali", actionTitle: "Rozmowy", compact: true) {
                     openUnreadConversations()
@@ -278,7 +280,8 @@ struct TodayScreen: View {
                 writersCard(rows)
             }
             .transition(.opacity.combined(with: .move(edge: .top)))
-        } else if dependencies.unreadTotal > 0 {
+        } else if messages.phase.value == nil, dependencies.unreadTotal > 0 {
+            // Lista rozmów jeszcze niewczytana — sama liczba z serwera.
             unreadMessagesBar(dependencies.unreadTotal)
                 .padding(.top, 12)
                 .transition(.opacity.combined(with: .move(edge: .top)))
@@ -546,7 +549,7 @@ struct TodayScreen: View {
     /// po liczniku na zakładce.
     private func openUnreadConversations() {
         EmmaHaptics.tap()
-        messages.showUnread()
+        messages.showUnread(in: .whatsApp)
         dependencies.go(to: .messages)
     }
 
