@@ -100,6 +100,16 @@ jobs:
               echo "Brak logu testów."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+          # Krok testów ma `continue-on-error`, więc przebieg jest zielony nawet
+          # przy porażkach. Liczba i nazwy nieudanych testów jako adnotacje —
+          # czytelne przez publiczne API (check-runs) bez logowania.
+          if [[ -f "$LOG" ]]; then
+            passed=$(grep -cE "Test Case .* passed" "$LOG")
+            failed=$(grep -cE "Test Case .* failed" "$LOG")
+            echo "::notice title=Testy UI::Zaliczone: ${passed} · Niezaliczone: ${failed}"
+            grep -E "error: -\[" "$LOG" | sort -u | head -30 | cut -c1-400 \
+              | sed -E 's/^.*error: -\[EmmaUITests\.([^ ]+) ([^]]+)\] : (.*)$/::error title=\1.\2::\3/' || true
+          fi
 
       - uses: actions/upload-artifact@v4
         if: always()
