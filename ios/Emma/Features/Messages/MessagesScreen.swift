@@ -90,6 +90,9 @@ final class MessagesStore: ObservableObject {
         let highestSequence: Int
         /// Okno 24 h WhatsApp — ostrzeżenie na karcie, zanim wysyłka zostanie odrzucona.
         let replyWindow: ReplyWindow
+        /// Ostatnia wiadomość **od klienta** — „Napisali” na ekranie głównym
+        /// pokazuje, co klient napisał, nawet gdy już mu odpisaliśmy.
+        var lastIncoming: Message? = nil
 
         /// Ten sam wiersz po przeczytaniu do `cursor` — licznik i stan liczone
         /// tą samą regułą co przy wczytaniu listy.
@@ -112,7 +115,8 @@ final class MessagesStore: ObservableObject {
                 waitingSince: waitingSince,
                 state: newState,
                 highestSequence: highestSequence,
-                replyWindow: replyWindow
+                replyWindow: replyWindow,
+                lastIncoming: lastIncoming
             )
         }
     }
@@ -158,16 +162,15 @@ final class MessagesStore: ObservableObject {
             })
         }
 
-        /// Rozmowy z nowymi wiadomościami — najdłużej czekający klient najpierw.
-        var unreadRows: [Row] {
-            allRows
-                .filter { $0.unreadCount > 0 }
-                .sorted { ($0.waitingSince ?? .distantFuture) < ($1.waitingSince ?? .distantFuture) }
-        }
-
-        /// „Napisali” na ekranie głównym — sam WhatsApp, bez poczty.
-        var unreadWhatsAppRows: [Row] {
-            unreadRows.filter { !$0.thread.isEmail }
+        /// „Napisali” na ekranie głównym: klienci, którzy odezwali się ostatnio
+        /// na WhatsAppie — najnowsza wiadomość klienta najpierw, jeden wiersz
+        /// na osobę (przy kilku wątkach wygrywa świeższy).
+        var recentWriterRows: [Row] {
+            var seen = Set<ClientID>()
+            return allRows
+                .filter { !$0.thread.isEmail && $0.lastIncoming != nil }
+                .sorted { ($0.lastIncoming?.sentAt ?? .distantPast) > ($1.lastIncoming?.sentAt ?? .distantPast) }
+                .filter { seen.insert($0.client.id).inserted }
         }
     }
 
@@ -309,7 +312,8 @@ final class MessagesStore: ObservableObject {
                             sortedMessages: sorted,
                             now: now,
                             isComplete: sorted.count < limit
-                        )
+                        ),
+                        lastIncoming: sorted.last { !$0.isOutgoing }
                     )
                 )
             }
@@ -380,21 +384,6 @@ final class MessagesStore: ObservableObject {
     /// Ręczne „nieprzeczytane” (przesunięcie, menu) unieważnia lokalny odczyt.
     func forgetLocalRead(threadID: ThreadID) {
         localReads[threadID] = nil
-    }
-
-    /// „Nowe” z „Dzisiaj”: filtr nowych we wskazanej skrzynce albo w tej,
-    /// w której ktoś czeka — nowy mail nie może się schować za przełącznikiem.
-    func showUnread(in requested: Channel? = nil) {
-        searchText = ""
-        filter = .unread
-        if let requested {
-            channel = requested
-            return
-        }
-        guard let model = phase.value, model.unreadConversations(in: channel) == 0 else { return }
-        if let other = Channel.allCases.first(where: { model.unreadConversations(in: $0) > 0 }) {
-            channel = other
-        }
     }
 
     func applyLocalFilter() async {

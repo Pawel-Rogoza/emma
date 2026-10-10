@@ -440,6 +440,90 @@ public struct SecondaryButton: View {
     }
 }
 
+/// Przycisk kontaktu poza aplikacją — telefon, WhatsApp, e-mail.
+///
+/// 0.23.0 (właściciel: „mocniej wydzieliłbym buttony WhatsApp / e-mail”):
+/// zwykły `SecondaryButton` wyglądał tak samo jak „Notatka” czy „Kopiuj”.
+/// Każdy kanał ma teraz swój kolor — ikonę w pełnym kółku, podbarwione tło
+/// i obwódkę — więc wzrok trafia w kanał bez czytania etykiety.
+public struct ContactButton: View {
+    public enum Channel {
+        case phone
+        case whatsApp
+        case email
+
+        var systemImage: String {
+            switch self {
+            case .phone: return "phone.fill"
+            case .whatsApp: return "message.fill"
+            case .email: return "envelope.fill"
+            }
+        }
+
+        /// Kółko z ikoną.
+        var tint: Color {
+            switch self {
+            case .phone: return EmmaTheme.primaryButton
+            case .whatsApp: return EmmaTheme.chatGreen
+            case .email: return EmmaTheme.accent
+            }
+        }
+
+        /// Etykieta — ciemniejsza niż kółko, żeby była czytelna na tle.
+        var text: Color {
+            switch self {
+            case .phone: return EmmaTheme.ink
+            case .whatsApp: return EmmaTheme.positive
+            case .email: return EmmaTheme.accent
+            }
+        }
+
+        var background: Color {
+            switch self {
+            case .phone: return EmmaTheme.secondaryButton
+            case .whatsApp: return EmmaTheme.positiveSoft
+            case .email: return EmmaTheme.accentSoft
+            }
+        }
+    }
+
+    private let channel: Channel
+    private let title: String
+    private let action: () -> Void
+
+    public init(_ channel: Channel, title: String, action: @escaping () -> Void) {
+        self.channel = channel
+        self.title = title
+        self.action = action
+    }
+
+    public var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: channel.systemImage)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 26, height: 26)
+                    .background(channel.tint, in: Circle())
+                Text(title)
+                    .font(EmmaTypography.button)
+                    .foregroundStyle(channel.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, minHeight: EmmaMetrics.primaryButtonMinHeight)
+            .background(channel.background, in: RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous)
+                    .strokeBorder(channel.tint.opacity(0.28), lineWidth: 1)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(EmmaCardButtonStyle())
+    }
+}
+
 /// Kwadratowy przycisk ikony (`.icon-button`).
 public struct IconButton: View {
     private let systemName: String
@@ -1193,6 +1277,7 @@ public struct TaskRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("task-open")
     }
 
     private var dateLabel: some View {

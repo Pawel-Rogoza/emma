@@ -341,12 +341,12 @@ struct ClientCardScreen: View {
         if whatsApp != nil || mail != nil {
             HStack(spacing: 10) {
                 if let whatsApp {
-                    SecondaryButton("WhatsApp", systemImage: "message") {
+                    ContactButton(.whatsApp, title: "WhatsApp") {
                         LeadActions.contact(client, url: whatsApp, channel: "WhatsApp", dependencies: dependencies, openURL: openURL)
                     }
                 }
                 if let mail {
-                    SecondaryButton("E-mail", systemImage: "envelope") {
+                    ContactButton(.email, title: "E-mail") {
                         LeadActions.contact(client, url: mail, channel: "E-mail", dependencies: dependencies, openURL: openURL)
                     }
                 }
@@ -595,13 +595,13 @@ struct LeadPathPanel: View {
         if phone != nil || whatsApp != nil || mail != nil {
             HStack(spacing: 8) {
                 if let phone {
-                    SecondaryButton("Zadzwoń", systemImage: "phone") { onContact(phone, "Połączenie") }
+                    ContactButton(.phone, title: "Zadzwoń") { onContact(phone, "Połączenie") }
                 }
                 if let whatsApp {
-                    SecondaryButton("WhatsApp", systemImage: "message") { onContact(whatsApp, "WhatsApp") }
+                    ContactButton(.whatsApp, title: "WhatsApp") { onContact(whatsApp, "WhatsApp") }
                 }
                 if let mail, phone == nil || whatsApp == nil {
-                    SecondaryButton("E-mail", systemImage: "envelope") { onContact(mail, "E-mail") }
+                    ContactButton(.email, title: "E-mail") { onContact(mail, "E-mail") }
                 }
             }
         }

@@ -244,6 +244,81 @@ final class ScreenshotCaptureUITests: XCTestCase {
         }
     }
 
+    /// 0.23.0: cały przepływ kalendarza, terminów i zadań — każdy ekran,
+    /// który właściciel ogląda przy planowaniu, ma zrzut do oceny wyglądu.
+    func testCaptureCalendarAndTasksFlow() {
+        capture("30-dzisiaj-napisali", description: "Dzisiaj — „Napisali”: trzech ostatnich klientów i co napisali") {
+            selectTab("today")
+            let section = application.otherElements["today-recent-writers"]
+            guard section.waitForExistence(timeout: 10) else { return "brak sekcji „Napisali”" }
+            section.swipeUp()
+            return nil
+        }
+
+        capture("31-kalendarz-miesiac", description: "Kalendarz — miesiąc z osią dnia") {
+            selectTab("calendar")
+            let mode = application.buttons["Miesiąc"]
+            if mode.waitForExistence(timeout: 10) { mode.tap() }
+            return nil
+        }
+
+        capture("32-kalendarz-tydzien", description: "Kalendarz — tydzień") {
+            selectTab("calendar")
+            let mode = application.buttons["Tydzień"]
+            guard mode.waitForExistence(timeout: 10) else { return "brak trybu „Tydzień”" }
+            mode.tap()
+            return nil
+        }
+
+        capture("33-kalendarz-lista", description: "Kalendarz — lista najbliższych terminów") {
+            selectTab("calendar")
+            let mode = application.buttons["Lista"]
+            guard mode.waitForExistence(timeout: 10) else { return "brak trybu „Lista”" }
+            mode.tap()
+            return nil
+        }
+
+        capture("34-termin-szczegoly", description: "Szczegóły terminu z „Następne” na „Dzisiaj”") {
+            selectTab("today")
+            let details = application.buttons["Szczegóły"]
+            guard details.waitForExistence(timeout: 10) else { return "brak „Szczegóły” przy najbliższym terminie" }
+            details.tap()
+            guard application.buttons["Edytuj termin"].waitForExistence(timeout: 10) else {
+                return "szczegóły terminu się nie otworzyły"
+            }
+            return nil
+        }
+
+        closeSheet()
+
+        capture("35-termin-w-sprawie", description: "Formularz terminu — „Termin w sprawie” z kalkulatorem") {
+            selectTab("calendar")
+            let add = application.buttons["Dodaj termin"]
+            guard add.waitForExistence(timeout: 10) else { return "brak przycisku „Dodaj termin”" }
+            add.tap()
+            let kind = application.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Termin w sprawie'")).firstMatch
+            guard kind.waitForExistence(timeout: 10) else { return "brak wyboru „Termin w sprawie”" }
+            kind.tap()
+            return nil
+        }
+
+        closeSheet()
+
+        capture("36-zadanie-szczegoly", description: "Szczegóły zadania z listy zadań") {
+            selectTab("today")
+            let entry = application.buttons["pulse-tasks"]
+            guard entry.waitForExistence(timeout: 10) else { return "brak wejścia do zadań" }
+            entry.tap()
+            guard application.staticTexts["NA DZIŚ"].waitForExistence(timeout: 10) else { return "lista zadań się nie wczytała" }
+            let task = application.buttons.matching(identifier: "task-open").firstMatch
+            guard task.waitForExistence(timeout: 5) else { return "brak wiersza zadania do otwarcia" }
+            task.tap()
+            return nil
+        }
+
+        closeSheet()
+    }
+
     /// Zamknięcie arkusza przyciskiem „Zamknij”; brak arkusza nie jest błędem sceny.
     private func closeSheet() {
         let close = application.buttons["Zamknij"]

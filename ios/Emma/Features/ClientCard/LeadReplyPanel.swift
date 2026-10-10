@@ -56,7 +56,7 @@ struct LeadReplyPanel: View {
                     if let whatsApp {
                         // Wysłanie odpowiedzi to kontakt — lead przechodzi do „W kontakcie”
                         // (z „Cofnij”), tak samo jak przycisk WhatsApp wyżej.
-                        SecondaryButton("WhatsApp", systemImage: "message") {
+                        ContactButton(.whatsApp, title: "WhatsApp") {
                             LeadActions.contact(client, url: whatsApp, channel: "WhatsApp", dependencies: dependencies, openURL: openURL)
                         }
                         .accessibilityIdentifier("lead-reply-whatsapp")

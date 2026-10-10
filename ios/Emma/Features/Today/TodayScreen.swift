@@ -248,6 +248,10 @@ struct TodayScreen: View {
             .transition(.opacity.combined(with: .move(edge: .top)))
         }
 
+        // Trzech klientów, którzy odezwali się ostatnio, i co napisali.
+        recentWritersSection
+            .emmaAppear(3)
+
         // Areszt albo koniec legalnego pobytu — liczniki dni pod kolejką.
         ForEach(model.watches) { watch in
             CaseWatchCard(watch: watch, subtitle: watchSubtitle(watch, model: model)) {
@@ -290,14 +294,13 @@ struct TodayScreen: View {
     // MARK: Wymaga Ciebie
 
     /// Jedna kolejka rzeczy do zrobienia, od najpilniejszej: terminy po terminie
-    /// (czerwone), leady do obsługi, osoby, które napisały, i zadania na dziś.
+    /// (czerwone), leady do obsługi i zadania na dziś. Rozmowy mają od 0.23.0
+    /// własną sekcję „Napisali” niżej.
     /// Każdy wiersz ma ikonę w kolorze stanu — to, co pilne, widać bez czytania.
     @ViewBuilder
     private func attentionSection(_ model: TodayStore.Model, inbox: LeadInbox) -> some View {
         let missed = Array(model.missedDeadlines.prefix(3))
         let leads = Array(inbox.needsAction.prefix(Self.leadsPreviewLimit))
-        let writers = Array((messages.phase.value?.unreadWhatsAppRows ?? []).prefix(3))
-        let pendingUnread = messages.phase.value == nil ? dependencies.unreadTotal : 0
         let summary = TaskGrouping.summary(model.tasks, today: model.today)
         let count = attentionCount(model, inbox: inbox)
 
@@ -307,10 +310,8 @@ struct TodayScreen: View {
         // skończyć na dowolnej grupie, a karta nie ma pustej kreski na dole.
         let showsMoreMissed = model.missedDeadlines.count > missed.count
         let showsMoreLeads = inbox.needsAction.count > leads.count
-        let moreWriters = (messages.phase.value?.unreadWhatsAppRows.count ?? 0) - writers.count
         let beforeLeads = !missed.isEmpty
-        let beforeWriters = beforeLeads || !leads.isEmpty || showsMoreLeads
-        let beforeTasks = beforeWriters || !writers.isEmpty || moreWriters > 0 || pendingUnread > 0
+        let beforeTasks = beforeLeads || !leads.isEmpty || showsMoreLeads
 
         SurfaceCard(padding: EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0)) {
             VStack(alignment: .leading, spacing: 0) {
@@ -363,40 +364,53 @@ struct TodayScreen: View {
                     }
                 }
 
-                ForEach(Array(writers.enumerated()), id: \.element.id) { index, row in
-                    if beforeWriters || index > 0 { attentionDivider }
-                    writerRow(row)
-                }
-                if moreWriters > 0 {
-                    if beforeWriters || !writers.isEmpty { attentionDivider }
-                    attentionLink("Jeszcze \(moreWriters) · wszystkie nowe") {
-                        openUnreadConversations()
-                    }
-                } else if pendingUnread > 0 {
-                    if beforeWriters { attentionDivider }
-                    attentionLink(EmmaPlural.unreadConversations(pendingUnread)) {
-                        openUnreadConversations()
-                    }
-                }
-
                 if summary.open > 0 {
                     if beforeTasks { attentionDivider }
                     tasksAttentionRow(summary)
                 }
             }
         }
-        .animation(EmmaMotion.smooth, value: writers.map(\.id))
     }
 
     /// Ile pozycji czeka w „Wymaga Ciebie”. Zadania liczą się jako jedna
     /// pozycja i tylko wtedy, gdy coś jest otwarte.
     private func attentionCount(_ model: TodayStore.Model, inbox: LeadInbox) -> Int {
-        let pendingUnread = messages.phase.value == nil ? dependencies.unreadTotal : 0
         let summary = TaskGrouping.summary(model.tasks, today: model.today)
         return model.missedDeadlines.count + inbox.needsAction.count
-            + (messages.phase.value?.unreadWhatsAppRows.count ?? (pendingUnread > 0 ? 1 : 0))
             + (summary.open > 0 ? 1 : 0)
     }
+
+    // MARK: Napisali
+
+    /// Trzech klientów, którzy odezwali się ostatnio na WhatsAppie, z ich
+    /// ostatnią wiadomością — przeczytane też, bo to „kto i co pisał”, a nie
+    /// skrzynka nieprzeczytanych (decyzja właściciela, 0.23.0).
+    @ViewBuilder
+    private var recentWritersSection: some View {
+        let rows = Array((messages.phase.value?.recentWriterRows ?? []).prefix(Self.writersPreviewLimit))
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                SectionHeader("Napisali", actionTitle: "Rozmowy", compact: true) {
+                    EmmaHaptics.tap()
+                    dependencies.go(to: .messages)
+                }
+                SurfaceCard(padding: EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0)) {
+                    VStack(spacing: 0) {
+                        ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                            if index > 0 { attentionDivider }
+                            writerRow(row)
+                        }
+                    }
+                }
+                .animation(EmmaMotion.smooth, value: rows.map(\.id))
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("today-recent-writers")
+            .transition(.opacity)
+        }
+    }
+
+    private static let writersPreviewLimit = 3
 
     private var attentionDivider: some View {
         Divider().overlay(EmmaTheme.rowSeparator).padding(.leading, 58)
@@ -704,19 +718,14 @@ struct TodayScreen: View {
         .buttonStyle(EmmaCardButtonStyle())
     }
 
-    // MARK: Nowe wiadomości
+    // MARK: Napisali — wiersz
 
-    /// Klient napisał na WhatsApp — pasek nad planem dnia, jedno dotknięcie
-    /// otwiera Rozmowy z filtrem „Nowe”. Bez niego wiadomość było widać tylko
-    /// po liczniku na zakładce.
-    private func openUnreadConversations() {
-        EmmaHaptics.tap()
-        messages.showUnread(in: .whatsApp)
-        dependencies.go(to: .messages)
-    }
-
+    /// Wiersz „Napisali”: kto, kiedy i **co napisał** (ostatnia wiadomość
+    /// klienta, nie nasza odpowiedź). Nieprzeczytane — pogrubione, z licznikiem.
     private func writerRow(_ row: MessagesStore.Row) -> some View {
-        let preview = row.preview?.previewText ?? ""
+        let message = row.lastIncoming ?? row.preview
+        let text = message?.previewText ?? ""
+        let isUnread = row.unreadCount > 0
         return Button {
             EmmaHaptics.tap()
             dependencies.openThread(row.thread.id)
@@ -724,41 +733,66 @@ struct TodayScreen: View {
             HStack(alignment: .top, spacing: 11) {
                 ChatAvatar(client: row.client, diameter: 38)
                     .overlay(alignment: .topTrailing) {
-                        UnreadBadge(count: row.unreadCount, compact: true)
-                            .offset(x: 5, y: -4)
+                        if isUnread {
+                            UnreadBadge(count: row.unreadCount, compact: true)
+                                .offset(x: 5, y: -4)
+                        }
                     }
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(row.client.displayName)
-                            .font(EmmaTypography.ui(14, .semibold))
+                            .font(EmmaTypography.ui(15, .semibold))
                             .foregroundStyle(EmmaTheme.ink)
                             .lineLimit(1)
                         LanguageBadge(language: row.client.language)
                         Spacer(minLength: 4)
-                        if let since = row.waitingSince {
-                            Text("czeka \(ConversationInbox.waitingText(since: since, now: dependencies.now))")
-                                .font(EmmaTypography.caption(.medium))
-                                .foregroundStyle(
-                                    ConversationInbox.isWaitingLong(since: since, now: dependencies.now)
-                                        ? EmmaTheme.pillAmberText : EmmaTheme.mutedSoft
-                                )
+                        if let message {
+                            Text(writerTime(message.sentAt))
+                                .font(EmmaTypography.caption(isUnread ? .semibold : .regular))
+                                .foregroundStyle(isUnread ? EmmaTheme.chatGreen : EmmaTheme.mutedSoft)
+                                .monospacedDigit()
                                 .fixedSize()
                         }
                     }
-                    Text(preview)
-                        .font(EmmaTypography.body(for: preview, size: 13))
-                        .foregroundStyle(EmmaTheme.muted)
+                    Text(text)
+                        .font(EmmaTypography.body(for: text, size: 14))
+                        .fontWeight(isUnread ? .medium : .regular)
+                        .foregroundStyle(isUnread ? EmmaTheme.ink : EmmaTheme.muted)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
+                    // Klient czeka na odpowiedź — po godzinie na bursztynowo.
+                    if let since = row.waitingSince {
+                        Label(
+                            "czeka \(ConversationInbox.waitingText(since: since, now: dependencies.now))",
+                            systemImage: "clock"
+                        )
+                        .font(EmmaTypography.caption(.medium))
+                        .foregroundStyle(
+                            ConversationInbox.isWaitingLong(since: since, now: dependencies.now)
+                                ? EmmaTheme.pillAmberText : EmmaTheme.mutedSoft
+                        )
+                        .padding(.top, 1)
+                    }
                 }
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 11)
+            .padding(.vertical, 12)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
         .accessibilityHint("Otwiera rozmowę")
+    }
+
+    /// Dziś — godzina, wczoraj — „Wczoraj”, w tym tygodniu — dzień tygodnia,
+    /// dalej — data. Jak na liście rozmów.
+    private func writerTime(_ instant: Date) -> String {
+        let day = AppDependencies.localDate(from: instant)
+        let today = dependencies.today
+        if day == today { return dependencies.dateText.clockTime(instant) }
+        if day == today.adding(days: -1) { return "Wczoraj" }
+        if day >= today.adding(days: -6) { return dependencies.dateText.weekdayName(for: day) }
+        return String(format: "%02d.%02d.%04d", day.day, day.month, day.year)
     }
 
     // MARK: Zgoda na powiadomienia
