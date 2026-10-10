@@ -599,11 +599,13 @@ public struct BackendRepository: EmmaRepository, Sendable {
         return try list.items.compactMap { dto in
             guard dto.clientID == nil else { return nil }
             let phone = dto.contactPhone ?? ""
+            let email = Self.emailAddress(dto)
             return UnassignedConversation(
                 threadID: ThreadID(dto.id),
-                name: dto.clientName ?? phone,
+                name: dto.clientName ?? email ?? phone,
                 phone: phone,
-                preview: try dto.preview.map(Self.mapMessage)
+                preview: try dto.preview.map(Self.mapMessage),
+                email: email
             )
         }
     }
@@ -774,8 +776,15 @@ public struct BackendRepository: EmmaRepository, Sendable {
         return ConversationThread(
             id: ThreadID(dto.id),
             clientID: ClientID(clientID),
-            sequenceHighWatermark: dto.highWatermark ?? 0
+            sequenceHighWatermark: dto.highWatermark ?? 0,
+            emailAddress: emailAddress(dto)
         )
+    }
+
+    /// Adres rozmówcy w rozmowie e-mail; `nil` dla WhatsAppa.
+    static func emailAddress(_ dto: BackendThreadSummaryDTO) -> String? {
+        guard dto.channel == "email" else { return nil }
+        return dto.contactEmail ?? ""
     }
 
     static func mapUserState(_ dto: BackendThreadSummaryDTO, userID: UserID) -> ThreadUserState {
@@ -803,6 +812,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
             kind: mapMessageKind(dto.kind, attachmentType: dto.attachmentType),
             text: dto.text,
             attachmentName: dto.attachmentName,
+            subject: dto.subject,
             translation: dto.translation,
             sentAt: sentAt,
             sequence: dto.sequence,

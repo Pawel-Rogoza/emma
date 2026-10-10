@@ -30,6 +30,20 @@ import SwiftUI
 @MainActor
 final class MessagesStore: ObservableObject {
 
+    /// Przełącznik nad listą (10.10.2026): WhatsApp i poczta kancelarii to
+    /// dwie osobne skrzynki — wymieszane na jednej liście maile ginęły
+    /// między setkami rozmów WhatsApp.
+    enum Channel: String, CaseIterable, Identifiable, Hashable {
+        case whatsApp = "WhatsApp"
+        case email = "E-mail"
+
+        var id: String { rawValue }
+
+        func includes(_ row: Row) -> Bool {
+            row.thread.isEmail == (self == .email)
+        }
+    }
+
     enum Filter: String, CaseIterable, Identifiable, Hashable {
         case all = "Wszystkie"
         case unread = "Nowe"
@@ -50,7 +64,7 @@ final class MessagesStore: ObservableObject {
         /// „Przypięte” pokazujemy dopiero, gdy coś jest przypięte — pusty chip
         /// to opcja, która niczego nie pokazuje (jak „Bez ruchu” w kartotece).
         static func visible(in model: Model) -> [Filter] {
-            let hasPinned = model.allRows.contains { $0.isPinned }
+            let hasPinned = model.channelRows.contains { $0.isPinned }
             return hasPinned || model.filter == .pinned ? allCases : [.all, .unread, .needsReply]
         }
     }
@@ -86,9 +100,20 @@ final class MessagesStore: ObservableObject {
         var allRows: [Row]
         var searchQuery: String
         var filter: Filter
+        var channel: Channel
+
+        /// Wiersze wybranej skrzynki — z nich liczą się chipy filtra.
+        var channelRows: [Row] {
+            allRows.filter(channel.includes)
+        }
 
         func count(_ filter: Filter) -> Int {
-            allRows.filter(filter.includes).count
+            channelRows.filter(filter.includes).count
+        }
+
+        /// Rozmowy z nowymi wiadomościami w danej skrzynce — liczba na przełączniku.
+        func unreadConversations(in channel: Channel) -> Int {
+            allRows.filter { channel.includes($0) && $0.unreadCount > 0 }.count
         }
 
         /// Liczba rozmów z nowymi wiadomościami — jak licznik na zakładce.
@@ -118,6 +143,7 @@ final class MessagesStore: ObservableObject {
 
     @Published private(set) var phase: LoadPhase<Model> = .idle
     @Published var filter: Filter = .all
+    @Published var channel: Channel = .whatsApp
     @Published var searchText: String = ""
 
     /// Ile ostatnich wiadomości wątku czytamy na liście (stan, czekanie, okno 24 h).
@@ -249,7 +275,8 @@ final class MessagesStore: ObservableObject {
                 rows: filterAndSort(allRows),
                 allRows: allRows,
                 searchQuery: searchText,
-                filter: filter
+                filter: filter,
+                channel: channel
             )
             if wasLoaded {
                 // Zmiana stanu (przeczytane, przypięte) przenosi kartę między
@@ -272,10 +299,17 @@ final class MessagesStore: ObservableObject {
         // Wyszukiwanie przeszukuje wszystko — jak w kartotece klientów.
         let activeFilter: Filter = trimmed.isEmpty ? filter : .all
         return rows
+            .filter(channel.includes)
             .filter(activeFilter.includes)
             .filter { row in
                 // Treść wiadomości też jest przeszukiwana: nazwisko bywa tylko w treści.
-                SearchText.matches(query, in: [row.client.displayName, row.preview?.previewText ?? ""])
+                // Przy mailu także temat i adres nadawcy.
+                SearchText.matches(query, in: [
+                    row.client.displayName,
+                    row.preview?.previewText ?? "",
+                    row.preview?.subject ?? "",
+                    row.thread.emailAddress ?? "",
+                ])
                     || SearchText.matchesPhone(query, phone: row.client.phone)
             }
             // „Mniejszy” klucz = wyżej na liście (przypięte, potem najnowsze).
@@ -285,6 +319,17 @@ final class MessagesStore: ObservableObject {
     /// Ponowne filtrowanie bez odpytywania repozytorium — używane przy zmianie
     /// filtra i wpisywaniu tekstu. Liczone jest z pełnego zbioru `allRows`, więc
     /// wyczyszczenie zapytania przywraca całą listę (F11).
+    /// „Nowe” z „Dzisiaj”: filtr nowych w skrzynce, w której ktoś czeka —
+    /// sam nowy mail nie może się schować za przełącznikiem na WhatsAppie.
+    func showUnread() {
+        searchText = ""
+        filter = .unread
+        guard let model = phase.value, model.unreadConversations(in: channel) == 0 else { return }
+        if let other = Channel.allCases.first(where: { model.unreadConversations(in: $0) > 0 }) {
+            channel = other
+        }
+    }
+
     func applyLocalFilter() async {
         guard let model = phase.value else { return }
         phase = .loaded(
@@ -292,7 +337,8 @@ final class MessagesStore: ObservableObject {
                 rows: filterAndSort(model.allRows),
                 allRows: model.allRows,
                 searchQuery: searchText,
-                filter: filter
+                filter: filter,
+                channel: channel
             )
         )
     }
@@ -336,6 +382,9 @@ struct MessagesScreen: View {
         .onChange(of: store.searchText) { _, _ in
             Task { await store.applyLocalFilter() }
         }
+        .onChange(of: store.channel) { _, _ in
+            Task { await store.applyLocalFilter() }
+        }
         .onChange(of: store.filter) { _, _ in
             // Filtr działa na wczytanych wierszach — bez ponownego odpytywania
             // wszystkich wątków i bez mrugnięcia listy (wibrację daje chip).
@@ -352,7 +401,16 @@ struct MessagesScreen: View {
         header
             .emmaListRow(top: EmmaSpacing.contentTop, bottom: 0, horizontal: layout.horizontalPadding)
 
-        SearchField(text: $store.searchText, placeholder: "Szukaj osoby lub wiadomości", isFocused: $searchFocused)
+        SegmentedFilter(items: MessagesStore.Channel.allCases, selection: $store.channel) { channel in
+            channelTitle(channel)
+        }
+        .emmaListRow(top: 14, bottom: 0, horizontal: layout.horizontalPadding)
+
+        SearchField(
+            text: $store.searchText,
+            placeholder: store.channel == .email ? "Szukaj osoby, tematu lub treści" : "Szukaj osoby lub wiadomości",
+            isFocused: $searchFocused
+        )
             .emmaListRow(top: 14, bottom: 0, horizontal: layout.horizontalPadding)
 
         filterChips
@@ -372,6 +430,12 @@ struct MessagesScreen: View {
                 dependencies.present(.newConversation)
             }
         }
+    }
+
+    /// „E-mail · 3” — od razu widać, że w drugiej skrzynce ktoś czeka.
+    private func channelTitle(_ channel: MessagesStore.Channel) -> String {
+        let unread = store.phase.value?.unreadConversations(in: channel) ?? 0
+        return unread > 0 ? "\(channel.rawValue) · \(unread)" : channel.rawValue
     }
 
     // MARK: Filtry
@@ -426,7 +490,7 @@ struct MessagesScreen: View {
                     conversationRow(row, index: offset)
                 }
             }
-            disclosure(hasThreads: !model.allRows.isEmpty)
+            disclosure(hasThreads: !model.channelRows.isEmpty)
                 .emmaListRow(top: 12, bottom: EmmaSpacing.contentBottom, horizontal: layout.horizontalPadding)
         }
     }
@@ -470,21 +534,34 @@ struct MessagesScreen: View {
                 Label(row.isPinned ? "Odepnij" : "Przypnij", systemImage: row.isPinned ? "pin.slash" : "pin")
             }
             .tint(EmmaTheme.pillAmberText)
-            Button {
-                prepareReply(row)
-            } label: {
-                Label("Emma", systemImage: "sparkles")
+            // Szkic Emmy trafia do pola odpowiedzi — rozmowa e-mail go nie ma.
+            if !row.thread.isEmail {
+                Button {
+                    prepareReply(row)
+                } label: {
+                    Label("Emma", systemImage: "sparkles")
+                }
+                .tint(EmmaTheme.primaryButton)
             }
-            .tint(EmmaTheme.primaryButton)
         }
     }
 
     @ViewBuilder
     private func rowMenu(_ row: MessagesStore.Row) -> some View {
-        Button {
-            prepareReply(row)
-        } label: {
-            Label("Przygotuj odpowiedź z Emmą", systemImage: "sparkles")
+        if let address = row.thread.emailAddress {
+            if let mailURL = ContactLinks.mailReplyURL(address, subject: row.preview?.subject) {
+                Button {
+                    openURL(mailURL)
+                } label: {
+                    Label("Odpowiedz w Poczcie", systemImage: "envelope")
+                }
+            }
+        } else {
+            Button {
+                prepareReply(row)
+            } label: {
+                Label("Przygotuj odpowiedź z Emmą", systemImage: "sparkles")
+            }
         }
         Button {
             Task { await toggleRead(row) }
@@ -617,6 +694,11 @@ struct MessagesScreen: View {
     }
 
     private func disclosureText(hasThreads: Bool) -> String {
+        if store.channel == .email {
+            return hasThreads
+                ? "Poczta kancelarii · odczyt; odpowiedź wysyłasz z Poczty i wraca tu sama"
+                : "Maile z poczty kancelarii pojawią się tu kilka minut po nadejściu"
+        }
         if dependencies.configuration.usesMockServices {
             return "Wiadomości przykładowe · WhatsApp niepołączony"
         }
@@ -654,6 +736,12 @@ struct MessagesScreen: View {
                     systemImage: "pin",
                     title: "Brak przypiętych rozmów",
                     message: "Przesuń rozmowę w lewo i przypnij ją, aby mieć ją pod ręką."
+                )
+            case .all where model.channel == .email:
+                EmptyState(
+                    systemImage: "envelope",
+                    title: "Brak maili",
+                    message: "Maile od klientów pojawią się tutaj. Newslettery i powiadomienia są pomijane."
                 )
             case .all:
                 // Wcześniej pusta skrzynka (np. poza Demo) mówiła „Brak przypiętych

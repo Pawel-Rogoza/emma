@@ -836,7 +836,7 @@ final class BackendRepositoryTests: XCTestCase {
         let repository = makeRepository()
 
         let unassigned = try await repository.unassignedConversations()
-        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.query, "include_unassigned=1")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.query, "include_email=1&include_unassigned=1")
         XCTAssertEqual(unassigned.map(\.threadID.rawValue), ["thread-8"])
         XCTAssertEqual(unassigned.first?.name, "Ołeh")
         XCTAssertEqual(unassigned.first?.phone, "+48999888777")
@@ -846,7 +846,7 @@ final class BackendRepositoryTests: XCTestCase {
         XCTAssertEqual(threads.map(\.id.rawValue), ["thread-3"])
         // Wszystkie odczyty listy rozmów pytają o tę samą listę — dzięki temu
         // równoległe pytania jednego ekranu łączą się w jedno zapytanie.
-        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.query, "include_unassigned=1")
+        XCTAssertEqual(StubURLProtocol.lastRequest?.url?.query, "include_email=1&include_unassigned=1")
     }
 
     /// Kolejne, nie równoległe odczyty nie biorą starego wyniku: łączenie
@@ -859,6 +859,23 @@ final class BackendRepositoryTests: XCTestCase {
         _ = try await repository.unreadTotal(userID: UserID("user-1"))
 
         XCTAssertEqual(StubURLProtocol.requestCount, 2)
+    }
+
+    /// Rozmowa e-mail (poczta kancelarii): adres rozmówcy, temat maila,
+    /// a rozmowa spoza kartoteki ma adres zamiast numeru.
+    func testEmailConversationsKeepAddressAndSubject() async throws {
+        StubURLProtocol.respond(json: Data(Self.emailThreadsJSON.utf8), status: 200)
+        let repository = makeRepository()
+
+        let threads = try await repository.threads()
+        XCTAssertEqual(threads.first?.emailAddress, "olena@example.test")
+        XCTAssertEqual(threads.first?.isEmail, true)
+
+        let unassigned = try await repository.unassignedConversations()
+        XCTAssertEqual(unassigned.first?.email, "obcy@example.test")
+        XCTAssertEqual(unassigned.first?.name, "obcy@example.test")
+        XCTAssertEqual(unassigned.first?.preview?.subject, "Zapytanie")
+        XCTAssertEqual(ConversationThread.whatsAppContact(unassigned[0]).isEmail, true)
     }
 
     func testDraftReplyComesFromServerModel() async throws {
@@ -1034,6 +1051,20 @@ final class BackendRepositoryTests: XCTestCase {
      "unread_count":0,"is_pinned":false,"has_draft":false,"high_watermark":0,
      "contact_phone":"+48999888777","is_unassigned":true}],
      "unread_total":0}
+    """#
+
+    private static let emailThreadsJSON = #"""
+    {"items":[{"id":"thread-21","client_id":"client-4","client_name":"Olena Kowalenko",
+     "preview":null,"unread_count":1,"is_pinned":false,"has_draft":false,"high_watermark":2,
+     "contact_phone":"","is_unassigned":false,"channel":"email","contact_email":"olena@example.test"},
+     {"id":"thread-22","client_id":null,"client_name":"obcy@example.test",
+     "preview":{"id":"message-30","thread_id":"thread-22","direction":"incoming","author_id":null,"author_label":null,
+      "provider_message_id":"email:abc@x","kind":"text","attachment_type":null,"text":"Dzień dobry","translation":null,
+      "sent_at":"2026-10-09T09:00:00.000Z","sequence":1,"transport":"delivered","source":"provider","origin":"customer",
+      "version":1,"subject":"Zapytanie"},
+     "unread_count":1,"is_pinned":false,"has_draft":false,"high_watermark":1,
+     "contact_phone":"","is_unassigned":true,"channel":"email","contact_email":"obcy@example.test"}],
+     "unread_total":2}
     """#
 
     private static let messagesJSON = #"""

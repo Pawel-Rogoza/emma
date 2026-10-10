@@ -172,6 +172,8 @@ public struct Message: Identifiable, Hashable, Codable, Sendable {
     /// Sam plik zostaje w WhatsApp Business (research 24.09.2026, §9 wariant 1):
     /// Emma nie pobiera dokumentów przez relay dostawcy.
     public var attachmentName: String?
+    /// Temat maila (rozmowy e-mail); `nil` w WhatsAppie.
+    public var subject: String?
     public var translation: String?
     public var quote: QuotedReference?
     /// Znacznik czasu dostawcy. Sam w sobie **nie wystarcza** do liczenia nieprzeczytanych (§3.3 pkt 2).
@@ -192,6 +194,7 @@ public struct Message: Identifiable, Hashable, Codable, Sendable {
         kind: MessageKind = .text,
         text: String,
         attachmentName: String? = nil,
+        subject: String? = nil,
         translation: String? = nil,
         quote: QuotedReference? = nil,
         sentAt: Date,
@@ -209,6 +212,7 @@ public struct Message: Identifiable, Hashable, Codable, Sendable {
         self.kind = kind
         self.text = text
         self.attachmentName = attachmentName
+        self.subject = subject
         self.translation = translation
         self.quote = quote
         self.sentAt = sentAt
@@ -285,13 +289,25 @@ public struct ConversationThread: Identifiable, Hashable, Codable, Sendable {
     /// Najwyższy znany numer ingestu w tym wątku.
     public var sequenceHighWatermark: Int
     public var version: Version
+    /// Adres rozmówcy, gdy to rozmowa e-mail (poczta kancelarii); `nil` w WhatsAppie.
+    public var emailAddress: String?
 
-    public init(id: ThreadID, clientID: ClientID, sequenceHighWatermark: Int, version: Version = .initial) {
+    public init(
+        id: ThreadID,
+        clientID: ClientID,
+        sequenceHighWatermark: Int,
+        version: Version = .initial,
+        emailAddress: String? = nil
+    ) {
         self.id = id
         self.clientID = clientID
         self.sequenceHighWatermark = sequenceHighWatermark
         self.version = version
+        self.emailAddress = emailAddress
     }
+
+    /// Rozmowa e-mail: tylko do czytania — odpowiedź idzie z programu pocztowego.
+    public var isEmail: Bool { emailAddress != nil }
 }
 
 /// Koszt rozmów głosowych z Emmą w bieżącym miesiącu (szacunek serwera).
@@ -324,14 +340,17 @@ public struct UnassignedConversation: Identifiable, Hashable, Sendable {
     public let name: String
     public let phone: String
     public let preview: Message?
+    /// Adres nadawcy, gdy to rozmowa e-mail spoza kartoteki.
+    public let email: String?
 
     public var id: ThreadID { threadID }
 
-    public init(threadID: ThreadID, name: String, phone: String, preview: Message?) {
+    public init(threadID: ThreadID, name: String, phone: String, preview: Message?, email: String? = nil) {
         self.threadID = threadID
         self.name = name
         self.phone = phone
         self.preview = preview
+        self.email = email
     }
 }
 

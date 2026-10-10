@@ -155,7 +155,8 @@ final class ThreadStore: ObservableObject {
             applyPendingDraft(dependencies, threadID: threadID)
             if dependencies.pendingEmmaDraftThreadID == threadID {
                 dependencies.pendingEmmaDraftThreadID = nil
-                await draftWithEmma(dependencies)
+                // Rozmowa e-mail nie ma pola odpowiedzi — szkic nie miałby gdzie trafić.
+                if !thread.isEmail { await draftWithEmma(dependencies) }
             }
         } catch {
             if let message = phase.recordFailure(error, fallback: "Nie udało się wczytać rozmowy.") {
@@ -498,7 +499,11 @@ struct ThreadScreen: View {
                 header(model)
                 contextStrip(model)
                 transcript(model)
-                composer(model)
+                if model.thread.isEmail {
+                    emailReplyBar(model)
+                } else {
+                    composer(model)
+                }
             }
         }
         .background(EmmaTheme.chatBackground)
@@ -554,7 +559,8 @@ struct ThreadScreen: View {
                             .foregroundStyle(EmmaTheme.ink)
                         // Numer zamiast języka: od razu widać, z jakiego numeru ktoś pisze
                         // i czy kartoteka przypisała go właściwej osobie (02.10.2026).
-                        Text("WhatsApp · \(model.client.phone ?? model.client.language.displayName)")
+                        Text(model.thread.emailAddress.map { "E-mail · \($0)" }
+                             ?? "WhatsApp · \(model.client.phone ?? model.client.language.displayName)")
                             .font(EmmaTypography.caption())
                             .foregroundStyle(EmmaTheme.mutedSoft)
                     }
@@ -578,7 +584,7 @@ struct ThreadScreen: View {
                 }
                 Button("Anuluj", role: .cancel) {}
             } message: {
-                Text("Tego numeru nie ma jeszcze w kartotece.")
+                Text(model.thread.isEmail ? "Tego adresu nie ma jeszcze w kartotece." : "Tego numeru nie ma jeszcze w kartotece.")
             }
 
             Button {
@@ -1026,6 +1032,41 @@ struct ThreadScreen: View {
         .animation(EmmaMotion.smooth, value: model.draft.text.isEmpty)
         .animation(EmmaMotion.smooth, value: model.draft.quote != nil)
         .animation(EmmaMotion.smooth, value: model.replyWindow)
+        .background(EmmaTheme.chatDockBackground)
+        .overlay(alignment: .top) {
+            Rectangle().fill(EmmaTheme.chatHeaderBorder).frame(height: 0.5)
+        }
+    }
+
+    // MARK: Odpowiedź na e-mail
+
+    /// Rozmowa e-mail jest tylko do czytania (etap 1): odpowiedź piszemy
+    /// w programie pocztowym, z tematem „Re: …” ostatniego maila. Odpowiedź
+    /// z poczty wraca tu sama przy kolejnej synchronizacji.
+    private func emailReplyBar(_ model: ThreadStore.Model) -> some View {
+        let subject = model.messages.last(where: { !($0.subject ?? "").isEmpty })?.subject
+        let url = model.thread.emailAddress.flatMap { ContactLinks.mailReplyURL($0, subject: subject) }
+        return VStack(spacing: 6) {
+            Button {
+                if let url { openURL(url) }
+            } label: {
+                Label("Odpowiedz w Poczcie", systemImage: "envelope")
+                    .font(EmmaTypography.ui(15, .semibold))
+                    .foregroundStyle(EmmaTheme.secondaryButtonText)
+                    .frame(maxWidth: .infinity, minHeight: EmmaSpacing.hitTarget)
+                    .background(EmmaTheme.surface, in: Capsule())
+                    .overlay { Capsule().strokeBorder(EmmaTheme.composerBorder, lineWidth: 1) }
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(EmmaCardButtonStyle())
+            .disabled(url == nil)
+            Text("Odpowiedź z poczty pojawi się tutaj w ciągu kilku minut.")
+                .font(EmmaTypography.caption())
+                .foregroundStyle(EmmaTheme.mutedSoft)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, layout.threadHorizontalPadding)
+        .padding(.vertical, 10)
         .background(EmmaTheme.chatDockBackground)
         .overlay(alignment: .top) {
             Rectangle().fill(EmmaTheme.chatHeaderBorder).frame(height: 0.5)
