@@ -200,6 +200,9 @@ struct MessageOptionsSheet: View {
 
     @State private var phase: LoadPhase<Message> = .idle
     @State private var clientName: String = Client.unknownDisplayName
+    /// Adres rozmowy e-mail; `nil` — rozmowa WhatsApp.
+    @State private var emailAddress: String?
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         SheetScaffold(title: "Wiadomość", onClose: { dependencies.dismissSheet() }) {
@@ -234,28 +237,70 @@ struct MessageOptionsSheet: View {
             }
             .padding(.bottom, 12)
 
-        if message.isOutgoing {
-            HStack(spacing: 7) {
-                ReceiptMark(transport: message.transport)
-                Text("\(message.transport.displayName) · \(clockText(message))")
-                    .font(EmmaTypography.caption())
-                    .foregroundStyle(EmmaTheme.muted)
-            }
-            .padding(.bottom, 6)
-
-            Text(
-                dependencies.configuration.usesMockServices
-                    ? "Status przykładowy. WhatsApp nie jest jeszcze połączony."
-                    : "Status z WhatsApp. „Przyjęta” to jeszcze nie „dostarczona”."
-            )
+        if let emailAddress {
+            // Poczta: bez ptaszków — serwer poczty nie zgłasza dostarczenia
+            // ani odczytu, a odpowiedź pisze się w Poczcie (etap 1).
+            Text("\(message.isOutgoing ? "Wysłano z poczty" : "Odebrano") · \(clockText(message))")
                 .font(EmmaTypography.caption())
-                .foregroundStyle(EmmaTheme.mutedSoft)
-                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(EmmaTheme.muted)
                 .padding(.bottom, 14)
-        }
+            if let url = ContactLinks.mailReplyURL(emailAddress, subject: message.subject) {
+                SecondaryButton("Odpowiedz w Poczcie", systemImage: "envelope") {
+                    dependencies.dismissSheet()
+                    openURL(url)
+                }
+            }
+        } else {
+            if message.isOutgoing {
+                HStack(spacing: 8) {
+                    ReceiptTicks(transport: message.transport, height: 12)
+                    Text("\(message.transport.displayName) · \(clockText(message))")
+                        .font(EmmaTypography.caption(.semibold))
+                        .foregroundStyle(EmmaTheme.ink)
+                }
+                .padding(.bottom, 10)
 
-        SecondaryButton("Odpowiedz na tę wiadomość", systemImage: "arrowshape.turn.up.left") {
-            Task { await quote(message) }
+                receiptLegend
+                    .padding(.bottom, 8)
+
+                Text(
+                    dependencies.configuration.usesMockServices
+                        ? "Status przykładowy. WhatsApp nie jest jeszcze połączony."
+                        : "Status z WhatsApp. Niebieskie ptaszki pojawiają się tylko, gdy klient ma włączone potwierdzenia odczytu."
+                )
+                    .font(EmmaTypography.caption())
+                    .foregroundStyle(EmmaTheme.mutedSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, 14)
+            }
+
+            SecondaryButton("Odpowiedz na tę wiadomość", systemImage: "arrowshape.turn.up.left") {
+                Task { await quote(message) }
+            }
+        }
+    }
+
+    /// Co znaczą ptaszki — ta sama ściągawka co w WhatsAppie.
+    private var receiptLegend: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            legendRow(.sent, "Wysłano")
+            legendRow(.delivered, "Dostarczono na telefon klienta")
+            legendRow(.read, "Odczytano")
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(EmmaTheme.chatBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    private func legendRow(_ transport: MessageTransport, _ title: String) -> some View {
+        HStack(spacing: 10) {
+            ReceiptTicks(transport: transport, height: 11)
+                .frame(width: 18, alignment: .leading)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(EmmaTypography.caption())
+                .foregroundStyle(EmmaTheme.muted)
         }
     }
 
@@ -269,10 +314,17 @@ struct MessageOptionsSheet: View {
             return messages.first { $0.id == messageID }
         }
         phase = result
-        if case .loaded = result,
-           let thread = try? await dependencies.repository.thread(id: threadID),
-           let client = try? await dependencies.repository.client(id: thread.clientID) {
-            clientName = client.displayName
+        guard case .loaded = result else { return }
+        if let thread = try? await dependencies.repository.thread(id: threadID) {
+            emailAddress = thread.emailAddress
+            if let client = try? await dependencies.repository.client(id: thread.clientID) {
+                clientName = client.displayName
+            }
+        } else if let contact = try? await dependencies.repository.unassignedConversations()
+            .first(where: { $0.threadID == threadID }) {
+            // Rozmówca spoza kartoteki — WhatsApp albo e-mail.
+            emailAddress = contact.email
+            clientName = contact.name
         }
     }
 

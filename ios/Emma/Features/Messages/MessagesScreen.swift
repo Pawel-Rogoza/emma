@@ -90,6 +90,31 @@ final class MessagesStore: ObservableObject {
         let highestSequence: Int
         /// Okno 24 h WhatsApp — ostrzeżenie na karcie, zanim wysyłka zostanie odrzucona.
         let replyWindow: ReplyWindow
+
+        /// Ten sam wiersz po przeczytaniu do `cursor` — licznik i stan liczone
+        /// tą samą regułą co przy wczytaniu listy.
+        func markedRead(cursor: Int) -> Row {
+            var newState = state
+            newState.readCursorSequence = max(state.readCursorSequence, cursor)
+            newState.manualUnread = false
+            // Kursor obejmuje wszystko, co lista zna — nic nowego. Gdy w międzyczasie
+            // przyszło coś dalej, licznik zostaje do najbliższego wczytania.
+            let unread = newState.readCursorSequence >= highestSequence ? 0 : unreadCount
+            return Row(
+                thread: thread,
+                client: client,
+                preview: preview,
+                unreadCount: unread,
+                isPinned: isPinned,
+                sortKey: sortKey,
+                hasDraft: hasDraft,
+                status: ConversationInbox.status(lastMessage: preview, unreadCount: unread),
+                waitingSince: waitingSince,
+                state: newState,
+                highestSequence: highestSequence,
+                replyWindow: replyWindow
+            )
+        }
     }
 
     struct Model {
@@ -139,6 +164,11 @@ final class MessagesStore: ObservableObject {
                 .filter { $0.unreadCount > 0 }
                 .sorted { ($0.waitingSince ?? .distantFuture) < ($1.waitingSince ?? .distantFuture) }
         }
+
+        /// „Napisali” na ekranie głównym — sam WhatsApp, bez poczty.
+        var unreadWhatsAppRows: [Row] {
+            unreadRows.filter { !$0.thread.isEmail }
+        }
     }
 
     @Published private(set) var phase: LoadPhase<Model> = .idle
@@ -155,6 +185,13 @@ final class MessagesStore: ObservableObject {
     /// serwer o wiadomości **każdego** wątku (przy setkach rozmów WhatsApp
     /// setki zapytań). Teraz pytamy tylko o wątki, w których coś się zmieniło.
     private var messageCache: [ThreadID: CachedMessages] = [:]
+
+    /// Odczyty z tej sesji, których serwer mógł jeszcze nie potwierdzić
+    /// (10.10.2026). Bez tego powrót z przeczytanej rozmowy pokazywał ją dalej
+    /// jako nową: lista wczytywała się, zanim zapis odczytu doszedł do serwera,
+    /// i trzymała stary stan do następnego odświeżenia. Wpis znika, gdy serwer
+    /// zna już ten kursor albo dalszy.
+    private var localReads: [ThreadID: Int] = [:]
 
     private struct CachedMessages {
         let watermark: Int
@@ -239,8 +276,16 @@ final class MessagesStore: ObservableObject {
             var rows: [Row] = []
             for (thread, client) in conversations {
                 let messages = messagesByThread[thread.id] ?? []
-                let state = states.first { $0.threadID == thread.id }
+                var state = states.first { $0.threadID == thread.id }
                     ?? ThreadUserState(userID: userID, threadID: thread.id)
+                if let local = localReads[thread.id] {
+                    if state.readCursorSequence >= local {
+                        localReads[thread.id] = nil
+                    } else {
+                        state.readCursorSequence = local
+                        state.manualUnread = false
+                    }
+                }
                 let sorted = MessageOrdering.sorted(messages)
                 let unread = ReadStatePolicy.unreadCount(in: sorted, state: state)
                 rows.append(
@@ -319,11 +364,33 @@ final class MessagesStore: ObservableObject {
     /// Ponowne filtrowanie bez odpytywania repozytorium — używane przy zmianie
     /// filtra i wpisywaniu tekstu. Liczone jest z pełnego zbioru `allRows`, więc
     /// wyczyszczenie zapytania przywraca całą listę (F11).
-    /// „Nowe” z „Dzisiaj”: filtr nowych w skrzynce, w której ktoś czeka —
-    /// sam nowy mail nie może się schować za przełącznikiem na WhatsAppie.
-    func showUnread() {
+    /// Rozmowa została przeczytana (otwarta w wątku). Lista i „Napisali”
+    /// pokazują to od razu, nie czekając na odpowiedź serwera.
+    func noteRead(threadID: ThreadID, cursor: Int) {
+        localReads[threadID] = max(localReads[threadID] ?? 0, cursor)
+        guard var model = phase.value,
+              let index = model.allRows.firstIndex(where: { $0.id == threadID }) else { return }
+        let row = model.allRows[index]
+        guard row.state.readCursorSequence < cursor || row.state.manualUnread else { return }
+        model.allRows[index] = row.markedRead(cursor: cursor)
+        model.rows = filterAndSort(model.allRows)
+        phase = .loaded(model)
+    }
+
+    /// Ręczne „nieprzeczytane” (przesunięcie, menu) unieważnia lokalny odczyt.
+    func forgetLocalRead(threadID: ThreadID) {
+        localReads[threadID] = nil
+    }
+
+    /// „Nowe” z „Dzisiaj”: filtr nowych we wskazanej skrzynce albo w tej,
+    /// w której ktoś czeka — nowy mail nie może się schować za przełącznikiem.
+    func showUnread(in requested: Channel? = nil) {
         searchText = ""
         filter = .unread
+        if let requested {
+            channel = requested
+            return
+        }
         guard let model = phase.value, model.unreadConversations(in: channel) == 0 else { return }
         if let other = Channel.allCases.first(where: { model.unreadConversations(in: $0) > 0 }) {
             channel = other
@@ -633,6 +700,12 @@ struct MessagesScreen: View {
     /// Ta sama reguła co w opcjach rozmowy: odczyt przesuwa kursor tylko do
     /// przodu, „nowa” to osobny znacznik, a nie fałszywa wiadomość (§3.3).
     private func toggleRead(_ row: MessagesStore.Row) async {
+        // Wiersz zmienia się od razu, zapis idzie w tle.
+        if row.unreadCount > 0 {
+            store.noteRead(threadID: row.thread.id, cursor: row.highestSequence)
+        } else {
+            store.forgetLocalRead(threadID: row.thread.id)
+        }
         var updated = await freshState(row)
         if row.unreadCount > 0 {
             updated.readCursorSequence = ReadStatePolicy.cursorAfterOpeningThread(

@@ -144,8 +144,11 @@ final class ThreadStore: ObservableObject {
                 )
             )
             // Odczyt zapisujemy, gdy rozmowa jest już na ekranie — to dwa
-            // zapytania, na które adwokat nie musi czekać.
-            if let saved = try? await repository.saveReadState(threadState) {
+            // zapytania, na które adwokat nie musi czekać. Lista dowiaduje się
+            // od razu, a zapis idzie w osobnym zadaniu: szybkie wyjście z wątku
+            // anulowało wcześniej zapytanie i rozmowa zostawała „nowa” (10.10.2026).
+            dependencies.messagesStore.noteRead(threadID: threadID, cursor: threadState.readCursorSequence)
+            if let saved = await Self.persistRead(threadState, repository: repository) {
                 // Szkic w stanie zmienia tylko `flushDraft` — nie nadpisujemy go.
                 var merged = saved
                 merged.draft = state?.draft ?? saved.draft
@@ -234,8 +237,24 @@ final class ThreadStore: ObservableObject {
             snapshotSequenceAtOpen: highest
         )
         threadState.manualUnread = false
-        state = (try? await dependencies.repository.saveReadState(threadState)) ?? threadState
+        dependencies.messagesStore.noteRead(threadID: threadID, cursor: highest)
+        state = await Self.persistRead(threadState, repository: dependencies.repository) ?? threadState
         dependencies.refreshUnreadTotal()
+    }
+
+    /// Zapis odczytu, który nie ginie razem z ekranem: zadanie niezależne od
+    /// widoku kończy zapytanie, nawet gdy adwokat już wyszedł z rozmowy.
+    /// Jedna ponowna próba po chwili — chwilowy brak sieci nie zostawia
+    /// rozmowy „nowej” do następnego otwarcia.
+    private static func persistRead(
+        _ state: ThreadUserState,
+        repository: any EmmaRepository
+    ) async -> ThreadUserState? {
+        await Task {
+            if let saved = try? await repository.saveReadState(state) { return saved }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            return try? await repository.saveReadState(state)
+        }.value
     }
 
     // MARK: Szkic
@@ -716,6 +735,7 @@ struct ThreadScreen: View {
                             message: message,
                             senderLabel: message.outgoingAuthorLabel,
                             position: position,
+                            showsReceipts: !model.thread.isEmail,
                             attachmentActions: attachmentActions(for: message, model: model),
                             onOpenWhatsApp: whatsAppAction(model)
                         ) {

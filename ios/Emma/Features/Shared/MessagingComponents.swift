@@ -117,6 +117,8 @@ struct ConversationRow: View {
 
     private var ticksPrefix: Text {
         guard !hasDraft, let preview, preview.isOutgoing else { return Text("") }
+        // Poczta nie zgłasza dostarczenia ani odczytu — ptaszki by kłamały.
+        if thread.isEmail { return Text("Ty: ") }
         return ChatTicks.text(for: preview.transport)
     }
 
@@ -277,78 +279,133 @@ struct ChatAvatar: View {
     }
 }
 
-/// Ptaszki na liście: szare — wysłano/dostarczono, niebieskie — odczytano.
-struct ChatTicks: View {
-    let transport: MessageTransport
+/// Ptaszki rysowane, a nie złożone z dwóch symboli „✓” (10.10.2026): dwa
+/// nałożone znaki z SF Symbols zlewały się w nieczytelną plamę. Jak
+/// w WhatsAppie: cienka kreska, drugi ptaszek przesunięty w prawo, bez
+/// krótkiego ramienia schowanego za pierwszym.
+struct ReceiptTickShape: Shape {
+    let isDouble: Bool
 
-    /// Ptaszki jako `Text` do sklejenia z podglądem (zawija się razem z treścią).
-    static func text(for transport: MessageTransport) -> Text {
-        let color = transport == .read ? EmmaTheme.chatReadTicks : EmmaTheme.mutedSoft
-        let mark = Text(Image(systemName: "checkmark")).font(.system(size: 12, weight: .bold)).foregroundColor(color)
+    /// Szerokość do wysokości — ramka, w której kształt się mieści.
+    static let singleAspect: CGFloat = 1.0
+    static let doubleAspect: CGFloat = 1.42
+    /// O ile drugi ptaszek jest przesunięty (w wysokościach).
+    private static let secondOffset: CGFloat = 0.42
+
+    func path(in rect: CGRect) -> Path {
+        let h = rect.height
+        let x0 = rect.minX
+        let y0 = rect.minY
+        func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: x0 + x * h, y: y0 + y * h)
+        }
+        var path = Path()
+        // Pierwszy ptaszek: krótkie ramię w dół, długie w górę.
+        path.move(to: point(0.08, 0.54))
+        path.addLine(to: point(0.36, 0.82))
+        path.addLine(to: point(0.92, 0.16))
+        if isDouble {
+            let d = Self.secondOffset
+            // Drugi: tylko końcówka krótkiego ramienia i długie ramię.
+            path.move(to: point(0.24 + d, 0.70))
+            path.addLine(to: point(0.36 + d, 0.82))
+            path.addLine(to: point(0.92 + d, 0.16))
+        }
+        return path
+    }
+}
+
+/// Status wysłanej wiadomości: zegar (w drodze), jeden ptaszek (wysłano),
+/// dwa szare (dostarczono), dwa niebieskie (odczytano). Jeden znak dla
+/// dymka, listy rozmów i szczegółów wiadomości.
+struct ReceiptTicks: View {
+    let transport: MessageTransport
+    var height: CGFloat = 11
+    var readColor: Color = EmmaTheme.receiptRead
+    var defaultColor: Color = EmmaTheme.receiptDefault
+
+    var body: some View {
+        glyph
+            .accessibilityLabel(transport.displayName)
+    }
+
+    private var color: Color {
+        transport == .read ? readColor : defaultColor
+    }
+
+    @ViewBuilder
+    private var glyph: some View {
         switch transport.receiptGlyph {
-        case .none: return Text("")
+        case .none:
+            EmptyView()
         case .clock:
-            return Text(Image(systemName: "clock")).font(.system(size: 12)).foregroundColor(color) + Text(" ")
-        case .single: return mark + Text(" ")
-        case .double: return mark.tracking(-6) + mark + Text(" ")
+            Image(systemName: "clock")
+                .font(.system(size: height * 0.95, weight: .medium))
+                .foregroundStyle(color)
+        case .single:
+            ticks(isDouble: false)
+        case .double:
+            ticks(isDouble: true)
         }
     }
 
-    var body: some View {
-        Group {
-            switch transport.receiptGlyph {
-            case .none:
-                EmptyView()
-            case .clock:
-                Image(systemName: "clock")
-            case .single:
-                Image(systemName: "checkmark")
-            case .double:
-                ZStack(alignment: .leading) {
-                    Image(systemName: "checkmark")
-                    Image(systemName: "checkmark").offset(x: 5)
-                }
-                .padding(.trailing, 5)
-            }
-        }
-        .font(.system(size: 13, weight: .semibold))
-        .foregroundStyle(transport == .read ? EmmaTheme.chatReadTicks : EmmaTheme.mutedSoft)
-        .accessibilityLabel(transport.displayName)
+    private func ticks(isDouble: Bool) -> some View {
+        ReceiptTickShape(isDouble: isDouble)
+            .stroke(color, style: StrokeStyle(lineWidth: max(1.4, height * 0.15), lineCap: .round, lineJoin: .round))
+            .frame(
+                width: height * (isDouble ? ReceiptTickShape.doubleAspect : ReceiptTickShape.singleAspect),
+                height: height
+            )
+    }
+}
+
+/// Ptaszki na liście rozmów jako `Text` — sklejane z podglądem, więc druga
+/// linijka zaczyna się od lewej krawędzi, jak w WhatsAppie. Kształtu nie da
+/// się wstawić do `Text`, więc rysujemy go raz do obrazka i trzymamy w pamięci.
+@MainActor
+enum ChatTicks {
+    private struct Key: Hashable {
+        let glyph: MessageTransport.ReceiptGlyph
+        let isRead: Bool
+    }
+
+    private static var cache: [Key: Image] = [:]
+
+    static func text(for transport: MessageTransport) -> Text {
+        guard transport.receiptGlyph != .none else { return Text("") }
+        return Text(image(for: transport)).baselineOffset(-1) + Text(" ")
+    }
+
+    private static func image(for transport: MessageTransport) -> Image {
+        let key = Key(glyph: transport.receiptGlyph, isRead: transport == .read)
+        if let cached = cache[key] { return cached }
+        let renderer = ImageRenderer(
+            content: ReceiptTicks(
+                transport: transport,
+                height: 12,
+                readColor: EmmaTheme.chatReadTicks,
+                defaultColor: EmmaTheme.mutedSoft
+            )
+            .padding(.vertical, 0.5)
+        )
+        renderer.scale = 3
+        let image = renderer.uiImage.map { Image(uiImage: $0) } ?? Image(systemName: "checkmark")
+        cache[key] = image
+        return image
     }
 }
 
 // MARK: Potwierdzenie dostarczenia
 
-/// Znacznik statusu wysyłki. Etykieta tekstowa trafia do czytnika ekranu, a sam
-/// znacznik nie udaje potwierdzenia od dostawcy, którego nie ma.
-///
-/// Który znacznik odpowiada któremu stanowi, rozstrzyga **reguła domenowa**
-/// `MessageTransport.receiptGlyph` — wcześniej ta sama decyzja była powtórzona tutaj
-/// (`== .pending`, `== .delivered || == .read`), czyli w dwóch miejscach naraz.
+/// Znacznik statusu wysyłki w dymku i w szczegółach wiadomości. Etykieta
+/// tekstowa trafia do czytnika ekranu, a sam znacznik nie udaje potwierdzenia
+/// od dostawcy, którego nie ma. Który znak odpowiada któremu stanowi,
+/// rozstrzyga reguła domenowa `MessageTransport.receiptGlyph`.
 struct ReceiptMark: View {
     let transport: MessageTransport
 
     var body: some View {
-        HStack(spacing: 1) {
-            switch transport.receiptGlyph {
-            case .none:
-                EmptyView()
-            case .clock:
-                glyph("clock")
-            case .single:
-                glyph("checkmark")
-            case .double:
-                glyph("checkmark")
-                glyph("checkmark")
-            }
-        }
-        .foregroundStyle(transport == .read ? EmmaTheme.receiptRead : EmmaTheme.receiptDefault)
-        .accessibilityLabel(transport.displayName)
-    }
-
-    private func glyph(_ name: String) -> some View {
-        Image(systemName: name)
-            .font(.system(size: 11, weight: .semibold))
+        ReceiptTicks(transport: transport, height: 11)
     }
 }
 
@@ -388,6 +445,9 @@ struct MessageBubble: View {
     let message: Message
     let senderLabel: String
     var position = ChatLayout.Position(startsGroup: true, endsGroup: true)
+    /// Ptaszki przy naszych wiadomościach. Poczta ich nie ma: serwer poczty
+    /// nie zgłasza dostarczenia ani odczytu.
+    var showsReceipts = true
     var attachmentActions: AttachmentActions? = nil
     /// Rozmowa w aplikacji WhatsApp — dla wiadomości, których tu nie ma
     /// albo które nie wyszły. `nil` — brak numeru.
@@ -485,7 +545,7 @@ struct MessageBubble: View {
 
     /// Zapas pod godzinę (i ptaszki) — spacje o szerokości cyfry.
     private var metaReserve: String {
-        "\u{2007}" + String(repeating: "\u{2007}", count: message.isOutgoing ? 9 : 6)
+        "\u{2007}" + String(repeating: "\u{2007}", count: message.isOutgoing && showsReceipts ? 9 : 6)
     }
 
     private var meta: some View {
@@ -493,7 +553,7 @@ struct MessageBubble: View {
             Text(clockText)
                 .font(EmmaTypography.bubbleMeta)
                 .foregroundStyle(EmmaTheme.bubbleMeta)
-            if message.isOutgoing {
+            if message.isOutgoing && showsReceipts {
                 ReceiptMark(transport: message.transport)
             }
         }
