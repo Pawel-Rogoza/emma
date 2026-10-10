@@ -220,81 +220,48 @@ struct TodayScreen: View {
         header(model, inbox: inbox)
             .emmaAppear(0)
 
-        pulse(model, inbox: inbox)
-            .padding(.top, 6)
-            .emmaAppear(1)
-
-        if !model.missedDeadlines.isEmpty {
-            missedDeadlinesCard(model)
-                .padding(.top, 12)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .emmaAppear(2)
-        }
-
-        ForEach(model.watches) { watch in
-            CaseWatchCard(watch: watch, subtitle: watchSubtitle(watch, model: model)) {
-                dependencies.openCase(watch.caseID)
-            }
-            .padding(.top, 12)
-            .transition(.move(edge: .top).combined(with: .opacity))
-            .emmaAppear(2)
-        }
-
-        if offersNotifications {
-            notificationsOffer
-                .padding(.top, 12)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-        }
-
-        // Sekcje wchodzą kaskadowo (audyt 29.09.2026) — ten sam ruch co Rozmowy,
-        // Kalendarz i Emma. Tylko przy pierwszym pokazaniu ekranu.
+        // Redesign 0.22.0 — trzy poziomy zamiast jedenastu równych kart:
+        //   1. „Następne” — jeden bohater z odliczaniem,
+        //   2. „Wymaga Ciebie” — jedna kolejka: po terminie, leady, napisali, zadania,
+        //   3. „Później dziś” — zwarta lista godzin.
         VStack(alignment: .leading, spacing: 0) {
-            leadsSection(inbox)
-        }
-        .emmaAppear(3)
-
-        VStack(alignment: .leading, spacing: 0) {
-            SectionHeader("Najbliższy termin", actionTitle: "Dodaj", compact: true) {
+            SectionHeader("Następne", actionTitle: "Dodaj", compact: true) {
                 dependencies.present(.eventForm(editing: nil, clientID: nil, caseID: nil, initialDay: nil))
             }
             nextEventCard(agenda.next ?? model.upcomingEvents.first, model: model)
         }
-        .emmaAppear(4)
+        .emmaAppear(1)
 
-        // Po rozprawie — pod najbliższym terminem, żeby nie spychać go z pierwszego widoku.
+        // Po rozprawie — pod bohaterem, żeby nie spychać go z pierwszego widoku.
         if let hearing = DayAgenda.debrief(agenda) {
             debriefCard(hearing, model: model)
                 .padding(.top, 12)
                 .transition(.opacity.combined(with: .move(edge: .top)))
         }
 
-        // Pod najbliższym terminem, nie nad nim — termin i kafelki zostają
-        // w pierwszym widoku (test `testNextEventAndTaskEntryAreAboveTheFold`).
-        // „Napisali” to tylko WhatsApp (10.10.2026) — poczta ma własną skrzynkę
-        // w „Rozmowach” i nie przepycha się na ekran główny.
-        if let rows = messages.phase.value?.unreadWhatsAppRows, !rows.isEmpty {
-            VStack(alignment: .leading, spacing: 0) {
-                SectionHeader("Napisali", actionTitle: "Rozmowy", compact: true) {
-                    openUnreadConversations()
-                }
-                writersCard(rows)
+        VStack(alignment: .leading, spacing: 0) {
+            attentionSection(model, inbox: inbox)
+        }
+        .emmaAppear(2)
+
+        // Areszt albo koniec legalnego pobytu — liczniki dni pod kolejką.
+        ForEach(model.watches) { watch in
+            CaseWatchCard(watch: watch, subtitle: watchSubtitle(watch, model: model)) {
+                dependencies.openCase(watch.caseID)
             }
-            .transition(.opacity.combined(with: .move(edge: .top)))
-        } else if messages.phase.value == nil, dependencies.unreadTotal > 0 {
-            // Lista rozmów jeszcze niewczytana — sama liczba z serwera.
-            unreadMessagesBar(dependencies.unreadTotal)
-                .padding(.top, 12)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+            .padding(.top, 12)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .emmaAppear(3)
         }
 
         if !agenda.upcoming.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
-                SectionHeader("Dalej dziś", actionTitle: "Kalendarz", compact: true) {
+                SectionHeader("Później dziś", actionTitle: "Kalendarz", compact: true) {
                     dependencies.go(to: .calendar)
                 }
                 eventsCard(agenda.upcoming)
             }
-            .emmaAppear(5)
+            .emmaAppear(4)
         }
 
         VStack(alignment: .leading, spacing: 0) {
@@ -303,13 +270,183 @@ struct TodayScreen: View {
             }
             tasksSection(model)
         }
-        .emmaAppear(6)
+        .emmaAppear(5)
 
-        weekStrip(model)
-            .emmaAppear(7)
+        if offersNotifications {
+            notificationsOffer
+                .padding(.top, 16)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+        }
 
         if !agenda.past.isEmpty {
             pastEventsSection(agenda.past)
+        }
+    }
+
+    // MARK: Wymaga Ciebie
+
+    /// Jedna kolejka rzeczy do zrobienia, od najpilniejszej: terminy po terminie
+    /// (czerwone), leady do obsługi, osoby, które napisały, i zadania na dziś.
+    /// Każdy wiersz ma ikonę w kolorze stanu — to, co pilne, widać bez czytania.
+    @ViewBuilder
+    private func attentionSection(_ model: TodayStore.Model, inbox: LeadInbox) -> some View {
+        let missed = Array(model.missedDeadlines.prefix(3))
+        let leads = Array(inbox.needsAction.prefix(Self.leadsPreviewLimit))
+        let writers = Array((messages.phase.value?.unreadWhatsAppRows ?? []).prefix(3))
+        let pendingUnread = messages.phase.value == nil ? dependencies.unreadTotal : 0
+        let summary = TaskGrouping.summary(model.tasks, today: model.today)
+        let count = model.missedDeadlines.count + inbox.needsAction.count
+            + (messages.phase.value?.unreadWhatsAppRows.count ?? (pendingUnread > 0 ? 1 : 0))
+            + (summary.open > 0 ? 1 : 0)
+
+        SectionHeader(count > 0 ? "Wymaga Ciebie · \(count)" : "Wymaga Ciebie", compact: true)
+
+        SurfaceCard(padding: EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0)) {
+            VStack(alignment: .leading, spacing: 0) {
+                if !missed.isEmpty {
+                    VStack(spacing: 0) {
+                        ForEach(missed) { event in
+                            Button {
+                                dependencies.present(.eventDetail(event.id))
+                            } label: {
+                                HStack(spacing: 0) {
+                                    AttentionIcon(systemName: "exclamationmark", tint: EmmaTheme.critical)
+                                        .padding(.leading, 14)
+                                    missedRow(event, model: model)
+                                }
+                            }
+                            .buttonStyle(EmmaCardButtonStyle())
+                            .contextMenu { missedMenu(event) }
+                            attentionDivider
+                        }
+                        if model.missedDeadlines.count > missed.count {
+                            Button {
+                                dependencies.clientMode = .cases
+                                dependencies.go(to: .clients, resetStack: true)
+                            } label: {
+                                Text("Wszystkie po terminie · \(model.missedDeadlines.count)")
+                                    .font(EmmaTypography.caption(.semibold))
+                                    .foregroundStyle(EmmaTheme.critical)
+                                    .frame(maxWidth: .infinity, minHeight: 40)
+                            }
+                            .buttonStyle(.plain)
+                            attentionDivider
+                        }
+                    }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("today-missed-deadlines")
+                }
+
+                ForEach(leads) { client in
+                    LeadInboxRow(
+                        client: client,
+                        onOpen: { dependencies.openPerson(client.id) },
+                        onMarkHandled: { await LeadActions.markInContact(client, dependencies: dependencies) }
+                    )
+                    attentionDivider
+                }
+                if inbox.needsAction.count > leads.count {
+                    attentionLink("Wszystkie leady do obsługi · \(inbox.needsAction.count)") {
+                        dependencies.openLeads(filter: .needsAction)
+                    }
+                    attentionDivider
+                }
+
+                ForEach(writers) { row in
+                    writerRow(row)
+                    attentionDivider
+                }
+                if let all = messages.phase.value?.unreadWhatsAppRows, all.count > writers.count {
+                    attentionLink("Jeszcze \(all.count - writers.count) · wszystkie nowe") {
+                        openUnreadConversations()
+                    }
+                    attentionDivider
+                } else if pendingUnread > 0 {
+                    attentionLink(EmmaPlural.unreadConversations(pendingUnread)) {
+                        openUnreadConversations()
+                    }
+                    attentionDivider
+                }
+
+                tasksAttentionRow(summary)
+            }
+        }
+        .animation(EmmaMotion.smooth, value: writers.map(\.id))
+    }
+
+    private var attentionDivider: some View {
+        Divider().overlay(EmmaTheme.rowSeparator).padding(.leading, 58)
+    }
+
+    private func attentionLink(_ title: String, action: @escaping () -> Void) -> some View {
+        Button {
+            EmmaHaptics.tap()
+            action()
+        } label: {
+            Text(title)
+                .font(EmmaTypography.caption(.semibold))
+                .foregroundStyle(EmmaTheme.accent)
+                .frame(maxWidth: .infinity, minHeight: EmmaSpacing.hitTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Ostatni wiersz kolejki — zadania na dziś. Gdy nic nie czeka, mówi to wprost.
+    private func tasksAttentionRow(_ summary: TaskGrouping.Summary) -> some View {
+        Button {
+            EmmaHaptics.tap()
+            dependencies.openTasks()
+        } label: {
+            HStack(spacing: 12) {
+                AttentionIcon(
+                    systemName: summary.open > 0 ? "checklist" : "checkmark",
+                    tint: summary.hasOverdue ? EmmaTheme.warning : (summary.open > 0 ? EmmaTheme.accent : EmmaTheme.positive)
+                )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(summary.open > 0 ? "Zadania na dziś · \(summary.open)" : "Zadania na dziś zrobione")
+                        .font(EmmaTypography.ui(15, .semibold))
+                        .foregroundStyle(EmmaTheme.ink)
+                    if summary.hasOverdue {
+                        Text("\(summary.overdue) po terminie")
+                            .font(EmmaTypography.caption(.medium))
+                            .foregroundStyle(EmmaTheme.warning)
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(EmmaTheme.mutedSoft)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("pulse-tasks")
+    }
+
+    @ViewBuilder
+    private func missedMenu(_ event: ScheduledEvent) -> some View {
+        Button {
+            Task { await finishEvent(event) }
+        } label: {
+            Label("Załatwione", systemImage: "checkmark.circle")
+        }
+        if let caseID = event.caseID {
+            Button {
+                dependencies.openCase(caseID)
+            } label: {
+                Label("Otwórz sprawę", systemImage: "folder")
+            }
+        }
+        if let clientID = event.clientID {
+            Button {
+                dependencies.openPerson(clientID)
+            } label: {
+                Label("Karta klienta", systemImage: "person")
+            }
         }
     }
 
@@ -553,44 +690,6 @@ struct TodayScreen: View {
         dependencies.go(to: .messages)
     }
 
-    /// „Napisali”: do trzech osób z nowymi wiadomościami — kto, co napisał
-    /// i jak długo czeka. Dotknięcie otwiera od razu tę rozmowę, a nie listę.
-    private func writersCard(_ rows: [MessagesStore.Row]) -> some View {
-        let shown = Array(rows.prefix(3))
-        return VStack(spacing: 0) {
-            ForEach(Array(shown.enumerated()), id: \.element.id) { index, row in
-                if index > 0 {
-                    Divider().overlay(EmmaTheme.rowSeparator).padding(.leading, 62)
-                }
-                writerRow(row)
-            }
-            if rows.count > shown.count {
-                Divider().overlay(EmmaTheme.rowSeparator)
-                Button {
-                    openUnreadConversations()
-                } label: {
-                    Text("Jeszcze \(rows.count - shown.count) · wszystkie nowe")
-                        .font(EmmaTypography.caption(.semibold))
-                        .foregroundStyle(EmmaTheme.accent)
-                        .frame(maxWidth: .infinity, minHeight: EmmaSpacing.hitTarget)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .background(EmmaTheme.surface)
-        .overlay(alignment: .leading) {
-            Rectangle().fill(EmmaTheme.unreadBadge).frame(width: 3)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
-                .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
-        }
-        .emmaCardShadow()
-        .animation(EmmaMotion.smooth, value: rows.map(\.id))
-    }
-
     private func writerRow(_ row: MessagesStore.Row) -> some View {
         let preview = row.preview?.previewText ?? ""
         return Button {
@@ -637,50 +736,6 @@ struct TodayScreen: View {
         .accessibilityHint("Otwiera rozmowę")
     }
 
-    private func unreadMessagesBar(_ count: Int) -> some View {
-        Button {
-            openUnreadConversations()
-        } label: {
-            HStack(spacing: 11) {
-                Image(systemName: "bubble.left.and.text.bubble.right.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(EmmaTheme.unreadBadge)
-                    .frame(width: 34, height: 34)
-                    .background(EmmaTheme.unreadDivider, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(EmmaPlural.unreadConversations(count))
-                        .font(EmmaTypography.ui(14, .semibold))
-                        .foregroundStyle(EmmaTheme.ink)
-                        .contentTransition(.numericText())
-                    Text("WhatsApp · dotknij, aby odpisać")
-                        .font(EmmaTypography.caption())
-                        .foregroundStyle(EmmaTheme.muted)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(EmmaTheme.mutedSoft)
-            }
-            .padding(.horizontal, 13)
-            .padding(.vertical, 10)
-            .background(EmmaTheme.surface)
-            // Pasek z lewej jak na karcie nieprzeczytanej rozmowy — przycięty razem z kartą.
-            .overlay(alignment: .leading) {
-                Rectangle().fill(EmmaTheme.unreadBadge).frame(width: 3)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
-                    .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
-            }
-            .emmaCardShadow()
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(EmmaCardButtonStyle())
-        .animation(EmmaMotion.bouncy, value: count)
-        .accessibilityHint("Otwiera nieprzeczytane rozmowy")
-    }
-
     // MARK: Zgoda na powiadomienia
 
     /// Jedno zdanie, dwa przyciski. Bez zgody nie ma porannego skrótu ani
@@ -724,82 +779,6 @@ struct TodayScreen: View {
 
     // MARK: Po terminie
 
-    /// Czerwona karta nad wszystkim innym: terminy w sprawach, które minęły,
-    /// a nikt ich nie zamknął. Dotknięcie otwiera termin (tam „Zakończ”
-    /// albo przesunięcie), przytrzymanie — sprawę.
-    private func missedDeadlinesCard(_ model: TodayStore.Model) -> some View {
-        let shown = Array(model.missedDeadlines.prefix(3))
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .symbolEffect(.pulse, options: .repeating.speed(0.5))
-                Text("Po terminie · \(model.missedDeadlines.count)")
-                    .font(EmmaTypography.ui(15, .semibold))
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(EmmaTheme.pillDangerText)
-            .padding(.horizontal, 15)
-            .padding(.top, 13)
-            .padding(.bottom, 4)
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isHeader)
-
-            ForEach(Array(shown.enumerated()), id: \.element.id) { index, event in
-                Button {
-                    dependencies.present(.eventDetail(event.id))
-                } label: {
-                    missedRow(event, model: model)
-                }
-                .buttonStyle(EmmaCardButtonStyle())
-                .contextMenu {
-                    Button {
-                        Task { await finishEvent(event) }
-                    } label: {
-                        Label("Załatwione", systemImage: "checkmark.circle")
-                    }
-                    if let caseID = event.caseID {
-                        Button {
-                            dependencies.openCase(caseID)
-                        } label: {
-                            Label("Otwórz sprawę", systemImage: "folder")
-                        }
-                    }
-                    if let clientID = event.clientID {
-                        Button {
-                            dependencies.openPerson(clientID)
-                        } label: {
-                            Label("Karta klienta", systemImage: "person")
-                        }
-                    }
-                }
-                if index < shown.count - 1 {
-                    Divider().overlay(EmmaTheme.pillDangerText.opacity(0.15)).padding(.horizontal, 15)
-                }
-            }
-            if model.missedDeadlines.count > shown.count {
-                Button {
-                    dependencies.clientMode = .cases
-                    dependencies.go(to: .clients, resetStack: true)
-                } label: {
-                    Text("Wszystkie sprawy po terminie")
-                        .font(EmmaTypography.caption(.semibold))
-                        .foregroundStyle(EmmaTheme.pillDangerText)
-                        .frame(maxWidth: .infinity, minHeight: 40)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.bottom, 6)
-        .background(EmmaTheme.pillDangerBackground)
-        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
-                .strokeBorder(EmmaTheme.pillDangerText.opacity(0.25), lineWidth: 1)
-        }
-        .accessibilityIdentifier("today-missed-deadlines")
-    }
-
     private func missedRow(_ event: ScheduledEvent, model: TodayStore.Model) -> some View {
         let urgency = CaseUrgency(nextEvent: nil, missedEvent: event.day, overdueTasks: 0, today: model.today)
         let meta = [
@@ -841,64 +820,9 @@ struct TodayScreen: View {
         .accessibilityHint("Otwiera termin. Przytrzymaj, aby oznaczyć jako załatwiony albo przejść do sprawy.")
     }
 
-    // MARK: Leady do obsługi
-
-    /// Najwyżej trzy zgłoszenia: najpierw te, które czekają, potem nowe.
-    /// Reszta jest pod „Wszystkie” — ekran główny nie zamienia się w listę.
-    /// Sekcja jest zawsze: brak leadów to też informacja („nic nie czeka”).
-    @ViewBuilder
-    private func leadsSection(_ inbox: LeadInbox) -> some View {
-        let queue = inbox.needsAction
-        SectionHeader(
-            queue.isEmpty ? "Nowe leady" : "Nowe leady · \(queue.count)",
-            actionTitle: queue.isEmpty ? "Wszystkie" : (queue.count > Self.leadsPreviewLimit ? "Wszystkie" : "Lista"),
-            compact: true
-        ) {
-            dependencies.openLeads(filter: queue.isEmpty ? .all : .needsAction)
-        }
-        if queue.isEmpty {
-            SurfaceCard {
-                HStack(spacing: 12) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .font(.system(size: 22))
-                        .foregroundStyle(EmmaTheme.pillGreenText)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Brak nowych leadów")
-                            .font(EmmaTypography.ui(14, .semibold))
-                            .foregroundStyle(EmmaTheme.ink)
-                        Text(inbox.inContact.isEmpty
-                             ? "Nowe zgłoszenia ze strony pojawią się tutaj."
-                             : "W kontakcie: \(EmmaPlural.leads(inbox.inContact.count)). Nowe zgłoszenia pojawią się tutaj.")
-                            .font(EmmaTypography.caption())
-                            .foregroundStyle(EmmaTheme.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 0)
-                }
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("today-no-leads")
-        } else {
-            SurfaceCard(padding: EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0)) {
-                VStack(spacing: 0) {
-                    ForEach(Array(queue.prefix(Self.leadsPreviewLimit).enumerated()), id: \.element.id) { index, client in
-                        LeadInboxRow(
-                            client: client,
-                            onOpen: { dependencies.openPerson(client.id) },
-                            onMarkHandled: { await LeadActions.markInContact(client, dependencies: dependencies) }
-                        )
-                        if index < min(queue.count, Self.leadsPreviewLimit) - 1 {
-                            Divider().overlay(EmmaTheme.rowSeparator).padding(.leading, 64)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     private static let leadsPreviewLimit = 3
 
-    // MARK: Najbliższy termin
+    // MARK: Następne (bohater)
 
     @ViewBuilder
     private func nextEventCard(_ event: ScheduledEvent?, model: TodayStore.Model) -> some View {
@@ -906,8 +830,10 @@ struct TodayScreen: View {
             SurfaceCard {
                 VStack(alignment: .leading, spacing: 9) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        // Bohater ekranu (0.22.0): godzina czytelna z odległości.
                         Text(event.isAllDay ? "Cały dzień" : event.time.hhmm)
-                            .font(EmmaTypography.heading(21))
+                            .font(EmmaTypography.heading(32))
+                            .monospacedDigit()
                             .foregroundStyle(EmmaTheme.ink)
                         if event.day != model.today {
                             Text(dependencies.dateText.dayLabel(event.day))
@@ -1029,93 +955,6 @@ struct TodayScreen: View {
                         .font(EmmaTypography.caption())
                         .foregroundStyle(EmmaTheme.muted)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-        }
-    }
-
-    // MARK: Puls dnia
-
-    /// Trzy kafelki: ile czeka leadów, ile terminów dziś, ile zadań.
-    private func pulse(_ model: TodayStore.Model, inbox: LeadInbox) -> some View {
-        let summary = TaskGrouping.summary(model.tasks, today: model.today)
-        return HStack(spacing: 8) {
-            PulseTile(
-                value: inbox.needsAction.count,
-                label: "leady do obsługi",
-                systemImage: "tray.full",
-                tone: inbox.waiting.isEmpty ? EmmaTheme.accent : EmmaTheme.pillAmberText
-            ) {
-                dependencies.openLeads(filter: .needsAction)
-            }
-            PulseTile(
-                value: model.events.count,
-                label: model.events.count == 1 ? "termin dziś" : "terminy dziś",
-                systemImage: "calendar",
-                tone: EmmaTheme.accent
-            ) {
-                dependencies.openCalendar(on: model.today)
-            }
-            PulseTile(
-                value: summary.open,
-                label: summary.hasOverdue ? "zadania · \(summary.overdue) po terminie" : "zadania na dziś",
-                systemImage: "checklist",
-                tone: summary.hasOverdue ? EmmaTheme.pillUrgentText : EmmaTheme.accent
-            ) {
-                dependencies.openTasks()
-            }
-            .accessibilityIdentifier("pulse-tasks")
-        }
-    }
-
-    // MARK: Tydzień
-
-    /// Siedem najbliższych dni z liczbą terminów — dotknięcie otwiera kalendarz
-    /// na tym dniu. Wolny dzień nie jest już pustą kartą, tylko częścią planu.
-    private func weekStrip(_ model: TodayStore.Model) -> some View {
-        let all = model.events + model.upcomingEvents
-        let days = (0..<7).map { model.today.adding(days: $0) }
-        return VStack(alignment: .leading, spacing: 0) {
-            SectionHeader("Najbliższe 7 dni", actionTitle: "Kalendarz", compact: true) {
-                dependencies.go(to: .calendar)
-            }
-            HStack(spacing: 5) {
-                ForEach(days, id: \.self) { day in
-                    let count = all.filter { $0.day == day }.count
-                    let isToday = day == model.today
-                    Button {
-                        EmmaHaptics.selection()
-                        dependencies.openCalendar(on: day)
-                    } label: {
-                        VStack(spacing: 4) {
-                            Text(dependencies.dateText.weekdayShort(for: day))
-                                .font(EmmaTypography.caption(.medium))
-                                .foregroundStyle(isToday ? EmmaTheme.daySelectedLabel : EmmaTheme.mutedSoft)
-                            Text("\(day.day)")
-                                .font(EmmaTypography.heading(16))
-                                .foregroundStyle(isToday ? EmmaTheme.daySelectedNumber : EmmaTheme.ink)
-                            Text(count == 0 ? "–" : "\(count)")
-                                .font(EmmaTypography.caption(.semibold))
-                                .foregroundStyle(isToday
-                                                 ? EmmaTheme.daySelectedNumber
-                                                 : (count == 0 ? EmmaTheme.mutedSoft : EmmaTheme.accent))
-                                .frame(minWidth: 20, minHeight: 18)
-                                .background(
-                                    count > 0 && !isToday ? EmmaTheme.accentSoft : Color.clear,
-                                    in: Capsule()
-                                )
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 74)
-                        .background(isToday ? EmmaTheme.daySelected : EmmaTheme.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.dayCell, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: EmmaRadii.dayCell, style: .continuous)
-                                .strokeBorder(isToday ? Color.clear : EmmaTheme.cardBorder, lineWidth: 1)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(EmmaCardButtonStyle())
-                    .accessibilityLabel("\(dependencies.dateText.dayLabel(day)), \(EmmaPlural.events(count))")
                 }
             }
         }
@@ -1277,4 +1116,19 @@ private struct TaskEntry: Identifiable {
     let dependencies = AppDependencies.demo()
     return TodayScreen(store: dependencies.todayStore, messages: dependencies.messagesStore)
         .environmentObject(dependencies)
+}
+
+/// Ikona stanu w kolejce „Wymaga Ciebie”: kolor mówi, jak pilne (0.22.0).
+private struct AttentionIcon: View {
+    let systemName: String
+    let tint: Color
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: 14, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: 30, height: 30)
+            .background(tint, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .accessibilityHidden(true)
+    }
 }
