@@ -61,6 +61,15 @@ final class HomeScreenQuickActions: ObservableObject {
 final class EmmaAppDelegate: NSObject, UIApplicationDelegate {
     func application(
         _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        // Zadanie w tle trzeba zarejestrować przed końcem uruchamiania.
+        BackgroundRefresh.register()
+        return true
+    }
+
+    func application(
+        _ application: UIApplication,
         configurationForConnecting connectingSceneSession: UISceneSession,
         options: UIScene.ConnectionOptions
     ) -> UISceneConfiguration {

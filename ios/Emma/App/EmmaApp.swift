@@ -77,6 +77,12 @@ struct EmmaApp: App {
         // Dotknięcie przypomnienia o terminie otwiera jego szczegóły.
         Self.notificationRouter.dependencies = dependencies
         UNUserNotificationCenter.current().delegate = Self.notificationRouter
+        // Odświeżenie w tle (nowe leady, przypomnienia) — `BackgroundRefresh`.
+        BackgroundRefresh.dependencies = dependencies
+        BackgroundRefresh.hasSession = { [weak authStore] in
+            guard let authStore else { return false }
+            return authStore.state != .signedOut
+        }
         EmmaFontRegistration.verifyRegisteredFonts()
     }
 
@@ -140,6 +146,7 @@ struct EmmaApp: App {
                 // przełącznika aplikacji powstaje tuż po przejściu w tło.
                 syncLockOverlay()
                 Task { await dependencies.voice.handleApplicationBackgrounded() }
+                BackgroundRefresh.schedule()
             case .active:
                 // Krótka przerwa (`relockGracePeriod`) nie wymaga Face ID.
                 // Po dłuższej pytamy dopiero teraz: ekran blokady pojawił się
@@ -155,6 +162,9 @@ struct EmmaApp: App {
                 // nowa — prosimy je o odświeżenie (np. nowy lead ze strony).
                 if auth.hasUnlockedSession {
                     dependencies.dataChanged()
+                    // Aplikacja na ekranie: lead widać na „Dzisiaj”, więc tylko
+                    // zapamiętujemy go, żeby odświeżenie w tle nie powiadomiło drugi raz.
+                    Task { await dependencies.reminders.checkNewLeads(dependencies, notify: false) }
                 }
             default:
                 break
