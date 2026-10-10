@@ -173,6 +173,7 @@ struct TaskFormSheet: View {
                             .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
                     }
                     .accessibilityLabel("Co trzeba zrobić?")
+                    .accessibilityIdentifier("task-title")
 
                 HStack(spacing: 8) {
                     priorityChip(.normal, systemImage: "checklist")
@@ -238,6 +239,7 @@ struct TaskFormSheet: View {
                 Task { await save() }
             }
             .padding(.top, 20)
+            .accessibilityIdentifier("task-save")
         }
         .task { await prepare() }
     }
@@ -343,6 +345,10 @@ struct TaskFormSheet: View {
 
 // MARK: Szczegóły zadania
 
+/// 0.23.0: szczegóły zadania wyglądały jak szkic (dwa wiersze tekstu i dwa
+/// szare przyciski). Teraz ten sam język co szczegóły terminu: stan w pigułkach
+/// (pilne, po terminie, wykonane), karta z terminem, klientem i sprawą —
+/// klient i sprawa otwierają się jednym dotknięciem.
 struct TaskDetailSheet: View {
 
     let taskID: TaskID
@@ -350,6 +356,8 @@ struct TaskDetailSheet: View {
     @EnvironmentObject private var dependencies: AppDependencies
     @State private var phase: LoadPhase<TaskItem> = .idle
     @State private var error: String?
+    @State private var clientName: String?
+    @State private var caseNumber: String?
 
     var body: some View {
         SheetScaffold(title: "Zadanie", onClose: { dependencies.dismissSheet() }) {
@@ -369,39 +377,84 @@ struct TaskDetailSheet: View {
 
     @ViewBuilder
     private func content(_ task: TaskItem) -> some View {
-        Text(task.title)
-            .font(EmmaTypography.body(for: task.title, size: 17))
-            .foregroundStyle(EmmaTheme.ink)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.bottom, 14)
+        let isOverdue = !task.isDone && (task.dueDate.map { $0 < dependencies.today } ?? false)
 
-        InfoList([
-            .init("Termin", task.dueDate.map(dependencies.dateText.dayLabel) ?? TaskItem.noDueDateText),
-            .init("Status", task.isDone ? "Wykonane" : "Do zrobienia")
-        ])
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                if task.isDone {
+                    StatusPill("Wykonane", kind: .green)
+                } else if isOverdue {
+                    StatusPill("Po terminie", kind: .danger)
+                }
+                if task.showsUrgentBadge {
+                    StatusPill("Pilne", kind: .urgent)
+                }
+            }
+            Text(task.title)
+                .font(EmmaTypography.heading(22))
+                .foregroundStyle(EmmaTheme.ink)
+                .strikethrough(task.isDone, color: EmmaTheme.mutedSoft)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("task-detail-title")
+        }
         .padding(.bottom, 16)
+        .animation(EmmaMotion.smooth, value: task.isDone)
+
+        FormCard {
+            FormRow(systemImage: "calendar", title: "Termin") {
+                Text(task.dueDate.map(dependencies.dateText.dayLabel) ?? TaskItem.noDueDateText)
+                    .font(EmmaTypography.ui(15, isOverdue ? .semibold : .regular))
+                    .foregroundStyle(isOverdue ? EmmaTheme.pillDangerText : EmmaTheme.ink)
+            }
+            if let clientID = task.clientID {
+                FormDivider()
+                linkRow(systemImage: "person", title: "Klient", value: clientName ?? "Karta klienta") {
+                    dependencies.dismissSheet()
+                    dependencies.openPerson(clientID)
+                }
+            }
+            if let caseID = task.caseID {
+                FormDivider()
+                linkRow(systemImage: "folder", title: "Sprawa", value: caseNumber ?? "Otwórz sprawę") {
+                    dependencies.dismissSheet()
+                    dependencies.openCase(caseID)
+                }
+            }
+        }
+        .padding(.bottom, 18)
 
         if let error { InlineError(error) }
 
         PrimaryButton(
             task.isDone ? "Przywróć zadanie" : "Oznacz jako wykonane",
-            systemImage: "checkmark"
+            systemImage: task.isDone ? "arrow.uturn.backward" : "checkmark.circle"
         ) {
             Task { await toggle(task) }
         }
         .padding(.bottom, 10)
+        .accessibilityIdentifier("task-detail-toggle")
 
-        HStack(spacing: 10) {
-            SecondaryButton("Edytuj") {
-                dependencies.present(.taskForm(editing: task.id, clientID: task.clientID, caseID: task.caseID))
-            }
-            if let clientID = task.clientID {
-                SecondaryButton("Karta klienta") {
-                    dependencies.dismissSheet()
-                    dependencies.openPerson(clientID)
+        SecondaryButton("Edytuj zadanie", systemImage: "pencil") {
+            dependencies.present(.taskForm(editing: task.id, clientID: task.clientID, caseID: task.caseID))
+        }
+    }
+
+    private func linkRow(systemImage: String, title: String, value: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            FormRow(systemImage: systemImage, title: title) {
+                HStack(spacing: 6) {
+                    Text(value)
+                        .font(EmmaTypography.ui(15))
+                        .foregroundStyle(EmmaTheme.accent)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(EmmaTheme.mutedSoft)
                 }
             }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
     private func load() async {
@@ -411,6 +464,13 @@ struct TaskDetailSheet: View {
             fallback: "Nie udało się wczytać zadania."
         ) {
             try await dependencies.repository.task(id: taskID)
+        }
+        guard case .loaded(let task) = phase else { return }
+        if let clientID = task.clientID {
+            clientName = (try? await dependencies.repository.client(id: clientID))?.displayName
+        }
+        if let caseID = task.caseID {
+            caseNumber = (try? await dependencies.repository.legalCase(id: caseID))?.number
         }
     }
 

@@ -128,29 +128,37 @@ struct TasksScreen: View {
                 .padding(.bottom, 8)
         }
 
-        SurfaceCard(padding: EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0)) {
-            VStack(spacing: 0) {
-                if model.tasks.isEmpty {
-                    Text("Brak zadań w tym widoku.")
-                        .font(EmmaTypography.caption())
-                        .foregroundStyle(EmmaTheme.muted)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 15)
-                        .padding(.vertical, 16)
-                } else if isDoneScope {
-                    ForEach(Array(model.tasks.enumerated()), id: \.element.id) { index, task in
-                        taskRow(task, model: model, showsDivider: index < model.tasks.count - 1)
-                    }
-                } else {
-                    ForEach(groups, id: \.bucket) { group in
-                        groupLabel(group.bucket)
-                        ForEach(Array(group.tasks.enumerated()), id: \.element.id) { index, task in
-                            taskRow(
-                                task,
-                                model: model,
-                                showsDivider: !(group.bucket == groups.last?.bucket
-                                    && index == group.tasks.count - 1)
-                            )
+        // Pusty widok mówi, co dalej — zamiast jednej szarej linijki w karcie.
+        if model.tasks.isEmpty {
+            EmptyState(
+                systemImage: isDoneScope ? "checkmark.circle" : "checklist",
+                title: isDoneScope ? "Nic jeszcze nie wykonano" : (store.scope == .open ? "Brak otwartych zadań" : "Brak zadań"),
+                message: isDoneScope
+                    ? "Odhaczone zadania pojawią się tutaj."
+                    : "Dodaj zadanie albo poproś Emmę, żeby je zapisała.",
+                actionTitle: isDoneScope ? nil : "Dodaj zadanie",
+                action: isDoneScope ? nil : {
+                    dependencies.present(.taskForm(editing: nil, clientID: nil, caseID: nil))
+                }
+            )
+        } else {
+            SurfaceCard(padding: EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0)) {
+                VStack(spacing: 0) {
+                    if isDoneScope {
+                        ForEach(Array(model.tasks.enumerated()), id: \.element.id) { index, task in
+                            taskRow(task, model: model, showsDivider: index < model.tasks.count - 1)
+                        }
+                    } else {
+                        ForEach(groups, id: \.bucket) { group in
+                            groupLabel(group.bucket)
+                            ForEach(Array(group.tasks.enumerated()), id: \.element.id) { index, task in
+                                taskRow(
+                                    task,
+                                    model: model,
+                                    showsDivider: !(group.bucket == groups.last?.bucket
+                                        && index == group.tasks.count - 1)
+                                )
+                            }
                         }
                     }
                 }

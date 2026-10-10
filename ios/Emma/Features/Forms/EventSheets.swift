@@ -745,10 +745,20 @@ struct EventDetailSheet: View {
 
     @ViewBuilder
     private func content(_ event: ScheduledEvent) -> some View {
+        // Rodzaj w kolorze kropek kalendarza (konsultacja — niebieski, termin
+        // w sprawie — bursztyn) i stan terminu obok: załatwiony, przegapiony
+        // albo „za 45 min” — bez szukania tego w treści.
+        let kindTint = event.kind == .caseDeadline ? EmmaTheme.pillAmberText : EmmaTheme.accent
         VStack(alignment: .leading, spacing: 8) {
-            Label(event.kind.displayTitle, systemImage: event.kind.systemImage)
-                .font(EmmaTypography.caption(.semibold))
-                .foregroundStyle(EmmaTheme.accent)
+            HStack(spacing: 8) {
+                Label(event.kind.displayTitle, systemImage: event.kind.systemImage)
+                    .font(EmmaTypography.caption(.semibold))
+                    .foregroundStyle(kindTint)
+                    .padding(.horizontal, 10)
+                    .frame(minHeight: 26)
+                    .background(kindTint.opacity(0.12), in: Capsule())
+                statusPill(event)
+            }
             Text(event.title)
                 .font(EmmaTypography.heading(22))
                 .foregroundStyle(EmmaTheme.ink)
@@ -881,6 +891,18 @@ struct EventDetailSheet: View {
                 .frame(maxWidth: .infinity, minHeight: EmmaSpacing.hitTarget)
         }
         .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func statusPill(_ event: ScheduledEvent) -> some View {
+        let today = dependencies.today
+        if event.status == .finished {
+            StatusPill("Załatwione", kind: .green)
+        } else if event.kind == .caseDeadline && event.day < today {
+            StatusPill("Po terminie", kind: .danger)
+        } else if let countdown = event.countdownText(now: TimeOfDay.at(dependencies.clock.now()), today: today) {
+            StatusPill(countdown, kind: countdown == "teraz" ? .green : .neutral)
+        }
     }
 
     private func whenText(_ event: ScheduledEvent) -> String {
