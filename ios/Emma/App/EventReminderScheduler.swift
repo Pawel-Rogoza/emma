@@ -96,8 +96,13 @@ final class EventReminderScheduler {
             events: events,
             clientNames: names,
             offset: { preferences.offset(for: $0.id) },
-            now: dependencies.now
+            now: dependencies.now,
+            limit: Self.eventLimit
         )
+
+        // Zadania z terminem: rano w dniu zadania (10.10.2026).
+        let openTasks = (try? await dependencies.repository.tasks(filter: TaskFilter(scope: .open))) ?? []
+        let taskItems = TaskReminderPlan.items(tasks: openTasks, clientNames: names, now: dependencies.now)
 
         // Poranny skrót (8:00): terminy dnia i niezamknięte terminy po czasie.
         let past = (try? await dependencies.repository.events(
@@ -132,6 +137,23 @@ final class EventReminderScheduler {
             content.body = item.body
             content.sound = .default
             content.userInfo = [Self.caseIDKey: item.caseID.rawValue]
+            let components = Calendar(identifier: .gregorian).dateComponents(
+                [.timeZone, .year, .month, .day, .hour, .minute, .second],
+                from: item.fireAt
+            )
+            try? await center.add(UNNotificationRequest(
+                identifier: item.identifier,
+                content: content,
+                trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+            ))
+        }
+
+        for item in taskItems {
+            let content = UNMutableNotificationContent()
+            content.title = item.title
+            content.body = item.body
+            content.sound = .default
+            content.userInfo = [Self.taskIDKey: item.taskID.rawValue]
             let components = Calendar(identifier: .gregorian).dateComponents(
                 [.timeZone, .year, .month, .day, .hour, .minute, .second],
                 from: item.fireAt
@@ -180,6 +202,41 @@ final class EventReminderScheduler {
         }
     }
 
+    // MARK: Nowe leady
+
+    static let knownLeadsKey = "emma.notifications.knownLeads"
+
+    /// Sprawdza „Nowych” i powiadamia o tych, których telefon jeszcze nie
+    /// widział. `notify: false` (aplikacja na ekranie) tylko zapamiętuje —
+    /// lead i tak widać wtedy na „Dzisiaj”.
+    func checkNewLeads(_ dependencies: AppDependencies, notify: Bool) async {
+        guard isEnabled else { return }
+        guard let leads = try? await dependencies.repository.clients(matching: "", stage: .new) else { return }
+        let stored = UserDefaults.standard.array(forKey: Self.knownLeadsKey) as? [String]
+        let outcome = LeadAlertPlan.check(
+            leads: leads.map { LeadAlertPlan.Lead(id: $0.id.rawValue, name: $0.displayName, topic: $0.topic) },
+            known: stored.map(Set.init)
+        )
+        UserDefaults.standard.set(Array(outcome.known), forKey: Self.knownLeadsKey)
+        guard notify, !outcome.alerts.isEmpty else { return }
+        let center = UNUserNotificationCenter.current()
+        switch await center.notificationSettings().authorizationStatus {
+        case .authorized, .provisional, .ephemeral: break
+        default: return
+        }
+        for alert in outcome.alerts {
+            let content = UNMutableNotificationContent()
+            content.title = alert.title
+            content.body = alert.body
+            content.sound = .default
+            content.userInfo = alert.identifier.hasPrefix(LeadAlertPlan.identifierPrefix + "batch.")
+                ? [Self.leadsKey: true]
+                : [Self.clientIDKey: alert.clientID.rawValue]
+            // Bez wyzwalacza — od razu.
+            try? await center.add(UNNotificationRequest(identifier: alert.identifier, content: content, trigger: nil))
+        }
+    }
+
     /// Koniec sesji. Przypomnienia i poranny skrót niosą nazwy klientów
     /// i terminów, więc nie mogą przeżyć wylogowania — pojawiałyby się na
     /// ekranie blokady telefonu osobie, która nie ma już dostępu do danych.
@@ -195,6 +252,8 @@ final class EventReminderScheduler {
             .map(\.request.identifier)
             .filter(Self.isOurs)
         center.removeDeliveredNotifications(withIdentifiers: delivered)
+        // Następne konto zaczyna od zera — bez powiadomień o cudzych leadach.
+        UserDefaults.standard.removeObject(forKey: Self.knownLeadsKey)
     }
 
     /// Zdjęcie przypomnienia usuniętego terminu od razu, bez czekania na odświeżenie.
@@ -207,11 +266,24 @@ final class EventReminderScheduler {
 
     nonisolated static let eventIDKey = "eventID"
     nonisolated static let caseIDKey = "caseID"
+    nonisolated static let taskIDKey = "taskID"
+    nonisolated static let clientIDKey = "clientID"
+    nonisolated static let leadsKey = "leads"
+
+    /// Terminy dzielą limit 64 powiadomień z zadaniami (10), sprawami (12)
+    /// i porannym skrótem — stąd mniej niż `EventReminderPlan.defaultLimit`.
+    static let eventLimit = 38
 
     /// Powiadomienia Emmy (terminy, poranny skrót, areszt i pobyt) — sprzątanie
     /// nie rusza niczego innego.
     nonisolated static func isOurs(_ identifier: String) -> Bool {
-        [EventReminderPlan.identifierPrefix, MorningBrief.identifierPrefix, CaseWatchReminderPlan.identifierPrefix]
+        [
+            EventReminderPlan.identifierPrefix,
+            MorningBrief.identifierPrefix,
+            CaseWatchReminderPlan.identifierPrefix,
+            TaskReminderPlan.identifierPrefix,
+            LeadAlertPlan.identifierPrefix,
+        ]
             .contains { identifier.hasPrefix($0) }
     }
 }
@@ -235,6 +307,24 @@ final class EventNotificationRouter: NSObject, UNUserNotificationCenterDelegate,
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
+        let info = response.notification.request.content.userInfo
+        // Zadanie — otwiera jego szczegóły.
+        if let taskRaw = info[EventReminderScheduler.taskIDKey] as? String {
+            await MainActor.run { dependencies?.present(.taskDetail(TaskID(taskRaw))) }
+            return
+        }
+        // Nowy lead — otwiera kartę osoby; kilka naraz — listę klientów.
+        if let clientRaw = info[EventReminderScheduler.clientIDKey] as? String {
+            await MainActor.run {
+                dependencies?.go(to: .clients, resetStack: true)
+                dependencies?.openPerson(ClientID(clientRaw))
+            }
+            return
+        }
+        if info[EventReminderScheduler.leadsKey] != nil {
+            await MainActor.run { dependencies?.go(to: .clients, resetStack: true) }
+            return
+        }
         // Areszt / legalny pobyt — otwiera sprawę.
         if let caseRaw = response.notification.request.content.userInfo[EventReminderScheduler.caseIDKey] as? String {
             await MainActor.run { dependencies?.openCase(CaseID(caseRaw)) }

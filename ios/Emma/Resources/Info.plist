@@ -64,6 +64,17 @@
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Rozpoznawanie mowy zamienia wypowiedziane zdanie na tekst w polu wiadomości, notatki lub zadania. Użyj tekstu, jeśli nie chcesz korzystać z mikrofonu.</string>
 
+	<!-- Odświeżenie w tle: nowe leady i przypomnienia o terminach z panelu WWW
+	     (BackgroundRefresh.swift). Nie wymaga uprawnień ani zmiany profilu. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>pl.emma.refresh</string>
+	</array>
+
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
