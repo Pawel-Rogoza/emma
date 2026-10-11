@@ -127,6 +127,31 @@ public enum AssistantIntentParser {
 
     private static let creationVerbs = ["dodaj", "dodać", "dopisz", "zaplanuj", "ustaw", "wpisz", "stwórz", "stworz"]
 
+    /// Słowa, od których zaczyna się pytanie („jakie mam zadania…”, „czy Olena
+    /// odpisała?”). Audyt 11.10.2026: parser szukał w tekście fragmentów
+    /// „zadani”, „wiadomo”, „spotkani” i pytanie „Jakie mam zadania na jutro?”
+    /// zaczynało **nowe** zadanie, a „Co pisała Olena w wiadomości?” — szkic
+    /// odpowiedzi. Pytanie to odczyt: ma trafić do Emmy, nie do formularza.
+    private static let questionWords: Set<String> = [
+        "jak", "jaki", "jaka", "jakie", "jakiej", "jakich", "jakim", "jaką",
+        "co", "czy", "kto", "kogo", "komu", "kim", "kiedy", "ile", "ilu", "gdzie",
+        "dlaczego", "czemu", "który", "która", "które", "których", "którzy", "skąd"
+    ]
+    /// Prośby o pokazanie, a nie o zapis („pokaż zadania”, „sprawdź wiadomości”).
+    private static let lookupVerbs: Set<String> = [
+        "pokaż", "pokaz", "wyświetl", "wyswietl", "sprawdź", "sprawdz", "podaj",
+        "wymień", "wymien", "przeczytaj", "streść", "stresc", "znajdź", "znajdz",
+        "wyszukaj", "szukaj", "otwórz", "otworz", "przejrzyj"
+    ]
+    /// Pierwsze słowo, które czyni wypowiedź poleceniem, nawet zakończoną „?”
+    /// („Napisz do Oleny, czy przyjdzie jutro?”).
+    private static let commandWords: Set<String> = [
+        "dodaj", "dodać", "dopisz", "zaplanuj", "ustaw", "wpisz", "stwórz", "stworz",
+        "napisz", "wyślij", "wyslij", "odpowiedz", "przypomnij", "umów", "umow", "zanotuj", "zapisz"
+    ]
+    /// Słowa na początku, które nie zmieniają sensu („A co…”, „Emma, czy…”).
+    private static let fillerWords: Set<String> = ["a", "i", "no", "to", "emma", "emmo", "hej", "ok", "dobrze"]
+
     /// Jednostki, po których liczba jest **ilością**, a nie godziną („20 minut” ≠ 20:00).
     private static let quantityUnits = ["minut", "min", "godzin", "godz", "h", "dni", "dzień", "dnia", "tygodni", "tydzień", "osób"]
     /// Nazwy rodzaju na początku treści („zadanie wyślij dokumenty” → „wyślij dokumenty”).
@@ -174,14 +199,43 @@ public enum AssistantIntentParser {
         // 3. Rodzaj czynności. Kolejność jest istotna: „dodaj spotkanie” to nie
         //    briefing, choć zawiera słowo „termin”; „wyślij Olenie wiadomość” to
         //    odpowiedź, a nie zgoda (zgoda jest tylko samodzielna, punkt 1).
-        let kind = self.kind(of: lowered)
+        let kind = self.kind(of: lowered, isLookup: isLookup(lowered, raw: text))
         return AssistantIntent(kind: kind, text: payloadText(of: text, kind: kind), dueDate: date, dueTime: time)
     }
 
     // MARK: Rodzaj
 
-    private static func kind(of lowered: String) -> AssistantIntent.Kind {
+    /// Czy wypowiedź jest pytaniem albo prośbą o pokazanie danych — wtedy nie
+    /// tworzy notatki, zadania, spotkania ani wiadomości. Wyjątek: polecenie
+    /// wprost („Napisz do…”, „Dodaj zadanie: …”), także zakończone znakiem zapytania.
+    static func isLookup(_ lowered: String, raw: String) -> Bool {
+        let words = lowered
+            .split(separator: " ")
+            .map { $0.trimmingCharacters(in: .punctuationCharacters) }
+            .filter { !$0.isEmpty }
+        guard let first = words.first(where: { !fillerWords.contains($0) }) else { return false }
+        // Dwukropek z treścią („Notatka: …”) to polecenie; godzina „11:30” nie.
+        let hasPayloadColon = lowered.range(of: #"(^|[^0-9]):"#, options: .regularExpression) != nil
+        if commandWords.contains(first) || hasPayloadColon { return false }
+        if words.contains(where: { creationVerbs.contains($0) }) { return false }
+        let endsWithQuestion = raw.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("?")
+        return endsWithQuestion || questionWords.contains(first) || lookupVerbs.contains(first)
+    }
+
+    private static func kind(of lowered: String, isLookup: Bool) -> AssistantIntent.Kind {
         let hasCreationVerb = creationVerbs.contains { lowered.contains($0) }
+
+        // Pytanie nigdy nie zaczyna zapisu — sprawdzamy tylko odczyty.
+        // Plan dnia tylko wtedy, gdy pytanie jest o dzień, a nie o osobę,
+        // wiadomości czy sprawę („kto pisał dziś?” to pytanie o rozmowy).
+        if isLookup {
+            let aboutSomethingElse = ["pisa", "wiadomo", "whatsapp", "mail", "odpis", "odpowied", "lead",
+                                      "zgłosz", "spraw", "areszt", "notat", "klient", "apelac", "zażal"]
+                .contains { lowered.contains($0) }
+            let aboutDay = ["plan", "kalendarz", "dzisiejsz", "dzisiaj", "dziś", "jutro", "pojutrze"]
+                .contains { lowered.contains($0) }
+            return aboutDay && !aboutSomethingElse ? .briefing : .unknown
+        }
 
         // „Przypomnij mi o spotkaniu” to zadanie-przypomnienie, nie tworzenie
         // wydarzenia — dlatego przypomnienie sprawdzamy przed nazwą spotkania.

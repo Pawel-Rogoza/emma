@@ -209,4 +209,44 @@ final class AssistantIntentTests: XCTestCase {
         XCTAssertEqual(intent.kind, .unknown)
         XCTAssertTrue(intent.isReadOnly, "Nierozpoznane polecenie nie tworzy akcji")
     }
+
+    // MARK: Pytania nie tworzą zapisu (audyt Emmy 11.10.2026)
+
+    /// Pytania z pełnej tabeli audytu: żadne nie może zacząć notatki, zadania,
+    /// spotkania ani wiadomości — trafiają do Emmy (`.unknown`) albo do odczytu planu.
+    func testQuestionsNeverStartAWrite() {
+        let questions: [(String, AssistantIntent.Kind)] = [
+            ("Jakie mam zadania na jutro?", .briefing),
+            ("Pokaż zaległe zadania", .unknown),
+            ("Co pisała Olena w ostatniej wiadomości?", .unknown),
+            ("Czy Kowalski odpowiedział?", .unknown),
+            ("Kto pisał dziś na WhatsAppie?", .unknown),
+            ("Jakie mam sprawy z aresztem?", .unknown),
+            ("Jakie mam spotkania w piątek?", .unknown),
+            ("Kiedy jest termin apelacji Kowalskiego?", .unknown),
+            ("Jakie notatki ma Kowalski?", .unknown),
+            ("Ile mam nowych leadów?", .unknown),
+            ("Emma, czy są nowe zgłoszenia ze strony?", .unknown),
+            ("A co z wiadomością od Oleny?", .unknown),
+            ("Jakie spotkanie mam o 11:30?", .unknown),
+            ("Sprawdź wiadomości od Dmytro", .unknown),
+            ("Notatki Kowalskiego?", .unknown),
+        ]
+        for (text, expected) in questions {
+            let intent = parse(text)
+            XCTAssertEqual(intent.kind, expected, text)
+            XCTAssertNil(intent.commandKind, "Pytanie nie tworzy akcji: \(text)")
+            XCTAssertTrue(intent.isReadOnly, text)
+        }
+    }
+
+    /// Polecenia zostają poleceniami — także zadane jak pytanie albo z godziną.
+    func testCommandsStayCommandsEvenWithQuestionMark() {
+        XCTAssertEqual(parse("Napisz do Oleny, czy przyjdzie jutro?").kind, .reply)
+        XCTAssertEqual(parse("Czy możesz dodać zadanie: zadzwonić do sądu?").kind, .task)
+        XCTAssertEqual(parse("Dodaj spotkanie z Oleną o 11:30").kind, .event)
+        XCTAssertEqual(parse("Notatka: klient prosi o kontakt").kind, .note)
+        XCTAssertEqual(parse("Przypomnij mi o spotkaniu z Oleną").kind, .task)
+        XCTAssertEqual(parse("Wyślij Olenie wiadomość, że dokumenty są gotowe").kind, .reply)
+    }
 }

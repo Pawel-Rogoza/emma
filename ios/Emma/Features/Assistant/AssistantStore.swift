@@ -282,10 +282,14 @@ final class AssistantStore: ObservableObject {
 
         case .briefing:
             // Pytanie odczytowe nie kasuje szkicu i nie wymaga zgody (F15).
+            // Z serwerem odpowiada Emma (pełny przegląd: areszty, rozmowy, leady
+            // i ciąg rozmowy „a jutro?”); lokalny plan dnia zostaje dla Demo.
+            if origin == .typed, !hasActiveSession, await askEmmaInWriting(text) { return }
             await answer(await briefing(for: intent.dueDate), isSummary: true)
             return
 
         case .caseSummary:
+            if origin == .typed, !hasActiveSession, await askEmmaInWriting(text) { return }
             await runCaseSummary(text, intent: intent, origin: origin, turnID: turnID)
             return
 
