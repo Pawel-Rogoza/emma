@@ -129,6 +129,7 @@ struct EventFormSheet: View {
                 RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
                     .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
             }
+            .submitLabel(.done)
             .accessibilityLabel("Nazwa terminu")
             .accessibilityIdentifier("event-title")
 
@@ -163,9 +164,16 @@ struct EventFormSheet: View {
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 
+    /// Dzień: chipy widoczne naraz i systemowa data. Godzina: typowe godziny
+    /// kancelarii jednym dotknięciem i systemowa godzina dla reszty. Pod spodem
+    /// jedno zdanie, które mówi, co wybrano, i ostrzega przed weekendem.
     private var whenSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             FormSectionLabel("Kiedy")
+            DayShortcutChips(today: dependencies.today, selection: FirmDateTime.day(of: start)) { day in
+                start = FirmDateTime.date(day: day, time: FirmDateTime.time(of: start))
+            }
+            .padding(.bottom, 6)
             FormCard {
                 FormRow(systemImage: "calendar", title: "Data") {
                     DatePicker("Data", selection: $start, displayedComponents: .date)
@@ -181,14 +189,21 @@ struct EventFormSheet: View {
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
-                    dayChip("Dziś", offset: 0)
-                    dayChip("Jutro", offset: 1)
-                    dayChip("Pojutrze", offset: 2)
-                    dayChip("Za tydzień", offset: 7)
+                    ForEach(PlanningShortcuts.times, id: \.self) { time in
+                        QuickChip(title: time.hhmm, isSelected: FirmDateTime.time(of: start) == time) {
+                            start = FirmDateTime.date(day: FirmDateTime.day(of: start), time: time)
+                        }
+                    }
                 }
                 .padding(.horizontal, 2)
             }
             .padding(.top, 4)
+            DaySummaryLine(
+                day: FirmDateTime.day(of: start),
+                time: FirmDateTime.time(of: start),
+                today: dependencies.today,
+                dateText: dependencies.dateText
+            )
         }
     }
 
@@ -314,14 +329,6 @@ struct EventFormSheet: View {
         if !titleEdited { title = defaultTitle(for: kind) }
     }
 
-    private func dayChip(_ label: String, offset: Int) -> some View {
-        let target = dependencies.today.adding(days: offset)
-        let current = FirmDateTime.day(of: start)
-        return QuickChip(title: label, isSelected: current == target) {
-            start = FirmDateTime.date(day: target, time: FirmDateTime.time(of: start))
-        }
-    }
-
     private var whoSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             FormSectionLabel("Z kim")
@@ -402,20 +409,12 @@ struct EventFormSheet: View {
                     .accessibilityIdentifier("event-reminder")
                 }
             }
-            if remindersDenied && reminder != .none {
-                Text("Powiadomienia Emmy są wyłączone. Włącz je w Ustawieniach iOS → Emma → Powiadomienia.")
-                    .font(EmmaTypography.caption())
-                    .foregroundStyle(EmmaTheme.pillAmberText)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 6)
-                    .padding(.horizontal, 4)
-            } else {
-                Text("Telefon przypomni o terminie powiadomieniem.")
-                    .font(EmmaTypography.caption())
-                    .foregroundStyle(EmmaTheme.mutedSoft)
-                    .padding(.top, 6)
-                    .padding(.horizontal, 4)
-            }
+            ReminderHint(
+                text: reminder == .none
+                    ? "Termin będzie w kalendarzu Emmy, bez powiadomienia."
+                    : "Telefon przypomni o terminie powiadomieniem.",
+                isDenied: remindersDenied && reminder != .none
+            )
         }
     }
 
@@ -720,6 +719,7 @@ struct EventDetailSheet: View {
     @State private var reminder: ReminderOffset = .standard
     @State private var error: String?
     @State private var confirmsDelete = false
+    @State private var showsSystemCalendar = false
 
     var body: some View {
         SheetScaffold(title: "Termin", onClose: { dependencies.dismissSheet() }) {
@@ -740,6 +740,18 @@ struct EventDetailSheet: View {
             Button("Wróć", role: .cancel) {}
         } message: {
             Text("Termin zniknie z kalendarza kancelarii razem z przypomnieniem.")
+        }
+        .sheet(isPresented: $showsSystemCalendar) {
+            if case .loaded(let event) = phase {
+                SystemCalendarEditor(event: event, clientName: client?.displayName, reminder: reminder) { action in
+                    showsSystemCalendar = false
+                    if action == .saved {
+                        EmmaHaptics.success()
+                        dependencies.showToast("Termin jest w Kalendarzu iPhone'a.")
+                    }
+                }
+                .ignoresSafeArea()
+            }
         }
     }
 
@@ -868,6 +880,12 @@ struct EventDetailSheet: View {
             }
             .padding(.bottom, 10)
         }
+
+        SecondaryButton("Dodaj do Kalendarza iPhone'a", systemImage: "calendar.badge.plus") {
+            showsSystemCalendar = true
+        }
+        .padding(.bottom, 10)
+        .accessibilityIdentifier("event-system-calendar")
 
         if let clientID = event.clientID {
             HStack(spacing: 10) {

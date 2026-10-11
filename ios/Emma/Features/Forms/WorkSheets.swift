@@ -134,11 +134,18 @@ struct NoteSheet: View {
 
 // MARK: Zadanie
 
+/// Review 11.10.2026: „formularz ma być przejrzysty i prosty w użyciu”.
+/// Jedno pytanie na raz, od góry: **co** (pole z kursorem od razu, podpowiedzi
+/// typowych czynności), **kiedy** (chipy widoczne naraz + opis wybranego dnia
+/// z ostrzeżeniem o weekendzie i święcie), **dla kogo** i przełącznik „Pilne”.
+/// „Gotowe” na klawiaturze zapisuje — nie trzeba szukać przycisku pod spodem.
 struct TaskFormSheet: View {
 
     let taskID: TaskID?
     let clientID: ClientID?
     let caseID: CaseID?
+    /// Dzień z kalendarza, na który otwarto formularz. `nil` — dziś.
+    var initialDay: LocalDate? = nil
 
     @EnvironmentObject private var dependencies: AppDependencies
 
@@ -150,40 +157,94 @@ struct TaskFormSheet: View {
     @State private var clients: [Client] = []
     @State private var original: TaskItem?
     @State private var loaded = false
+    @State private var remindersDenied = false
+    @FocusState private var titleFocused: Bool
     /// Audyt 29.09.2026: bez tej blokady szybkie dwa dotknięcia „Dodaj
     /// zadanie” zakładały dwa identyczne zadania.
     @State private var isSaving = false
 
-    var body: some View {
-        // Audyt 28.09.2026: formularz zadania wyglądał jak z innej aplikacji
-        // (pola z ramkami, rozwijane menu klientów) obok dopracowanego
-        // formularza terminu. Teraz ten sam układ: duży tytuł, karty z
-        // wierszami, szybkie chipy — i wyszukiwarka klientów zamiast menu.
-        SheetScaffold(title: taskID == nil ? "Nowe zadanie" : "Edytuj zadanie", onClose: { dependencies.dismissSheet() }) {
-            VStack(alignment: .leading, spacing: 10) {
-                TextField("Co trzeba zrobić?", text: $title)
-                    .font(EmmaTypography.heading(20))
-                    .foregroundStyle(EmmaTheme.ink)
-                    .padding(.horizontal, 14)
-                    .frame(minHeight: 56)
-                    .background(EmmaTheme.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
-                            .strokeBorder(EmmaTheme.cardBorder, lineWidth: 1)
-                    }
-                    .accessibilityLabel("Co trzeba zrobić?")
-                    .accessibilityIdentifier("task-title")
+    /// Najczęstsze czynności kancelarii — jedno dotknięcie zamiast pisania.
+    private static let suggestions = ["Oddzwonić", "Wysłać pismo", "Przygotować dokumenty", "Sprawdzić akta", "Wystawić fakturę"]
 
-                HStack(spacing: 8) {
-                    priorityChip(.normal, systemImage: "checklist")
-                    priorityChip(.urgent, systemImage: "flame")
-                }
+    var body: some View {
+        SheetScaffold(title: taskID == nil ? "Nowe zadanie" : "Edytuj zadanie", onClose: { dependencies.dismissSheet() }) {
+            whatSection
+            whenSection
+            whoSection
+
+            if let error {
+                InlineError(error)
+                    .padding(.top, 12)
             }
 
-            FormSectionLabel("Termin")
+            PrimaryButton(
+                taskID == nil ? "Dodaj zadanie" : "Zapisz zadanie",
+                systemImage: "checkmark",
+                isEnabled: taskID == nil || original != nil,
+                isLoading: isSaving
+            ) {
+                Task { await save() }
+            }
+            .padding(.top, 20)
+            .accessibilityIdentifier("task-save")
+        }
+        .environment(\.timeZone, FirmDateTime.timeZone)
+        .environment(\.locale, Locale(identifier: "pl_PL"))
+        .task { await prepare() }
+    }
+
+    // MARK: Sekcje
+
+    private var whatSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Co trzeba zrobić?", text: $title, axis: .vertical)
+                .font(EmmaTypography.heading(20))
+                .foregroundStyle(EmmaTheme.ink)
+                .lineLimit(1...4)
+                .focused($titleFocused)
+                .submitLabel(.done)
+                .onChange(of: title) { _, newValue in
+                    // Pole wielowierszowe: „Gotowe” wstawia znak nowej linii —
+                    // traktujemy go jak zapis, a nie jak drugą linijkę.
+                    guard newValue.contains("\n") else { return }
+                    title = newValue.replacingOccurrences(of: "\n", with: "")
+                    titleFocused = false
+                    Task { await save() }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 14)
+                .frame(minHeight: 56)
+                .background(EmmaTheme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: EmmaRadii.card, style: .continuous)
+                        .strokeBorder(titleFocused ? EmmaTheme.accent.opacity(0.5) : EmmaTheme.cardBorder, lineWidth: 1)
+                }
+                .accessibilityLabel("Co trzeba zrobić?")
+                .accessibilityIdentifier("task-title")
+
+            if taskID == nil && title.trimmingCharacters(in: .whitespaces).isEmpty {
+                ChipFlow {
+                    ForEach(Self.suggestions, id: \.self) { suggestion in
+                        QuickChip(title: suggestion, isSelected: false) {
+                            title = suggestion + " "
+                            titleFocused = true
+                        }
+                    }
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(EmmaMotion.snappy, value: title.isEmpty)
+    }
+
+    private var whenSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            FormSectionLabel("Do kiedy")
+            DayShortcutChips(today: dependencies.today, selection: dueDate) { dueDate = $0 }
+                .padding(.bottom, 6)
             FormCard {
-                FormRow(systemImage: "calendar", title: "Do kiedy") {
+                FormRow(systemImage: "calendar", title: "Data") {
                     DatePicker(
                         "Termin",
                         selection: Binding(
@@ -193,21 +254,32 @@ struct TaskFormSheet: View {
                         displayedComponents: .date
                     )
                     .labelsHidden()
-                    .environment(\.timeZone, FirmDateTime.timeZone)
-                    .environment(\.locale, Locale(identifier: "pl_PL"))
+                    .accessibilityIdentifier("task-date")
+                }
+                FormDivider()
+                FormRow(systemImage: "flame", title: "Pilne") {
+                    Toggle("Pilne", isOn: Binding(
+                        get: { priority == .urgent },
+                        set: { isOn in
+                            EmmaHaptics.selection()
+                            priority = isOn ? .urgent : .normal
+                        }
+                    ))
+                    .labelsHidden()
+                    .tint(EmmaTheme.pillDangerText)
+                    .accessibilityIdentifier("task-urgent")
                 }
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach([("Dziś", 0), ("Jutro", 1), ("Pojutrze", 2), ("Za tydzień", 7)], id: \.1) { label, offset in
-                        let target = dependencies.today.adding(days: offset)
-                        QuickChip(title: label, isSelected: dueDate == target) { dueDate = target }
-                    }
-                }
-                .padding(.horizontal, 2)
-            }
-            .padding(.top, 4)
+            DaySummaryLine(day: dueDate, today: dependencies.today, dateText: dependencies.dateText)
+            ReminderHint(
+                text: "Pojawi się w kalendarzu, a telefon przypomni o 9:00 w dniu zadania.",
+                isDenied: remindersDenied
+            )
+        }
+    }
 
+    private var whoSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
             FormSectionLabel("Dla kogo")
             FormCard {
                 NavigationLink {
@@ -229,52 +301,20 @@ struct TaskFormSheet: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Powiązany klient")
             }
-
-            if let error {
-                InlineError(error)
-                    .padding(.top, 12)
-            }
-
-            PrimaryButton(taskID == nil ? "Dodaj zadanie" : "Zapisz zadanie", systemImage: "checkmark", isLoading: isSaving) {
-                Task { await save() }
-            }
-            .padding(.top, 20)
-            .accessibilityIdentifier("task-save")
         }
-        .task { await prepare() }
     }
 
-    /// Priorytet jako dwa duże chipy (jak rodzaj terminu), a nie segment
-    /// schowany na dole formularza — „pilne” to decyzja, którą widać.
-    private func priorityChip(_ candidate: TaskPriority, systemImage: String) -> some View {
-        let isSelected = priority == candidate
-        return Button {
-            EmmaHaptics.selection()
-            withAnimation(EmmaMotion.snappy) { priority = candidate }
-        } label: {
-            Label(candidate.displayName, systemImage: systemImage)
-                .font(EmmaTypography.ui(14, isSelected ? .semibold : .medium))
-                .foregroundStyle(isSelected ? EmmaTheme.primaryButtonText : EmmaTheme.secondaryButtonText)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .background(
-                    isSelected
-                        ? (candidate == .urgent ? EmmaTheme.pillDangerText : EmmaTheme.primaryButton)
-                        : EmmaTheme.secondaryButton,
-                    in: RoundedRectangle(cornerRadius: EmmaRadii.button, style: .continuous)
-                )
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Priorytet: \(candidate.displayName)")
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-    }
+    // MARK: Dane
 
     private func prepare() async {
         guard !loaded else { return }
         loaded = true
-        clients = (try? await dependencies.repository.clients(matching: "", stage: nil)) ?? []
         selectedClient = clientID
-        dueDate = dependencies.today
+        dueDate = initialDay ?? dependencies.today
+        // Nowe zadanie: kursor od razu w polu — można pisać bez dotykania.
+        if taskID == nil { titleFocused = true }
+        remindersDenied = await dependencies.reminders.isDenied()
+        clients = (try? await dependencies.repository.clients(matching: "", stage: nil)) ?? []
         guard let taskID else { return }
         // Edycja bez wczytanego oryginału nie może udawać nowego zadania:
         // wcześniej błąd odczytu dawał pusty formularz, a „Zapisz” zakładało duplikat.
@@ -303,6 +343,8 @@ struct TaskFormSheet: View {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             error = "Wpisz, co trzeba zrobić."
+            EmmaHaptics.error()
+            titleFocused = true
             return
         }
         guard !isSaving else { return }
@@ -340,6 +382,11 @@ struct TaskFormSheet: View {
         }
         EmmaHaptics.success()
         dependencies.dismissSheet()
+        let when = PlanningShortcuts.relative(dueDate, today: dependencies.today)
+        dependencies.showToast(original == nil ? "Zadanie dodane · \(when)." : "Zapisano zadanie · \(when).")
+        // Zadanie z terminem przypomina się rano — o zgodę pytamy, gdy to ma sens.
+        await dependencies.reminders.requestAuthorizationIfNeeded()
+        dependencies.reminders.scheduleRefresh(dependencies)
     }
 }
 
