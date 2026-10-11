@@ -52,6 +52,8 @@
 
 	<!-- Uprawnienia pobierane przy pierwszym użyciu funkcji, nie przy starcie (§5.7).
 	     Mikrofon opisuje rozmowę z Emmą, nie nagrywanie w tle. -->
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>Emma dodaje wybrany termin do Kalendarza iPhone'a dopiero po dotknięciu „Dodaj do Kalendarza iPhone'a” i potwierdzeniu w systemowym oknie.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Mikrofon jest używany wyłącznie po dotknięciu przycisku, aby rozmawiać z Emmą albo podyktować tekst. Nagranie nie jest zapisywane w aplikacji.</string>
 	<key>NSCameraUsageDescription</key>

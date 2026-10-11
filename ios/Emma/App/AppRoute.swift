@@ -64,7 +64,8 @@ public enum AppSheet: Hashable, Identifiable, Sendable {
 
     // Praca kancelarii
     case note(clientID: ClientID, caseID: CaseID?)
-    case taskForm(editing: TaskID?, clientID: ClientID?, caseID: CaseID?)
+    /// `initialDay` — dzień z kalendarza, na który otwarto formularz (`nil` — dziś).
+    case taskForm(editing: TaskID?, clientID: ClientID?, caseID: CaseID?, initialDay: LocalDate? = nil)
     case eventForm(editing: EventID?, clientID: ClientID?, caseID: CaseID?, initialDay: LocalDate?)
     case eventDetail(EventID)
     case taskDetail(TaskID)
@@ -86,8 +87,9 @@ public enum AppSheet: Hashable, Identifiable, Sendable {
         case .caseSettings(let caseID): return "case-settings-\(caseID.rawValue)"
         case .note(let clientID, let caseID):
             return "note-\(clientID.rawValue)-\(caseID?.rawValue ?? "none")"
-        case .taskForm(let taskID, let clientID, let caseID):
-            return "task-\(taskID?.rawValue ?? "new")-\(clientID?.rawValue ?? "none")-\(caseID?.rawValue ?? "none")"
+        case .taskForm(let taskID, let clientID, let caseID, let initialDay):
+            let day = initialDay?.isoString ?? "none"
+            return "task-\(taskID?.rawValue ?? "new")-\(clientID?.rawValue ?? "none")-\(caseID?.rawValue ?? "none")-\(day)"
         case .eventForm(let eventID, let clientID, let caseID, let initialDay):
             let day = initialDay?.isoString ?? "none"
             return "event-\(eventID?.rawValue ?? "new")-\(clientID?.rawValue ?? "none")-\(caseID?.rawValue ?? "none")-\(day)"
