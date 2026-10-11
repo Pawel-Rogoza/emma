@@ -92,9 +92,9 @@ final class DemoFlowUITests: XCTestCase {
     /// Krótki opis ekranu do komunikatu porażki — widoczny w adnotacji CI
     /// bez pobierania logów i zrzutów.
     private func screenSummary() -> String {
-        let bars = application.navigationBars.allElementsBoundByIndex.map(\.identifier).joined(separator: ",")
+        let bars = application.navigationBars.allElementsBoundByIndex.map { $0.identifier }.joined(separator: ",")
         let sheets = application.sheets.count
-        let texts = application.staticTexts.allElementsBoundByIndex.prefix(14).map(\.label).joined(separator: " | ")
+        let texts = application.staticTexts.allElementsBoundByIndex.prefix(14).map { $0.label }.joined(separator: " | ")
         return "paski=[\(bars)] arkusze=\(sheets) teksty=[\(texts)]"
     }
 
