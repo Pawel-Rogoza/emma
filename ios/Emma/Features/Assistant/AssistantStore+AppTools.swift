@@ -83,8 +83,13 @@ extension AssistantStore: VoiceAppToolHandling {
             return Self.toolResult(["status": "cancelled", "action_id": actionID.rawValue])
 
         case "app_open_thread":
+            // Osoba spoza kartoteki ma tylko rozmowę (`thread_id`).
+            if Self.contactID(from: args) == nil, let threadID = Self.threadID(from: args) {
+                dependencies.openThread(threadID)
+                return Self.toolResult(["status": "opened", "screen": "thread"])
+            }
             guard let clientID = Self.contactID(from: args) else {
-                return Self.toolError("Podaj client_id albo lead_id z wyniku wyszukiwania.")
+                return Self.toolError("Podaj client_id, lead_id albo thread_id z wyniku wyszukiwania.")
             }
             guard let threadID = await conversationID(for: ClientID(clientID), dependencies: dependencies) else {
                 return Self.toolError("Ta osoba nie pisała do kancelarii na WhatsAppie — nie ma rozmowy do otwarcia.")
@@ -124,8 +129,17 @@ extension AssistantStore: VoiceAppToolHandling {
         guard let text = (args["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
             return Self.toolError("Podaj treść wiadomości.")
         }
+        if Self.contactID(from: args) == nil, let threadID = Self.threadID(from: args) {
+            dependencies.pendingThreadDraft = ThreadDraftSeed(threadID: threadID, text: text)
+            dependencies.openThread(threadID)
+            return Self.toolResult([
+                "status": "draft_in_composer",
+                "text": text,
+                "message": "Szkic jest w polu odpowiedzi rozmowy. Wysyła użytkownik przyciskiem — nie mów, że wysłano.",
+            ])
+        }
         guard let rawID = Self.contactID(from: args) ?? dependencies.emmaContext?.rawValue else {
-            return Self.toolError("Nie wiem, do kogo napisać. Wyszukaj osobę i podaj client_id albo lead_id.")
+            return Self.toolError("Nie wiem, do kogo napisać. Wyszukaj osobę i podaj client_id, lead_id albo thread_id.")
         }
         let clientID = ClientID(rawID)
         guard let threadID = await conversationID(for: clientID, dependencies: dependencies) else {
@@ -357,6 +371,11 @@ extension AssistantStore: VoiceAppToolHandling {
     /// to ta sama karta, różni je prefiks identyfikatora.
     static func contactID(from args: [String: Any]) -> String? {
         entityID(args["client_id"], prefix: "client") ?? entityID(args["lead_id"], prefix: "lead")
+    }
+
+    /// Rozmowa wskazana wprost (`thread_id`) — dla osób spoza kartoteki.
+    static func threadID(from args: [String: Any]) -> ThreadID? {
+        entityID(args["thread_id"], prefix: "thread").map { ThreadID($0) }
     }
 
     /// `12`, `"12"` i `"client-12"` → `"client-12"`. Identyfikator z innym

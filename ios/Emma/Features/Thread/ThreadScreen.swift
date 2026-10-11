@@ -534,6 +534,20 @@ struct ThreadScreen: View {
                     header(model)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
+                    // Streszczenie rozmowy (RU → PL), obietnice i braki — Emma
+                    // pisemnie z tą rozmową jako kontekstem (Etap 3 audytu Emmy).
+                    Button {
+                        dependencies.askEmma(
+                            AppDependencies.threadSummaryPrompt,
+                            about: model.client.isWhatsAppContact ? nil : model.client.id
+                        )
+                    } label: {
+                        Image(systemName: "sparkles")
+                    }
+                    .accessibilityLabel("Streść z Emmą")
+                    .accessibilityIdentifier("thread.summarize")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         dependencies.present(.conversationOptions(model.thread.id))
                     } label: {

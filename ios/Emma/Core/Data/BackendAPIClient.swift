@@ -581,7 +581,30 @@ public struct BackendAPIClient: Sendable {
 
     /// `POST /api/mobile/v1/assistant/messages` — pytanie do Emmy pisemnie.
     func askAssistant(body: BackendAssistantMessageBody, idempotencyKey: String) async throws -> BackendAssistantReplyDTO {
-        try await send("POST", path: "api/mobile/v1/assistant/messages", body: body, idempotencyKey: idempotencyKey)
+        // Kilka rund narzędzi (a z dokumentem — czytanie pliku) trwa dłużej niż
+        // domyślne 20 s; serwer sam przerywa turę po 90 s.
+        try await send(
+            "POST",
+            path: "api/mobile/v1/assistant/messages",
+            body: body,
+            idempotencyKey: idempotencyKey,
+            minimumTimeout: 100
+        )
+    }
+
+    /// `POST /api/mobile/v1/assistant/feedback` — ocena odpowiedzi Emmy (👍/👎).
+    func rateAssistant(body: BackendAssistantFeedbackBody, idempotencyKey: String) async throws -> BackendOKDTO {
+        try await send("POST", path: "api/mobile/v1/assistant/feedback", body: body, idempotencyKey: idempotencyKey)
+    }
+
+    /// `GET /api/mobile/v1/assistant/usage` — Emma pisemnie w tym miesiącu.
+    func assistantUsage() async throws -> BackendAssistantUsageDTO {
+        try await get("api/mobile/v1/assistant/usage", query: [])
+    }
+
+    /// `GET /api/mobile/v1/emma/alerts` — Emma proaktywna (Etap 3).
+    func emmaAlerts() async throws -> BackendEmmaAlertsDTO {
+        try await get("api/mobile/v1/emma/alerts", query: [])
     }
 
     /// `GET /api/mobile/v1/voice/usage` — koszt rozmów głosowych w tym miesiącu.
@@ -725,7 +748,8 @@ public struct BackendAPIClient: Sendable {
         path: String,
         body: B,
         idempotencyKey: String,
-        headers: [String: String] = [:]
+        headers: [String: String] = [:],
+        minimumTimeout: TimeInterval? = nil
     ) async throws -> T {
         let encoded: Data
         do {
@@ -734,7 +758,7 @@ public struct BackendAPIClient: Sendable {
             throw BackendRepositoryError.decoding("nie udało się zapisać treści żądania: \(error)")
         }
         let (data, http) = try await authenticatedRequest { token in
-            try self.makeRequest(
+            var request = try self.makeRequest(
                 path: path,
                 method: method,
                 body: encoded,
@@ -742,6 +766,8 @@ public struct BackendAPIClient: Sendable {
                 headers: headers,
                 token: token
             )
+            if let minimumTimeout { request.timeoutInterval = max(request.timeoutInterval, minimumTimeout) }
+            return request
         }
         guard (200..<300).contains(http.statusCode) else {
             throw Self.error(from: http, data: data)
@@ -1576,22 +1602,116 @@ struct BackendAssistantMessageBody: Encodable {
     let conversationID: Int?
     let contextClientID: String?
     let contextName: String?
+    /// `["app_tools"]` — aplikacja wykona działania `app_*` z odpowiedzi (Etap 2).
+    var capabilities: [String]? = nil
+    /// Ekran, z którego użytkownik pisze (karta, sprawa, rozmowa, dzień w kalendarzu).
+    var screen: BackendScreenContextBody? = nil
 
     enum CodingKeys: String, CodingKey {
         case message
         case conversationID = "conversation_id"
         case contextClientID = "context_client_id"
         case contextName = "context_name"
+        case capabilities
+        case screen
+    }
+}
+
+struct BackendScreenContextBody: Encodable, Equatable {
+    let name: String
+    let day: String?
+    let clientID: String?
+    let clientName: String?
+    let caseID: String?
+    let threadID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case day
+        case clientID = "client_id"
+        case clientName = "client_name"
+        case caseID = "case_id"
+        case threadID = "thread_id"
     }
 }
 
 struct BackendAssistantReplyDTO: Decodable {
     let conversationID: Int
     let reply: String
+    /// Działania aplikacji do wykonania po odpowiedzi; brak u starszego serwera.
+    let appCalls: [BackendAppCallDTO]?
 
     enum CodingKeys: String, CodingKey {
         case reply
         case conversationID = "conversation_id"
+        case appCalls = "app_calls"
+    }
+}
+
+struct BackendAssistantFeedbackBody: Encodable {
+    let conversationID: Int
+    let rating: String
+
+    enum CodingKeys: String, CodingKey {
+        case conversationID = "conversation_id"
+        case rating
+    }
+}
+
+struct BackendOKDTO: Decodable {
+    let ok: Bool?
+}
+
+struct BackendAssistantUsageDTO: Decodable {
+    let turns: Int
+    let avgSeconds: Double?
+    let toolErrors: Int
+    let thumbsUp: Int
+    let thumbsDown: Int
+    let dailyLimit: Int
+    let turnsLastDay: Int
+
+    enum CodingKeys: String, CodingKey {
+        case turns
+        case avgSeconds = "avg_seconds"
+        case toolErrors = "tool_errors"
+        case thumbsUp = "thumbs_up"
+        case thumbsDown = "thumbs_down"
+        case dailyLimit = "daily_limit"
+        case turnsLastDay = "turns_last_day"
+    }
+}
+
+struct BackendEmmaAlertsDTO: Decodable {
+    let alerts: [BackendEmmaAlertDTO]
+}
+
+struct BackendEmmaAlertDTO: Decodable {
+    let id: String
+    let kind: String
+    let priority: Int
+    let title: String
+    let body: String
+    let prompt: String
+    let clientID: String?
+    let caseID: String?
+    let threadID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, kind, priority, title, body, prompt
+        case clientID = "client_id"
+        case caseID = "case_id"
+        case threadID = "thread_id"
+    }
+}
+
+struct BackendAppCallDTO: Decodable {
+    let name: String
+    let argumentsJSON: String
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case argumentsJSON = "arguments_json"
     }
 }
 

@@ -115,7 +115,15 @@ public final class AppDependencies: ObservableObject {
     // MARK: Stan wspólny
 
     @Published public private(set) var currentUser: User
-    @Published public var tab: AppTab = .today
+    @Published public var tab: AppTab = .today {
+        didSet {
+            // Ekran, z którego użytkownik przyszedł do Emmy, jest kontekstem jego
+            // pytania („ten klient”, „ta sprawa”, „ten dzień”).
+            if tab == .emma, oldValue != .emma { lastWorkTab = oldValue }
+        }
+    }
+    /// Ostatnia zakładka robocza przed wejściem do Emmy.
+    @Published public private(set) var lastWorkTab: AppTab = .today
     /// Lustro stanu głosu dla widoków powłoki (etap 4 audytu, F06).
     ///
     /// Źródłem prawdy pozostaje `voice` — jeden koordynator i jedna sesja (§5.3).
@@ -160,6 +168,8 @@ public final class AppDependencies: ObservableObject {
     @Published public var emmaContext: ClientID?
     /// Skrót do wykonania po wejściu na ekran Emmy (`assistantExample(action)`).
     @Published public var pendingEmmaAction: EmmaQuickAction?
+    /// Pytanie do Emmy z innego miejsca (powiadomienie, „Streść z Emmą”).
+    @Published public var pendingEmmaPrompt: String?
     /// Pola spotkania rozpoznane głosem (F14). Formularz terminu zużywa je przy
     /// otwarciu, żeby „dodaj spotkanie … o 11” nie gubiło godziny i tytułu.
     @Published public var pendingEventDraft: EventDraftSeed?
@@ -491,6 +501,49 @@ public final class AppDependencies: ObservableObject {
         navigation[tab] = state
         self.tab = tab
     }
+
+    /// Co użytkownik ma (albo miał przed wejściem do Emmy) na ekranie — dla
+    /// Emmy pisemnie. Wierzch stosu zakładki rozstrzyga: karta osoby, sprawa,
+    /// rozmowa, zadania; kalendarz dokłada oglądany dzień.
+    public func emmaScreenContext() -> EmmaScreenContext {
+        let source = tab == .emma ? lastWorkTab : tab
+        var context: EmmaScreenContext
+        switch source {
+        case .today: context = EmmaScreenContext(screen: .today)
+        case .clients: context = EmmaScreenContext(screen: .clients)
+        case .messages: context = EmmaScreenContext(screen: .messages)
+        case .calendar: context = EmmaScreenContext(screen: .calendar, day: calendarStore.selectedDay)
+        case .emma: context = EmmaScreenContext(screen: .emma)
+        }
+        switch navigation[source]?.path.last {
+        case .person(let clientID)?:
+            context.screen = .client
+            context.clientID = clientID
+        case .legalCase(let caseID)?:
+            context.screen = .legalCase
+            context.caseID = caseID
+        case .tasks?:
+            context.screen = .tasks
+        case .thread(let threadID)?:
+            context.screen = .thread
+            context.threadID = threadID
+        case nil:
+            break
+        }
+        if context.clientID == nil { context.clientID = emmaContext }
+        return context
+    }
+
+    /// Emma z gotowym pytaniem; osoba (gdy jest) staje się kontekstem rozmowy.
+    public func askEmma(_ prompt: String, about clientID: ClientID? = nil) {
+        if let clientID { emmaContext = clientID }
+        pendingEmmaPrompt = prompt
+        go(to: .emma)
+    }
+
+    /// Streszczenie otwartej rozmowy — ekran rozmowy jest kontekstem pytania.
+    public static let threadSummaryPrompt =
+        "Streść tę rozmowę po polsku: o co prosi klient, co już odpowiedzieliśmy, co klient ma dosłać i na co czeka. Zaproponuj następny krok."
 
     public func openPerson(_ clientID: ClientID) {
         recentClients.record(clientID)

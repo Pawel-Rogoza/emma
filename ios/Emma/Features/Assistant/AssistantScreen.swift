@@ -84,6 +84,10 @@ struct AssistantScreen: View {
         .onChange(of: dependencies.pendingEmmaAction) { _, _ in
             Task { await store.consumePendingRequest() }
         }
+        .onChange(of: dependencies.pendingEmmaPrompt) { _, prompt in
+            guard prompt != nil else { return }
+            Task { await store.consumePendingRequest() }
+        }
         .onChange(of: dependencies.pendingVoiceStart) { _, _ in
             Task { await store.consumePendingRequest() }
         }
@@ -429,6 +433,28 @@ struct AssistantScreen: View {
         .padding(.top, 21)
     }
 
+    private func ratingButtons(_ turnID: String) -> some View {
+        let rated = store.rating(for: turnID)
+        return HStack(spacing: 0) {
+            ForEach([true, false], id: \.self) { up in
+                Button {
+                    Task { await store.rate(turnID: turnID, up: up) }
+                } label: {
+                    Image(systemName: up
+                        ? (rated == true ? "hand.thumbsup.fill" : "hand.thumbsup")
+                        : (rated == false ? "hand.thumbsdown.fill" : "hand.thumbsdown"))
+                        .font(.system(size: 14))
+                        .foregroundStyle(EmmaTheme.emmaListenText)
+                        .frame(width: EmmaSpacing.hitTarget, height: EmmaSpacing.hitTarget)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(rated != nil)
+                .accessibilityLabel(up ? "Dobra odpowiedź" : "Zła odpowiedź")
+            }
+        }
+    }
+
     private func messageBubble(_ message: AssistantStore.MessageTurn) -> some View {
         let isUser = message.role == .user
         return VStack(alignment: .leading, spacing: 0) {
@@ -452,21 +478,29 @@ struct AssistantScreen: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 7)
             if !isUser {
-                Button {
-                    Task { await store.readTurn(id: message.id) }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "speaker.wave.2")
-                            .font(.system(size: 14))
-                        Text(message.isSummary ? "Odsłuchaj streszczenie" : "Odsłuchaj")
-                            .font(EmmaTypography.caption())
+                HStack(spacing: 0) {
+                    Button {
+                        Task { await store.readTurn(id: message.id) }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "speaker.wave.2")
+                                .font(.system(size: 14))
+                            Text(message.isSummary ? "Odsłuchaj streszczenie" : "Odsłuchaj")
+                                .font(EmmaTypography.caption())
+                        }
+                        .foregroundStyle(EmmaTheme.emmaListenText)
+                        .frame(minHeight: EmmaSpacing.hitTarget, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
-                    .foregroundStyle(EmmaTheme.emmaListenText)
-                    .frame(minHeight: EmmaSpacing.hitTarget, alignment: .leading)
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(message.isSummary ? "Odsłuchaj streszczenie" : "Odsłuchaj wypowiedź Emmy")
+                    Spacer(minLength: 0)
+                    // Ocena odpowiedzi Emmy pisemnie (Etap 5 audytu) — tylko dla
+                    // odpowiedzi z serwera, raz na odpowiedź.
+                    if store.canRate(message.id) {
+                        ratingButtons(message.id)
+                    }
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(message.isSummary ? "Odsłuchaj streszczenie" : "Odsłuchaj wypowiedź Emmy")
                 .padding(.top, 2)
             }
         }

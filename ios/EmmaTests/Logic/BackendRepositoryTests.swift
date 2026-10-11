@@ -900,6 +900,58 @@ final class BackendRepositoryTests: XCTestCase {
         XCTAssertEqual(StubURLProtocol.lastBody?["conversation_id"] as? Int, 5)
     }
 
+    /// Etap 2: aplikacja deklaruje, że wykona działania `app_*`, wysyła ekran
+    /// użytkownika i dostaje działania z odpowiedzi.
+    func testAskEmmaSendsScreenAndReceivesAppCalls() async throws {
+        StubURLProtocol.respond { _, _ in
+            (200, Data(#"""
+            {"conversation_id":9,"reply":"Przygotowałam kartę zadania.","app_calls":[{"name":"app_prepare_action","arguments_json":"{\"kind\":\"task\",\"text\":\"Zadzwonić\"}"}]}
+            """#.utf8))
+        }
+        let screen = EmmaScreenContext(
+            screen: .calendar,
+            clientID: ClientID("client-4"),
+            clientName: "Olena",
+            caseID: CaseID("case-2"),
+            day: LocalDate(year: 2026, month: 10, day: 14)
+        )
+        let result = try await makeRepository().askEmma("Dodaj zadanie", conversationID: nil, context: nil, screen: screen)
+        XCTAssertEqual(result.appCalls, [EmmaAppCall(name: "app_prepare_action", argumentsJSON: #"{"kind":"task","text":"Zadzwonić"}"#)])
+        XCTAssertEqual(StubURLProtocol.lastBody?["capabilities"] as? [String], ["app_tools"])
+        let sent = try XCTUnwrap(StubURLProtocol.lastBody?["screen"] as? [String: Any])
+        XCTAssertEqual(sent["name"] as? String, "calendar")
+        XCTAssertEqual(sent["day"] as? String, "2026-10-14")
+        XCTAssertEqual(sent["client_id"] as? String, "client-4")
+        XCTAssertEqual(sent["case_id"] as? String, "case-2")
+        XCTAssertNil(sent["thread_id"])
+    }
+
+    /// Starszy serwer nie zna `app_calls` — odpowiedź nadal się dekoduje.
+    func testAskEmmaWithoutAppCallsFromOlderServer() async throws {
+        StubURLProtocol.respond(json: Data(#"{"conversation_id":3,"reply":"Dzień dobry."}"#.utf8), status: 200)
+        let result = try await makeRepository().askEmma("Hej", conversationID: nil, context: nil)
+        XCTAssertEqual(result.appCalls, [])
+        XCTAssertNil(StubURLProtocol.lastBody?["screen"])
+    }
+
+    func testEmmaAlertsDecodeAndToleranceForUnknownKind() async throws {
+        StubURLProtocol.respond { request, _ in
+            XCTAssertEqual(request.url?.path, "/api/mobile/v1/emma/alerts")
+            return (200, Data(#"""
+            {"as_of":"2026-10-11T10:00:00Z","alerts":[
+              {"id":"lead_waiting:12","kind":"lead_waiting","priority":1,"title":"Lead czeka na odpowiedź","body":"Anna (strona) — 25 min.","prompt":"Przygotuj odpowiedź","client_id":"lead-12","case_id":null,"thread_id":null},
+              {"id":"x:1","kind":"nowy_rodzaj","priority":3,"title":"T","body":"B","prompt":"P","client_id":null,"case_id":"case-3","thread_id":"thread-9"}
+            ]}
+            """#.utf8))
+        }
+        let alerts = try XCTUnwrap(await makeRepository().emmaAlerts())
+        XCTAssertEqual(alerts.count, 2)
+        XCTAssertEqual(alerts[0].kind, .leadWaiting)
+        XCTAssertEqual(alerts[0].clientID, ClientID("lead-12"))
+        XCTAssertEqual(alerts[1].kind, .other)
+        XCTAssertEqual(alerts[1].threadID, ThreadID("thread-9"))
+    }
+
     func testVoiceUsageSummary() async throws {
         StubURLProtocol.respond(json: Data(#"{"month_cost_usd":12.5,"budget_usd":150,"sessions":40,"minutes":95}"#.utf8), status: 200)
         let usage = await makeRepository().voiceUsage()

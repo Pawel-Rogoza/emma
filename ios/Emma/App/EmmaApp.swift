@@ -164,7 +164,11 @@ struct EmmaApp: App {
                     dependencies.dataChanged()
                     // Aplikacja na ekranie: lead widać na „Dzisiaj”, więc tylko
                     // zapamiętujemy go, żeby odświeżenie w tle nie powiadomiło drugi raz.
-                    Task { await dependencies.reminders.checkNewLeads(dependencies, notify: false) }
+                    Task {
+                        await dependencies.reminders.checkNewLeads(dependencies, notify: false)
+                        // Alerty Emmy: tylko nowe, baner także przy otwartej aplikacji.
+                        await dependencies.reminders.checkEmmaAlerts(dependencies)
+                    }
                 }
             default:
                 break

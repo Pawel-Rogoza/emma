@@ -237,6 +237,41 @@ final class EventReminderScheduler {
         }
     }
 
+    // MARK: Alerty Emmy (Etap 3)
+
+    static let knownEmmaAlertsKey = "emma.notifications.knownAlerts"
+
+    /// Alerty liczone na serwerze (lead czeka, okno 24 h, termin z panelu,
+    /// wynik konsultacji). Powiadamiamy tylko o nowych; dotknięcie otwiera Emmę
+    /// z gotowym pytaniem. Pierwsze sprawdzenie na telefonie tylko zapamiętuje.
+    func checkEmmaAlerts(_ dependencies: AppDependencies) async {
+        guard isEnabled, let repository = dependencies.repository as? BackendRepository else { return }
+        guard let alerts = await repository.emmaAlerts() else { return }
+        let stored = UserDefaults.standard.array(forKey: Self.knownEmmaAlertsKey) as? [String]
+        let outcome = EmmaAlertPlan.check(alerts: alerts, known: stored)
+        UserDefaults.standard.set(outcome.known, forKey: Self.knownEmmaAlertsKey)
+        guard !outcome.notify.isEmpty else { return }
+        let center = UNUserNotificationCenter.current()
+        switch await center.notificationSettings().authorizationStatus {
+        case .authorized, .provisional, .ephemeral: break
+        default: return
+        }
+        for alert in outcome.notify {
+            let content = UNMutableNotificationContent()
+            content.title = alert.title
+            content.body = alert.body
+            content.sound = .default
+            var info: [String: String] = [Self.emmaPromptKey: alert.prompt]
+            if let clientID = alert.clientID { info[Self.emmaClientKey] = clientID.rawValue }
+            content.userInfo = info
+            try? await center.add(UNNotificationRequest(
+                identifier: EmmaAlertPlan.identifierPrefix + alert.id,
+                content: content,
+                trigger: nil
+            ))
+        }
+    }
+
     /// Koniec sesji. Przypomnienia i poranny skrót niosą nazwy klientów
     /// i terminów, więc nie mogą przeżyć wylogowania — pojawiałyby się na
     /// ekranie blokady telefonu osobie, która nie ma już dostępu do danych.
@@ -254,6 +289,7 @@ final class EventReminderScheduler {
         center.removeDeliveredNotifications(withIdentifiers: delivered)
         // Następne konto zaczyna od zera — bez powiadomień o cudzych leadach.
         UserDefaults.standard.removeObject(forKey: Self.knownLeadsKey)
+        UserDefaults.standard.removeObject(forKey: Self.knownEmmaAlertsKey)
     }
 
     /// Zdjęcie przypomnienia usuniętego terminu od razu, bez czekania na odświeżenie.
@@ -269,6 +305,8 @@ final class EventReminderScheduler {
     nonisolated static let taskIDKey = "taskID"
     nonisolated static let clientIDKey = "clientID"
     nonisolated static let leadsKey = "leads"
+    nonisolated static let emmaPromptKey = "emmaPrompt"
+    nonisolated static let emmaClientKey = "emmaClientID"
 
     /// Terminy dzielą limit 64 powiadomień z zadaniami (10), sprawami (12)
     /// i porannym skrótem — stąd mniej niż `EventReminderPlan.defaultLimit`.
@@ -283,6 +321,7 @@ final class EventReminderScheduler {
             CaseWatchReminderPlan.identifierPrefix,
             TaskReminderPlan.identifierPrefix,
             LeadAlertPlan.identifierPrefix,
+            EmmaAlertPlan.identifierPrefix,
         ]
             .contains { identifier.hasPrefix($0) }
     }
@@ -308,6 +347,14 @@ final class EventNotificationRouter: NSObject, UNUserNotificationCenterDelegate,
         didReceive response: UNNotificationResponse
     ) async {
         let info = response.notification.request.content.userInfo
+        // Alert Emmy — Emma z gotowym pytaniem (i osobą jako kontekstem).
+        if let prompt = info[EventReminderScheduler.emmaPromptKey] as? String {
+            let clientRaw = info[EventReminderScheduler.emmaClientKey] as? String
+            await MainActor.run {
+                dependencies?.askEmma(prompt, about: clientRaw.map { ClientID($0) })
+            }
+            return
+        }
         // Zadanie — otwiera jego szczegóły.
         if let taskRaw = info[EventReminderScheduler.taskIDKey] as? String {
             await MainActor.run { dependencies?.present(.taskDetail(TaskID(taskRaw))) }

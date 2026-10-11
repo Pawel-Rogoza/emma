@@ -615,18 +615,77 @@ public struct BackendRepository: EmmaRepository, Sendable {
     public func askEmma(
         _ message: String,
         conversationID: Int?,
-        context: Client?
-    ) async throws -> (conversationID: Int, reply: String) {
+        context: Client?,
+        screen: EmmaScreenContext? = nil
+    ) async throws -> EmmaWrittenReply {
         let dto = try await api.askAssistant(
             body: BackendAssistantMessageBody(
                 message: message,
                 conversationID: conversationID,
                 contextClientID: context?.id.rawValue,
-                contextName: context?.displayName
+                contextName: context?.displayName,
+                // Aplikacja wykonuje działania `app_*` tym samym kodem co w głosie.
+                capabilities: ["app_tools"],
+                screen: screen.map(Self.screenBody)
             ),
             idempotencyKey: Self.newIdempotencyKey()
         )
-        return (dto.conversationID, dto.reply)
+        return EmmaWrittenReply(
+            conversationID: dto.conversationID,
+            reply: dto.reply,
+            appCalls: (dto.appCalls ?? []).map { EmmaAppCall(name: $0.name, argumentsJSON: $0.argumentsJSON) }
+        )
+    }
+
+    /// Ocena odpowiedzi Emmy. Błąd sieci nie przeszkadza w pracy — ocena przepada.
+    public func rateEmma(conversationID: Int, up: Bool) async {
+        _ = try? await api.rateAssistant(
+            body: BackendAssistantFeedbackBody(conversationID: conversationID, rating: up ? "up" : "down"),
+            idempotencyKey: Self.newIdempotencyKey()
+        )
+    }
+
+    /// Emma pisemnie w tym miesiącu; `nil`, gdy serwer jeszcze tego nie liczy.
+    public func emmaTextUsage() async -> EmmaTextUsage? {
+        guard let dto = try? await api.assistantUsage() else { return nil }
+        return EmmaTextUsage(
+            turns: dto.turns,
+            averageSeconds: dto.avgSeconds,
+            toolErrors: dto.toolErrors,
+            thumbsUp: dto.thumbsUp,
+            thumbsDown: dto.thumbsDown,
+            dailyLimit: dto.dailyLimit,
+            turnsLastDay: dto.turnsLastDay
+        )
+    }
+
+    /// Alerty Emmy; `nil`, gdy serwer ich jeszcze nie liczy albo brak sieci.
+    public func emmaAlerts() async -> [EmmaAlert]? {
+        guard let dto = try? await api.emmaAlerts() else { return nil }
+        return dto.alerts.map { alert in
+            EmmaAlert(
+                id: alert.id,
+                kind: EmmaAlert.Kind(rawValue: alert.kind) ?? .other,
+                priority: alert.priority,
+                title: alert.title,
+                body: alert.body,
+                prompt: alert.prompt,
+                clientID: alert.clientID.map { ClientID($0) },
+                caseID: alert.caseID.map { CaseID($0) },
+                threadID: alert.threadID.map { ThreadID($0) }
+            )
+        }
+    }
+
+    static func screenBody(_ screen: EmmaScreenContext) -> BackendScreenContextBody {
+        BackendScreenContextBody(
+            name: screen.screen.rawValue,
+            day: screen.day?.isoString,
+            clientID: screen.clientID?.rawValue,
+            clientName: screen.clientName,
+            caseID: screen.caseID?.rawValue,
+            threadID: screen.threadID?.rawValue
+        )
     }
 
     public func draftReply(threadID: ThreadID) async throws -> String {

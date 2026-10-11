@@ -51,6 +51,8 @@ enum BackgroundRefresh {
         guard let dependencies, hasSession() else { return false }
         await dependencies.reminders.checkNewLeads(dependencies, notify: true)
         guard !Task.isCancelled else { return false }
+        await dependencies.reminders.checkEmmaAlerts(dependencies)
+        guard !Task.isCancelled else { return false }
         await dependencies.reminders.refresh(dependencies)
         return true
     }

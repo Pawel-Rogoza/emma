@@ -38,6 +38,8 @@ struct ProfileSheet: View {
             if !dependencies.configuration.usesMockServices {
                 VoiceUsageRow()
                     .padding(.top, 20)
+                EmmaTextUsageRow()
+                    .padding(.top, 20)
                 VoiceDuplexToggle()
                     .padding(.top, 20)
             }
@@ -139,6 +141,56 @@ private struct VoiceUsageRow: View {
 
     private static func dollars(_ value: Double) -> String {
         String(format: "$%.2f", value).replacingOccurrences(of: ".", with: ",")
+    }
+}
+
+/// Emma pisemnie w tym miesiącu (Etap 5 audytu): liczba pytań, średni czas
+/// odpowiedzi i oceny. Dzienny limit chroni przed niekontrolowanym kosztem.
+private struct EmmaTextUsageRow: View {
+
+    @EnvironmentObject private var dependencies: AppDependencies
+    @State private var usage: EmmaTextUsage?
+    @State private var loaded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Emma pisemnie w tym miesiącu")
+                    .font(EmmaTypography.ui(14))
+                    .foregroundStyle(EmmaTheme.ink)
+                Spacer(minLength: 8)
+                Text(usage.map { "\($0.turns) \(EmmaPlural.form($0.turns, "pytanie", "pytania", "pytań"))" } ?? (loaded ? "—" : "…"))
+                    .font(EmmaTypography.ui(14, .semibold))
+                    .foregroundStyle(EmmaTheme.ink)
+                    .monospacedDigit()
+            }
+            Text(detailText)
+                .font(EmmaTypography.caption())
+                .foregroundStyle(EmmaTheme.mutedSoft)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .task {
+            guard let repository = dependencies.repository as? BackendRepository else { return }
+            usage = await repository.emmaTextUsage()
+            loaded = true
+        }
+    }
+
+    private var detailText: String {
+        guard let usage else {
+            return loaded ? "Serwer jeszcze nie liczy pytań do Emmy." : "Sprawdzam…"
+        }
+        var parts: [String] = []
+        if let seconds = usage.averageSeconds {
+            parts.append("średnio \(String(format: "%.1f", seconds).replacingOccurrences(of: ".", with: ",")) s na odpowiedź")
+        }
+        if usage.thumbsUp + usage.thumbsDown > 0 {
+            parts.append("oceny: 👍 \(usage.thumbsUp) · 👎 \(usage.thumbsDown)")
+        }
+        if usage.dailyLimit > 0 {
+            parts.append("dziś \(usage.turnsLastDay) z \(usage.dailyLimit)")
+        }
+        return parts.isEmpty ? "Pytania pisemne kosztują ułamki grosza." : parts.joined(separator: " · ") + "."
     }
 }
 

@@ -84,6 +84,10 @@ final class AssistantStore: ObservableObject {
     @Published private(set) var isAwaitingTextReply = false
     /// Rozmowa pisemna na serwerze — kolejne pytania mają jej historię.
     private var textConversationID: Int?
+    /// Odpowiedzi Emmy pisemnie, które można ocenić (tura → rozmowa na serwerze).
+    @Published private(set) var ratableTurns: [String: Int] = [:]
+    /// Oceny już wysłane (tura → 👍 `true` / 👎 `false`).
+    @Published private(set) var ratedTurns: [String: Bool] = [:]
 
     // MARK: Zależności wewnętrzne
 
@@ -158,9 +162,15 @@ final class AssistantStore: ObservableObject {
         guard let dependencies else { return }
         let action = dependencies.pendingEmmaAction
         let shouldStartVoice = dependencies.pendingVoiceStart
+        let prompt = dependencies.pendingEmmaPrompt
         dependencies.pendingEmmaAction = nil
         dependencies.pendingVoiceStart = false
+        dependencies.pendingEmmaPrompt = nil
 
+        if let prompt, !(await askEmma(prompt)) {
+            // Bez serwera (Demo) pytanie przechodzi zwykłą drogą polecenia.
+            await handleCommand(prompt)
+        }
         if let action {
             await runExample(action)
         }
@@ -176,7 +186,9 @@ final class AssistantStore: ObservableObject {
         await stopVoiceModes()
 
         // Najpierw brief: nie wymaga klienta, więc działa także bez kontekstu.
+        // Z serwerem odpowiada Emma (pełny przegląd: areszty, rozmowy, leady).
         if action == .brief {
+            if await askEmma("Podsumuj dzisiejszy dzień.") { return }
             appendUserTurn("Podsumuj dzisiejszy dzień.")
             await answer(await briefing(), isSummary: true)
             return
@@ -194,6 +206,7 @@ final class AssistantStore: ObservableObject {
 
         switch action {
         case .prepareCase:
+            if await askEmma("Przygotuj mnie do rozmowy: \(client.displayName).") { return }
             appendUserTurn("Przygotuj mnie do rozmowy: \(client.displayName).")
             await answer(await caseSummary(clientID), isSummary: true)
         case .reply:
@@ -697,6 +710,17 @@ final class AssistantStore: ObservableObject {
         return forms.contains(stripped)
     }
 
+    /// Pytanie spoza pola tekstowego (skrót, powiadomienie, „Streść z Emmą”).
+    /// `false` bez serwera z modelem (Demo) — wtedy wołający robi to lokalnie.
+    func askEmma(_ prompt: String) async -> Bool {
+        guard dependencies?.repository is BackendRepository else { return false }
+        await stopVoiceModes()
+        appendUserTurn(prompt)
+        if await askEmmaInWriting(prompt) { return true }
+        await answer("Emma pisemnie nie jest dostępna na tym serwerze.", read: false)
+        return true
+    }
+
     /// Pytanie do Emmy pisemnie. `false`, gdy nie ma serwera z modelem
     /// (Demo, starszy backend) — wtedy zostaje lokalna odpowiedź.
     private func askEmmaInWriting(_ text: String) async -> Bool {
@@ -704,10 +728,21 @@ final class AssistantStore: ObservableObject {
         isAwaitingTextReply = true
         defer { isAwaitingTextReply = false }
         let context = dependencies.emmaContext.flatMap { client(id: $0) }
+        var screen = dependencies.emmaScreenContext()
+        if let clientID = screen.clientID { screen.clientName = client(id: clientID)?.displayName }
         do {
-            let result = try await repository.askEmma(text, conversationID: textConversationID, context: context)
+            let result = try await repository.askEmma(
+                text,
+                conversationID: textConversationID,
+                context: context,
+                screen: screen
+            )
             textConversationID = result.conversationID
             await answer(result.reply, read: false)
+            if case .message(let turn)? = turns.last, turn.role != .user {
+                ratableTurns[turn.id] = result.conversationID
+            }
+            await runAppCalls(result.appCalls)
             return true
         } catch BackendRepositoryError.notAvailableInBackend {
             return false
@@ -715,6 +750,47 @@ final class AssistantStore: ObservableObject {
             await answer(ScreenLoad.message(for: error, fallback: "Emma chwilowo nie odpowiada. Spróbuj ponownie za chwilę."), read: false)
             return true
         }
+    }
+
+    // MARK: Ocena odpowiedzi (Etap 5)
+
+    func canRate(_ turnID: String) -> Bool { ratableTurns[turnID] != nil }
+
+    func rating(for turnID: String) -> Bool? { ratedTurns[turnID] }
+
+    func rate(turnID: String, up: Bool) async {
+        guard let conversationID = ratableTurns[turnID], ratedTurns[turnID] == nil,
+              let repository = dependencies?.repository as? BackendRepository else { return }
+        ratedTurns[turnID] = up
+        await repository.rateEmma(conversationID: conversationID, up: up)
+    }
+
+    /// Działania aplikacji z odpowiedzi Emmy pisemnie (Etap 2) — ten sam kod
+    /// co w rozmowie głosowej: karta do zatwierdzenia, szkic w rozmowie,
+    /// formularz terminu, otwarcie ekranu. Model nie zna ich wyniku, więc
+    /// porażkę i wyliczony termin pokazujemy jako dopisek Emmy.
+    private func runAppCalls(_ calls: [EmmaAppCall]) async {
+        for call in calls {
+            let raw = await handleAppTool(name: call.name, argumentsJSON: call.argumentsJSON)
+            let output = Self.arguments(from: raw)
+            if let error = output["error"] as? String {
+                await answer("Nie udało się tego przygotować: \(error)", read: false)
+            } else if call.name == "app_compute_deadline", let due = output["due_text"] as? String {
+                await answer(Self.deadlineLine(due: due, result: output), read: false)
+            }
+        }
+    }
+
+    static func deadlineLine(due: String, result: [String: Any]) -> String {
+        var line = "Termin upływa: \(due)"
+        if let rule = result["rule"] as? String { line += " — \(rule)" }
+        if let basis = result["legal_basis"] as? String { line += " (\(basis))" }
+        line += "."
+        if let from = result["from_date"] as? String, let span = result["span"] as? String {
+            line += " Liczone od \(from), \(span)."
+        }
+        if let reason = result["shift_reason"] as? String { line += " \(reason)" }
+        return line
     }
 
     private func forwardTypedTurn(_ text: String) async {
@@ -992,6 +1068,11 @@ final class AssistantStore: ObservableObject {
         adoptedProposalID = nil
         lastBriefedClientIDs = []
         isPlayingSummary = false
+        // „Nowa rozmowa” ma zacząć też nową rozmowę pisemną na serwerze —
+        // inaczej Emma pamiętała pytania, których użytkownik już nie widzi.
+        textConversationID = nil
+        ratableTurns = [:]
+        ratedTurns = [:]
     }
 
     /// Jedna sesja na proces. Wznowienie nie tworzy drugiego połączenia (§5.3).
