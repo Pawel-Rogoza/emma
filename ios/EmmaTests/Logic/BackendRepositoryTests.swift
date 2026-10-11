@@ -944,7 +944,8 @@ final class BackendRepositoryTests: XCTestCase {
             ]}
             """#.utf8))
         }
-        let alerts = try XCTUnwrap(await makeRepository().emmaAlerts())
+        let fetched = await makeRepository().emmaAlerts()
+        let alerts = try XCTUnwrap(fetched)
         XCTAssertEqual(alerts.count, 2)
         XCTAssertEqual(alerts[0].kind, .leadWaiting)
         XCTAssertEqual(alerts[0].clientID, ClientID("lead-12"))

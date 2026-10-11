@@ -259,3 +259,41 @@ Poprawki istniejących:
    potwierdzi ustalenia z kodu.
 3. Zacząć od Etapu 0 (punkty 1–3): niewielki koszt, a usuwa najczęstsze
    „Emma nie rozumie / robi nie to”.
+
+---
+
+## 6. Stan wdrożenia (11.10.2026, wieczór)
+
+Backend: `adwokat-app-project` `main` (merge'e `feat/emma-etap0` … `feat/emma-etap5`,
+ostatni `c961b02`), 1105 testów zielonych, `astro check` bez błędów.
+iOS: 0.24.0 → 0.25.0 na `master` (TestFlight).
+
+| Etap | Co weszło | Gdzie |
+|---|---|---|
+| 0 | Pytania nie tworzą zapisów (parser), plan dnia i „przygotuj mnie” idą do Emmy na serwerze; godziny terminów i wiadomości po polsku (`day`/`time`), dzień liczony po Warszawie; wszystkie rozmowy (e-mail, spoza kartoteki); przycięte wyniki w czacie; wspólny rdzeń instrukcji | iOS 0.24.0, backend |
+| 0+ | Cel testów UI znów się kompiluje (od 0.23.2 blokował wszystkie testy w CI) | iOS 0.24.1 |
+| 1 | `get_client`, `list_leads`, `search_messages` (po odszyfrowaniu), `list_work` (czynności spraw z panelu), `list_team`, filtry `list_tasks`, czynności i następny krok w `get_case`, analiza AI w `get_lead`, bogatszy przegląd dnia; leady „bez odpowiedzi” liczone też po wiadomościach (było: nieistniejący status `contact`) | backend |
+| 2 | Emma pisemnie z narzędziami `app_*` (karta, szkic, formularz terminu, kalkulator, zmiana sprawy, ekrany), kontekst ekranu, `thread_id` dla osób spoza kartoteki; „Nowa rozmowa” zaczyna nową rozmowę na serwerze; czat czeka 100 s zamiast 20 s | backend + iOS 0.25.0 |
+| 3 | `GET /emma/alerts` (lead czeka 15 min, okno 24 h, terminy z panelu, wynik konsultacji) → powiadomienia o nowych, dotknięcie otwiera Emmę z pytaniem; „Streść z Emmą” w rozmowie | backend + iOS 0.25.0 |
+| 4 | `read_case_document` (Gemini czyta PDF/zdjęcie z akt: odpowiedź, cytat, daty), lista MOS 2.0, szablony pism | backend |
+| 5 | Telemetria tury w audycie, 👍/👎, licznik w profilu, `EMMA_TEXT_DAILY_LIMIT`, egzekwowanie `allowedRoles`, 20 pytań kontrolnych na żywym modelu | backend + iOS 0.25.0 |
+
+**Świadomie pominięte:** strumieniowanie odpowiedzi (odpowiedzi mają 1–4 zdania,
+czas zabierają rundy narzędzi — najpierw zmierzyć `durationMs` w audycie);
+pisma z szablonów i PDF w telefonie (wymaga edytora dokumentów, poza asystentem);
+kontekst ekranu w rozmowie głosowej (głos dostaje klienta i sprawę jak dotąd);
+APNs (alerty działają przez odświeżanie w tle, więc mogą przyjść z opóźnieniem).
+
+### Do zrobienia przez właściciela
+
+1. **Pytania kontrolne na serwerze** (koszt: grosze):
+   ```
+   cd /home/tomek/apps/website/adwokat-app-project
+   EMMA_EVAL=1 GEMINI_API_KEY=… npx vitest run src/lib/crm/emma/eval.live.test.ts
+   ```
+   Wynik: lista ✓/✗ z użytymi narzędziami. Uruchamiać po każdej zmianie instrukcji.
+2. **Opcjonalnie w `.env`**: `EMMA_TEXT_DAILY_LIMIT` (domyślnie 300 pytań/24 h, `0` = bez limitu).
+3. **Na telefonie (0.25.0)**: „Jakie mam zadania na jutro?”, „Kto pisał o karcie pobytu?”,
+   „Dodaj zadanie: …” (karta), „Napisz Olenie, że…” (szkic w rozmowie), ✨ w rozmowie,
+   pytanie o pismo z akt sprawy.
+4. **Telemetria**: `SELECT at, meta_json FROM audit_log WHERE action IN ('assistant.chat','assistant.feedback') ORDER BY id DESC LIMIT 50;`
