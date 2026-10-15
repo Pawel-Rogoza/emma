@@ -722,9 +722,9 @@ struct ThreadScreen: View {
                     }
 
                     ForEach(Array(model.messages.enumerated()), id: \.element.id) { index, message in
-                        let day = AppDependencies.localDate(from: message.sentAt)
+                        let day = LocalDate(instant: message.sentAt)
                         let previousDay = index > 0
-                            ? AppDependencies.localDate(from: model.messages[index - 1].sentAt)
+                            ? LocalDate(instant: model.messages[index - 1].sentAt)
                             : nil
                         let position = ChatLayout.position(at: index, in: model.messages)
                         if day != previousDay {
@@ -827,7 +827,7 @@ struct ThreadScreen: View {
     /// Rozmówca spoza kartoteki nie ma akt — zostaje WhatsApp i Mapy.
     private func attachmentActions(for message: Message, model: ThreadStore.Model) -> AttachmentActions? {
         guard message.kind.isAttachment, !message.isOutgoing else { return nil }
-        let day = AppDependencies.localDate(from: message.sentAt)
+        let day = LocalDate(instant: message.sentAt)
         let client = model.client
         let caseID = model.legalCase?.id
         var actions = AttachmentActions()

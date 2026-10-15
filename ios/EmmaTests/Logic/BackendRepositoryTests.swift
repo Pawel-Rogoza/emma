@@ -67,7 +67,7 @@ final class BackendRepositoryTests: XCTestCase {
         let clients = try await makeRepository().clients(matching: "", stage: nil)
 
         XCTAssertEqual(clients.count, 2)
-        XCTAssertEqual(clients[0].receivedAt, MobileAuthClient.parseISO8601("2026-09-22T14:05:12.345Z"))
+        XCTAssertEqual(clients[0].receivedAt, EmmaTime.parseISO8601("2026-09-22T14:05:12.345Z"))
         XCTAssertEqual(clients[0].phone, "+48 600 700 800")
         XCTAssertEqual(clients[0].email, "ihor@example.com")
         // Pusty numer to brak numeru, a zepsuty znacznik czasu nie psuje listy.
@@ -859,6 +859,33 @@ final class BackendRepositoryTests: XCTestCase {
         _ = try await repository.unreadTotal(userID: UserID("user-1"))
 
         XCTAssertEqual(StubURLProtocol.requestCount, 2)
+    }
+
+    /// Po zapisie listy kontaktów chcą naraz plakietka leadów, przypomnienia
+    /// i widoczny ekran — równoległe pytania o to samo idą jednym stronicowaniem,
+    /// a pytanie o inny etap — osobno.
+    func testConcurrentClientListReadsShareOneRequest() async throws {
+        StubURLProtocol.respond { _, _ in
+            // Odpowiedź z opóźnieniem, żeby pytania na pewno się nałożyły.
+            Thread.sleep(forTimeInterval: 0.3)
+            return (200, Data(Self.clientsJSON.utf8))
+        }
+        let repository = makeRepository()
+
+        async let first = repository.clients(matching: "", stage: nil)
+        async let second = repository.clients(matching: "", stage: nil)
+        async let leads = repository.clients(matching: "", stage: .new)
+        let results = try await (first, second, leads)
+
+        XCTAssertEqual(results.0.map(\.id), results.1.map(\.id))
+        XCTAssertEqual(results.2.count, 2)
+        XCTAssertEqual(StubURLProtocol.requestCount, 2)
+        let leadQueries = StubURLProtocol.allRequests.filter { $0.url?.query?.contains("stage=new") ?? false }
+        XCTAssertEqual(leadQueries.count, 1)
+
+        // Kolejne, nie równoległe pytanie idzie znów do serwera.
+        _ = try await repository.clients(matching: "", stage: nil)
+        XCTAssertEqual(StubURLProtocol.requestCount, 3)
     }
 
     /// Rozmowa e-mail (poczta kancelarii): adres rozmówcy, temat maila,

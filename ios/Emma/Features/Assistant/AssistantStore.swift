@@ -1005,23 +1005,35 @@ final class AssistantStore: ObservableObject {
 
     private func successMessage(_ kind: ActionKind) -> String {
         switch kind {
-        case .reply: return "Wiadomość dodana do rozmowy. Wysyłka jest symulowana."
+        case .reply: return isDemo ? "Wiadomość dodana do rozmowy. Wysyłka jest symulowana." : "Wiadomość dodana do rozmowy."
         case .note: return "Notatka jest już w karcie klienta."
         case .task: return "Zadanie jest już na wspólnej liście."
         }
     }
 
     /// Stan z referencji, ale z jawnym rozróżnieniem: zatwierdzone ≠ wykonane.
+    ///
+    /// Audyt 16.10.2026: „zapis jest symulowany” padało także poza Demo. Serwer
+    /// kancelarii wykonuje zatwierdzone działania albo trzyma je w kolejce
+    /// (gdy wykonywanie jest wyłączone) — symulacji tam nie ma.
     private func queuedMessage(_ kind: ActionKind, state: ExecutionState) -> String {
         let status = "(stan: \(state.displayName))"
+        let pending = isDemo
+            ? (kind == .reply ? "Wysyłka jest symulowana" : "Zapis jest symulowany")
+            : "Czeka w kolejce serwera kancelarii"
         switch kind {
         case .reply:
-            return "Wiadomość zatwierdzona i przekazana do wysyłki \(status). Wysyłka jest symulowana — dostarczenia jeszcze nie potwierdzam."
+            return "Wiadomość zatwierdzona i przekazana do wysyłki \(status). \(pending) — dostarczenia jeszcze nie potwierdzam."
         case .note:
-            return "Notatka zatwierdzona i przekazana do zapisu \(status). Zapis jest symulowany — potwierdzenia jeszcze nie mam."
+            return "Notatka zatwierdzona i przekazana do zapisu \(status). \(pending) — potwierdzenia jeszcze nie mam."
         case .task:
-            return "Zadanie zatwierdzone i przekazane do zapisu \(status). Zapis jest symulowany — potwierdzenia jeszcze nie mam."
+            return "Zadanie zatwierdzone i przekazane do zapisu \(status). \(pending) — potwierdzenia jeszcze nie mam."
         }
+    }
+
+    /// Dane przykładowe (Demo): tylko tam wysyłka i zapisy są symulowane.
+    private var isDemo: Bool {
+        dependencies?.configuration.usesMockServices ?? true
     }
 
     // MARK: Głos: sesja, dyktowanie, odsłuch

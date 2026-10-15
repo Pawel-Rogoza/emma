@@ -33,12 +33,10 @@ public enum TaskReminderPlan {
         timeZoneIdentifier: String = EmmaTime.referenceTimeZone,
         limit: Int = defaultLimit
     ) -> [Item] {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: timeZoneIdentifier) ?? TimeZone(identifier: "UTC")!
         let items: [Item] = tasks.compactMap { task in
-            guard !task.isDone, let due = task.dueDate else { return nil }
-            let components = DateComponents(year: due.year, month: due.month, day: due.day, hour: hour)
-            guard let fireAt = calendar.date(from: components), fireAt > now else { return nil }
+            guard !task.isDone, let due = task.dueDate,
+                  let fireAt = due.instant(hour: hour, timeZoneIdentifier: timeZoneIdentifier),
+                  fireAt > now else { return nil }
             var parts = [task.priority == .urgent ? "Pilne zadanie na dziś" : "Zadanie na dziś"]
             if let clientID = task.clientID, let name = clientNames[clientID] {
                 parts.append(name)

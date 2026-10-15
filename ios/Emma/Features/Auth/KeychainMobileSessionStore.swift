@@ -97,7 +97,7 @@ final class KeychainMobileSessionStore: MobileSessionStoring, @unchecked Sendabl
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
             let raw = try container.decode(String.self)
-            guard let date = MobileAuthClient.parseISO8601(raw) else {
+            guard let date = EmmaTime.parseISO8601(raw) else {
                 throw DecodingError.dataCorruptedError(
                     in: container,
                     debugDescription: "Nieznany format daty w kluczyku: \(raw)"

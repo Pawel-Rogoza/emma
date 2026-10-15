@@ -86,10 +86,20 @@ final class EventReminderScheduler {
 
         let today = dependencies.today
         let range = DateIntervalFilter(from: today, through: today.adding(days: Self.horizonDays))
+        // Odczyty są niezależne, więc idą naraz (audyt 16.10.2026: wcześniej
+        // pięć zapytań po kolei po każdym zapisie).
+        let repository = dependencies.repository
+        async let eventsRead = repository.events(in: range)
+        async let clientsRead = repository.clients(matching: "", stage: nil)
+        async let tasksRead = repository.tasks(filter: TaskFilter(scope: .open))
+        async let pastRead = repository.events(
+            in: DateIntervalFilter(from: today.adding(days: -CaseUrgency.missedLookbackDays), through: today.adding(days: -1))
+        )
+        async let casesRead = repository.cases(status: nil)
         // Błąd odczytu zostawia dotychczasowe powiadomienia — lepiej przypomnieć
         // o terminie sprzed chwili niż zdjąć wszystkie przez brak sieci.
-        guard let events = try? await dependencies.repository.events(in: range) else { return }
-        let clients = (try? await dependencies.repository.clients(matching: "", stage: nil)) ?? []
+        guard let events = try? await eventsRead else { return }
+        let clients = (try? await clientsRead) ?? []
         let names = Dictionary(clients.map { ($0.id, $0.displayName) }, uniquingKeysWith: { first, _ in first })
         let preferences = self.preferences
         let items = EventReminderPlan.items(
@@ -101,19 +111,17 @@ final class EventReminderScheduler {
         )
 
         // Zadania z terminem: rano w dniu zadania (10.10.2026).
-        let openTasks = (try? await dependencies.repository.tasks(filter: TaskFilter(scope: .open))) ?? []
+        let openTasks = (try? await tasksRead) ?? []
         let taskItems = TaskReminderPlan.items(tasks: openTasks, clientNames: names, now: dependencies.now)
 
         // Poranny skrót (8:00): terminy dnia i niezamknięte terminy po czasie.
-        let past = (try? await dependencies.repository.events(
-            in: DateIntervalFilter(from: today.adding(days: -CaseUrgency.missedLookbackDays), through: today.adding(days: -1))
-        )) ?? []
+        let past = (try? await pastRead) ?? []
         let missed = past.filter { $0.kind == .caseDeadline && $0.status != .finished }.count
         let mornings = MorningBrief.items(events: events, missedDeadlines: missed, today: today, now: dependencies.now)
 
         // Areszt i legalny pobyt: tylko daty z najbliższych 30 dni, żeby kilka
         // spraw nie wyczerpało systemowego limitu 64 powiadomień.
-        let cases = (try? await dependencies.repository.cases(status: nil)) ?? []
+        let cases = (try? await casesRead) ?? []
         let watches = cases
             .flatMap { CaseWatch.items(for: $0, today: today) }
             .filter { $0.daysLeft >= 0 && $0.daysLeft <= CaseWatch.showOnTodayDays }
@@ -132,74 +140,51 @@ final class EventReminderScheduler {
         center.removePendingNotificationRequests(withIdentifiers: ours)
 
         for item in watchItems {
-            let content = UNMutableNotificationContent()
-            content.title = item.title
-            content.body = item.body
-            content.sound = .default
-            content.userInfo = [Self.caseIDKey: item.caseID.rawValue]
-            let components = Calendar(identifier: .gregorian).dateComponents(
-                [.timeZone, .year, .month, .day, .hour, .minute, .second],
-                from: item.fireAt
-            )
-            try? await center.add(UNNotificationRequest(
-                identifier: item.identifier,
-                content: content,
-                trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
-            ))
+            await Self.post(item.identifier, title: item.title, body: item.body,
+                            userInfo: [Self.caseIDKey: item.caseID.rawValue], at: item.fireAt, to: center)
         }
-
         for item in taskItems {
-            let content = UNMutableNotificationContent()
-            content.title = item.title
-            content.body = item.body
-            content.sound = .default
-            content.userInfo = [Self.taskIDKey: item.taskID.rawValue]
-            let components = Calendar(identifier: .gregorian).dateComponents(
-                [.timeZone, .year, .month, .day, .hour, .minute, .second],
-                from: item.fireAt
-            )
-            try? await center.add(UNNotificationRequest(
-                identifier: item.identifier,
-                content: content,
-                trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
-            ))
+            await Self.post(item.identifier, title: item.title, body: item.body,
+                            userInfo: [Self.taskIDKey: item.taskID.rawValue], at: item.fireAt, to: center)
         }
-
         for morning in mornings {
-            let content = UNMutableNotificationContent()
-            content.title = morning.title
-            content.body = morning.body
-            content.sound = .default
-            // Ze strefą: wyzwalacz bez niej trzyma „godzinę na zegarze”, więc po
-            // zmianie strefy telefonu przypomnienie przesuwałoby się o różnicę.
-            let components = Calendar(identifier: .gregorian).dateComponents(
-                [.timeZone, .year, .month, .day, .hour, .minute, .second],
-                from: morning.fireAt
-            )
-            try? await center.add(UNNotificationRequest(
-                identifier: morning.identifier,
-                content: content,
-                trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
-            ))
+            await Self.post(morning.identifier, title: morning.title, body: morning.body,
+                            at: morning.fireAt, to: center)
         }
-
         for item in items {
-            let content = UNMutableNotificationContent()
-            content.title = item.title
-            content.body = item.body
-            content.sound = .default
-            content.userInfo = [Self.eventIDKey: item.eventID.rawValue]
-            // Ze strefą: wyzwalacz bez niej trzyma „godzinę na zegarze”, więc po
-            // zmianie strefy telefonu przypomnienie przesuwałoby się o różnicę.
-            let components = Calendar(identifier: .gregorian).dateComponents(
-                [.timeZone, .year, .month, .day, .hour, .minute, .second],
-                from: item.fireAt
-            )
-            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
-            try? await center.add(
-                UNNotificationRequest(identifier: item.identifier, content: content, trigger: trigger)
+            await Self.post(item.identifier, title: item.title, body: item.body,
+                            userInfo: [Self.eventIDKey: item.eventID.rawValue], at: item.fireAt, to: center)
+        }
+    }
+
+    /// Jedno powiadomienie Emmy. `fireAt == nil` — od razu (lead, alert Emmy).
+    ///
+    /// Wyzwalacz niesie strefę: bez niej trzyma „godzinę na zegarze”, więc po
+    /// zmianie strefy telefonu przypomnienie przesuwałoby się o różnicę.
+    /// Wcześniej ten sam blok był skopiowany w sześciu pętlach.
+    private static func post(
+        _ identifier: String,
+        title: String,
+        body: String,
+        userInfo: [AnyHashable: Any] = [:],
+        at fireAt: Date? = nil,
+        to center: UNUserNotificationCenter
+    ) async {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        content.userInfo = userInfo
+        let trigger = fireAt.map { instant in
+            UNCalendarNotificationTrigger(
+                dateMatching: EmmaTime.firmCalendar.dateComponents(
+                    [.timeZone, .year, .month, .day, .hour, .minute, .second],
+                    from: instant
+                ),
+                repeats: false
             )
         }
+        try? await center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: trigger))
     }
 
     // MARK: Nowe leady
@@ -225,15 +210,10 @@ final class EventReminderScheduler {
         default: return
         }
         for alert in outcome.alerts {
-            let content = UNMutableNotificationContent()
-            content.title = alert.title
-            content.body = alert.body
-            content.sound = .default
-            content.userInfo = alert.identifier.hasPrefix(LeadAlertPlan.identifierPrefix + "batch.")
+            let userInfo: [AnyHashable: Any] = alert.identifier.hasPrefix(LeadAlertPlan.identifierPrefix + "batch.")
                 ? [Self.leadsKey: true]
                 : [Self.clientIDKey: alert.clientID.rawValue]
-            // Bez wyzwalacza — od razu.
-            try? await center.add(UNNotificationRequest(identifier: alert.identifier, content: content, trigger: nil))
+            await Self.post(alert.identifier, title: alert.title, body: alert.body, userInfo: userInfo, to: center)
         }
     }
 
@@ -257,18 +237,10 @@ final class EventReminderScheduler {
         default: return
         }
         for alert in outcome.notify {
-            let content = UNMutableNotificationContent()
-            content.title = alert.title
-            content.body = alert.body
-            content.sound = .default
             var info: [String: String] = [Self.emmaPromptKey: alert.prompt]
             if let clientID = alert.clientID { info[Self.emmaClientKey] = clientID.rawValue }
-            content.userInfo = info
-            try? await center.add(UNNotificationRequest(
-                identifier: EmmaAlertPlan.identifierPrefix + alert.id,
-                content: content,
-                trigger: nil
-            ))
+            await Self.post(EmmaAlertPlan.identifierPrefix + alert.id, title: alert.title, body: alert.body,
+                            userInfo: info, to: center)
         }
     }
 

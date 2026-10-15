@@ -222,37 +222,31 @@ struct ChoiceChip: View {
 ///
 /// Kontrolki działają w strefie kancelarii (`Europe/Warsaw`), tak jak cała
 /// aplikacja (§2.2) — telefon w innej strefie nie przesuwa terminu o godzinę.
+///
+/// Rachuba idzie przez `EmmaTime` (jedna strefa i jeden kalendarz dla całej
+/// aplikacji). Formularze wołają te funkcje w `body` wiele razy na klatkę, więc
+/// kalendarz z polskim tygodniem powstaje raz, a nie przy każdym wywołaniu.
 enum FirmDateTime {
-    static var timeZone: TimeZone {
-        TimeZone(identifier: EmmaTime.referenceTimeZone) ?? .current
-    }
+    static let timeZone: TimeZone = EmmaTime.firmTimeZone
 
-    static var calendar: Calendar {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = timeZone
+    /// Kalendarz kancelarii z polskimi nazwami i tygodniem od poniedziałku.
+    static let calendar: Calendar = {
+        var calendar = EmmaTime.firmCalendar
         calendar.locale = Locale(identifier: "pl_PL")
         calendar.firstWeekday = 2
         return calendar
-    }
+    }()
 
     static func date(day: LocalDate, time: TimeOfDay) -> Date {
-        var components = DateComponents()
-        components.year = day.year
-        components.month = day.month
-        components.day = day.day
-        components.hour = time.hour
-        components.minute = time.minute
-        return calendar.date(from: components) ?? Date()
+        day.instant(hour: time.hour, minute: time.minute) ?? Date()
     }
 
     static func day(of date: Date) -> LocalDate {
-        let parts = calendar.dateComponents([.year, .month, .day], from: date)
-        return LocalDate(year: parts.year ?? 2026, month: parts.month ?? 1, day: parts.day ?? 1)
+        LocalDate(instant: date)
     }
 
     static func time(of date: Date) -> TimeOfDay {
-        let parts = calendar.dateComponents([.hour, .minute], from: date)
-        return TimeOfDay(minutes: (parts.hour ?? 0) * 60 + (parts.minute ?? 0)) ?? TimeOfDay(minutes: 0)!
+        TimeOfDay.at(date)
     }
 }
 

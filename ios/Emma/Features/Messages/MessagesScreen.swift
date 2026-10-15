@@ -276,10 +276,15 @@ final class MessagesStore: ObservableObject {
             }
             messageCache = nextCache
 
+            // Słownik zamiast szukania na liście dla każdego wiersza (audyt
+            // 16.10.2026): liczba porównań rosła z kwadratem liczby rozmów,
+            // na głównym wątku, przy każdym odświeżeniu co pół minuty.
+            let statesByThread = Dictionary(states.map { ($0.threadID, $0) }, uniquingKeysWith: { first, _ in first })
             var rows: [Row] = []
+            rows.reserveCapacity(conversations.count)
             for (thread, client) in conversations {
                 let messages = messagesByThread[thread.id] ?? []
-                var state = states.first { $0.threadID == thread.id }
+                var state = statesByThread[thread.id]
                     ?? ThreadUserState(userID: userID, threadID: thread.id)
                 if let local = localReads[thread.id] {
                     if state.readCursorSequence >= local {

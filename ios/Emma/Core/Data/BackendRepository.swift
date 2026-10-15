@@ -15,9 +15,10 @@ import FoundationNetworking
 // jeszcze wątków, więc pusty wynik jest prawdą o stanie, nie atrapą.
 //
 // Typ jest niezmienną strukturą (`Sendable`), więc nie potrzebuje blokad.
-// Wspólny stan mieszka w dwóch aktorach: trwające zapytanie o listę rozmów
-// (`SharedRequest` — łączenie równoległych pytań, nie pamięć podręczna)
-// i szkice odpowiedzi bieżącej sesji (`LocalDraftStore`, serwer ich nie zna).
+// Wspólny stan mieszka w aktorach: trwające zapytania o listę rozmów i listę
+// kontaktów (`SharedRequest` — łączenie równoległych pytań, nie pamięć
+// podręczna) i szkice odpowiedzi bieżącej sesji (`LocalDraftStore`, serwer
+// ich nie zna).
 
 public struct BackendRepository: EmmaRepository, Sendable {
 
@@ -25,7 +26,17 @@ public struct BackendRepository: EmmaRepository, Sendable {
     /// Lista rozmów, o którą pytają naraz `threads`, `readStates`,
     /// `unassignedConversations` i `unreadTotal` (jedno wczytanie „Rozmów”
     /// to trzy z nich). Równoległe pytania dostają wynik jednego zapytania.
-    private let threadListRequest = SharedRequest<BackendThreadList>()
+    private let threadListRequest = SharedRequest<Bool, BackendThreadList>()
+    /// Pełna lista kontaktów (audyt 16.10.2026). Po każdym zapisie pytają o nią
+    /// naraz plakietka leadów, przypomnienia i widoczny ekran — każde pytanie
+    /// to do 20 stron po kolei. Równoległe pytania o to samo dostają wynik
+    /// jednego stronicowania.
+    private let clientListRequest = SharedRequest<ClientListQuery, [Client]>()
+
+    private struct ClientListQuery: Hashable, Sendable {
+        let query: String
+        let stage: ClientStage?
+    }
     /// Szkice odpowiedzi w pamięci telefonu (05.10.2026). Serwer nie ma trasy
     /// na szkic, więc `saveDraft` rzucał „niedostępne”: tekst pisany w rozmowie
     /// i szkic od Emmy znikały po wyjściu z wątku, a cytowanie wiadomości
@@ -94,11 +105,18 @@ public struct BackendRepository: EmmaRepository, Sendable {
     /// brakowało 7 klientów). Stronicowanie domykamy tutaj, żeby każdy ekran —
     /// lista klientów, dzień, zadania, formularze — dostał pełny zbiór.
     public func clients(matching query: String, stage: ClientStage?) async throws -> [Client] {
+        let api = self.api
+        return try await clientListRequest.run(ClientListQuery(query: query, stage: stage)) {
+            try await Self.allClients(api: api, query: query, stage: stage)
+        }
+    }
+
+    private static func allClients(api: BackendAPIClient, query: String, stage: ClientStage?) async throws -> [Client] {
         var collected: [BackendClientDTO] = []
         var cursor: String?
         var pages = 0
         repeat {
-            let page = try await api.clients(query: query, stage: stage, limit: Self.clientPageSize, cursor: cursor)
+            let page = try await api.clients(query: query, stage: stage, limit: clientPageSize, cursor: cursor)
             collected.append(contentsOf: page.items)
             // Zabezpieczenie: gdyby serwer powiedział `has_more` bez kursora,
             // kończymy, zamiast zapętlić się w nieskończoność.
@@ -175,7 +193,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
     public func updateClient(_ client: Client, expectedVersion: Version) async throws -> Client {
         let original = try await currentClient(client.id)
         let name = client.displayName != original.displayName ? client.displayName : nil
-        let stage = client.stage != original.stage ? Self.stageToken(client.stage) : nil
+        let stage = client.stage != original.stage ? client.stage.contractToken : nil
 
         // Sama wersja różnicy nie czyni: bez zmiany pól nie ma czego zapisywać,
         // więc zwracamy stan z serwera, zamiast wysyłać pusty zapis.
@@ -236,37 +254,6 @@ public struct BackendRepository: EmmaRepository, Sendable {
         return error
     }
 
-    static func priorityToken(_ priority: TaskPriority) -> String {
-        switch priority {
-        case .normal: return "normal"
-        case .urgent: return "urgent"
-        }
-    }
-
-    static func eventKindToken(_ kind: EventKind) -> String {
-        switch kind {
-        case .consultation: return "consultation"
-        case .caseDeadline: return "case_deadline"
-        }
-    }
-
-    static func eventStatusToken(_ status: EventStatus) -> String {
-        switch status {
-        case .toConfirm: return "to_confirm"
-        case .confirmed: return "confirmed"
-        case .finished: return "finished"
-        }
-    }
-
-    /// Etap kontaktu w słowniku kontraktu (`new` / `in_contact` / `client`).
-    static func stageToken(_ stage: ClientStage) -> String {
-        switch stage {
-        case .new: return "new"
-        case .inContact: return "in_contact"
-        case .client: return "client"
-        }
-    }
-
     /// Kontakt w kształcie aplikacji — potrzebny, by porównać, co się zmieniło.
     private func currentClient(_ id: ClientID) async throws -> Client {
         guard let card = try await client(id: id) else {
@@ -323,7 +310,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
                 body: BackendCaseUpdateBody(
                     expectedVersion: expectedVersion.value,
                     title: legalCase.title,
-                    status: BackendAPIClient.caseStatusToken(legalCase.status),
+                    status: legalCase.status.contractToken,
                     signature: legalCase.courtSignature?.trimmingCharacters(in: .whitespacesAndNewlines),
                     court: legalCase.court?.trimmingCharacters(in: .whitespacesAndNewlines),
                     kind: value(.kind, legalCase.kind?.rawValue),
@@ -364,7 +351,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
 
     public func tasks(filter: TaskFilter) async throws -> [TaskItem] {
         let rows = try await api.tasks(filter: filter)
-        return try rows.compactMap(Self.mapTask)
+        return try rows.map(Self.mapTask)
     }
 
     public func createTask(_ draft: NewTaskDraft) async throws -> TaskItem {
@@ -372,13 +359,13 @@ public struct BackendRepository: EmmaRepository, Sendable {
             BackendTaskCreateBody(
                 title: draft.title,
                 dueDate: draft.dueDate.isoString,
-                priority: Self.priorityToken(draft.priority),
+                priority: draft.priority.contractToken,
                 clientID: draft.clientID?.rawValue,
                 caseID: draft.caseID?.rawValue
             ),
             idempotencyKey: Self.newIdempotencyKey()
         )
-        return try Self.requireTask(dto)
+        return try Self.mapTask(dto)
     }
 
     public func updateTask(_ task: TaskItem, expectedVersion: Version) async throws -> TaskItem {
@@ -388,7 +375,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
                 expectedVersion: expectedVersion.value,
                 title: task.title,
                 dueDate: task.dueDate?.isoString,
-                priority: Self.priorityToken(task.priority),
+                priority: task.priority.contractToken,
                 isDone: task.isDone,
                 clientID: .some(task.clientID?.rawValue)
             ),
@@ -413,17 +400,10 @@ public struct BackendRepository: EmmaRepository, Sendable {
     private func patchTask(id: TaskID, body: BackendTaskUpdateBody, expectedVersion: Version) async throws -> TaskItem {
         do {
             let dto = try await api.updateTask(id: id.rawValue, body: body, idempotencyKey: Self.newIdempotencyKey())
-            return try Self.requireTask(dto)
+            return try Self.mapTask(dto)
         } catch let error as BackendRepositoryError {
             throw Self.writeError(error, expectedVersion: expectedVersion)
         }
-    }
-
-    private static func requireTask(_ dto: BackendTaskDTO) throws -> TaskItem {
-        guard let task = try mapTask(dto) else {
-            throw BackendRepositoryError.decoding("zadanie bez terminu w odpowiedzi zapisu")
-        }
-        return task
     }
 
     // MARK: AgendaRepository
@@ -432,7 +412,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
         let rows = try await api.events(in: range)
         // Termin bez klienta jest pełnoprawnym terminem kancelarii (rozprawa,
         // spotkanie wewnętrzne) — kalendarz i przypomnienia muszą go widzieć.
-        return try rows.compactMap(Self.mapEvent)
+        return try rows.map(Self.mapEvent)
     }
 
     /// Terminy klienta filtrowane przez serwer (`client_id`). `GET /events`
@@ -440,7 +420,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
     /// liście wszystkich terminów gubił przyszłe spotkania w karcie klienta.
     public func events(in range: DateIntervalFilter, clientID: ClientID) async throws -> [ScheduledEvent] {
         let rows = try await api.events(in: range, clientID: clientID)
-        return try rows.compactMap(Self.mapEvent).filter { $0.clientID == clientID }
+        return try rows.map(Self.mapEvent).filter { $0.clientID == clientID }
     }
 
     /// `GET /events/{id}`. Starszy backend tej trasy nie ma — wtedy szukamy
@@ -470,7 +450,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
     /// Dzień bieżący w strefie kancelarii. Repozytorium backendu działa tylko
     /// poza Demo, więc zegar systemowy jest tu właściwym źródłem „dziś”.
     static func todayInFirmTimeZone(now: Date = Date()) -> LocalDate {
-        localDate(of: now)
+        LocalDate(instant: now)
     }
 
     public func createEvent(_ draft: NewEventDraft) async throws -> ScheduledEvent {
@@ -480,14 +460,14 @@ public struct BackendRepository: EmmaRepository, Sendable {
                 day: draft.day.isoString,
                 time: draft.time.hhmm,
                 durationMinutes: draft.durationMinutes,
-                kind: Self.eventKindToken(draft.kind),
+                kind: draft.kind.contractToken,
                 clientID: draft.clientID?.rawValue,
                 caseID: draft.caseID?.rawValue,
                 place: draft.place.isEmpty ? nil : draft.place
             ),
             idempotencyKey: Self.newIdempotencyKey()
         )
-        return try Self.requireEvent(dto)
+        return try Self.mapEvent(dto)
     }
 
     /// Trasa `PATCH /events` zmienia stan, dzień, godzinę i długość. Tytułu
@@ -495,18 +475,18 @@ public struct BackendRepository: EmmaRepository, Sendable {
     public func updateEvent(_ event: ScheduledEvent, expectedVersion: Version) async throws -> ScheduledEvent {
         let body = BackendEventUpdateBody(
             expectedVersion: expectedVersion.value,
-            status: Self.eventStatusToken(event.status),
+            status: event.status.contractToken,
             durationMinutes: event.durationMinutes,
             day: event.day.isoString,
             time: event.isAllDay ? nil : event.time.hhmm,
             title: event.title,
             place: event.place,
-            kind: Self.eventKindToken(event.kind)
+            kind: event.kind.contractToken
         )
         let saved: ScheduledEvent
         do {
             let dto = try await api.updateEvent(id: event.id.rawValue, body: body, idempotencyKey: Self.newIdempotencyKey())
-            saved = try Self.requireEvent(dto)
+            saved = try Self.mapEvent(dto)
         } catch let error as BackendRepositoryError {
             throw Self.writeError(error, expectedVersion: expectedVersion)
         }
@@ -532,13 +512,6 @@ public struct BackendRepository: EmmaRepository, Sendable {
         } catch let error as BackendRepositoryError {
             throw Self.writeError(error, expectedVersion: expectedVersion)
         }
-    }
-
-    private static func requireEvent(_ dto: BackendEventDTO) throws -> ScheduledEvent {
-        guard let event = try mapEvent(dto) else {
-            throw BackendRepositoryError.decoding("termin bez klienta w odpowiedzi zapisu")
-        }
-        return event
     }
 
     // MARK: NoteRepository
@@ -718,7 +691,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
     private func threadList() async throws -> BackendThreadList? {
         let api = self.api
         do {
-            return try await threadListRequest.run { try await api.threads(includeUnassigned: true) }
+            return try await threadListRequest.run(true) { try await api.threads(includeUnassigned: true) }
         } catch BackendRepositoryError.notAvailableInBackend {
             return nil
         }
@@ -857,7 +830,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
     }
 
     static func mapMessage(_ dto: BackendMessageDTO) throws -> Message {
-        guard let sentAt = MobileAuthClient.parseISO8601(dto.sentAt) else {
+        guard let sentAt = EmmaTime.parseISO8601(dto.sentAt) else {
             throw BackendRepositoryError.decoding("nieprawidłowy czas wiadomości: \(dto.sentAt)")
         }
         let direction: MessageDirection = dto.direction == "outgoing" ? .outgoing : .incoming
@@ -1052,7 +1025,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
             proposalVersion: Version(dto.contextVersion),
             state: .failed,
             outboxID: "",
-            updatedAt: MobileAuthClient.parseISO8601(dto.presentedAt) ?? Date(),
+            updatedAt: EmmaTime.parseISO8601(dto.presentedAt) ?? Date(),
             lastErrorCode: "cancelled"
         )
     }
@@ -1077,8 +1050,8 @@ public struct BackendRepository: EmmaRepository, Sendable {
         guard let kind = ActionKind(rawValue: dto.kind) else {
             throw BackendRepositoryError.decoding("nieznany rodzaj akcji: \(dto.kind)")
         }
-        guard let presentedAt = MobileAuthClient.parseISO8601(dto.presentedAt),
-              let expiresAt = MobileAuthClient.parseISO8601(dto.expiresAt) else {
+        guard let presentedAt = EmmaTime.parseISO8601(dto.presentedAt),
+              let expiresAt = EmmaTime.parseISO8601(dto.expiresAt) else {
             throw BackendRepositoryError.decoding("nieznany format czasu propozycji")
         }
         let state: ProposalState
@@ -1117,7 +1090,7 @@ public struct BackendRepository: EmmaRepository, Sendable {
             state: ExecutionState(rawValue: dto.state) ?? .unknown,
             outboxID: dto.outboxID,
             providerMessageID: dto.providerMessageID,
-            updatedAt: MobileAuthClient.parseISO8601(dto.updatedAt) ?? Date(),
+            updatedAt: EmmaTime.parseISO8601(dto.updatedAt) ?? Date(),
             lastErrorCode: dto.failureCode
         )
     }
@@ -1140,7 +1113,7 @@ extension BackendRepository {
             // wtedy zostaje polski jako język kancelarii, a nie pusty kod.
             language: LanguageCode(lenient: dto.language) ?? .pl,
             topic: dto.topic,
-            stage: try mapStage(dto.stage),
+            stage: try decodeToken(dto.stage, as: ClientStage.self, "nieznany etap klienta"),
             source: try mapSource(dto.source),
             createdAt: dto.createdAt,
             // Model aplikacji nie ma opcjonalnego briefingu, więc `null` to pusty
@@ -1152,7 +1125,7 @@ extension BackendRepository {
             needsReply: dto.needsReply,
             // Znacznik spoza formatu ISO nie zatrzymuje listy: zgłoszenie
             // zostaje, a wiek liczymy wtedy z samej daty (`LeadWorkflow`).
-            receivedAt: dto.receivedAt.flatMap(MobileAuthClient.parseISO8601),
+            receivedAt: dto.receivedAt.flatMap(EmmaTime.parseISO8601),
             phone: nonEmpty(dto.phone),
             email: nonEmpty(dto.email),
             version: Version(dto.version),
@@ -1164,12 +1137,12 @@ extension BackendRepository {
     /// Termin rezerwacji przychodzi w UTC; w aplikacji to dzień i godzina
     /// w strefie kancelarii — tak, jak klient wybrał je na stronie.
     static func mapConsultation(_ dto: BackendConsultationDTO) -> ConsultationRequest {
-        let instant = dto.at.flatMap(MobileAuthClient.parseISO8601)
+        let instant = dto.at.flatMap(EmmaTime.parseISO8601)
         return ConsultationRequest(
             minutes: dto.minutes,
             priceGrosze: dto.priceGrosze,
-            day: instant.map { localDate(of: $0) },
-            time: instant.flatMap { localTime(of: $0) }
+            day: instant.map { LocalDate(instant: $0) },
+            time: instant.map { TimeOfDay.at($0) }
         )
     }
 
@@ -1179,15 +1152,6 @@ extension BackendRepository {
             return nil
         }
         return trimmed
-    }
-
-    static func mapStage(_ raw: String) throws -> ClientStage {
-        switch raw {
-        case "new": return .new
-        case "in_contact": return .inContact
-        case "client": return .client
-        default: throw BackendRepositoryError.decoding("nieznany etap klienta: \(raw)")
-        }
     }
 
     static func mapSource(_ raw: String) throws -> ClientSource {
@@ -1208,7 +1172,7 @@ extension BackendRepository {
             number: dto.number,
             title: dto.title,
             clientID: ClientID(dto.clientID),
-            status: try mapCaseStatus(dto.status),
+            status: try decodeToken(dto.status, as: CaseStatus.self, "nieznany status sprawy"),
             summary: dto.summary ?? "",
             createdAt: dto.createdAt,
             version: Version(dto.version),
@@ -1228,16 +1192,7 @@ extension BackendRepository {
         return try mapLegalCase(dto)
     }
 
-    static func mapCaseStatus(_ raw: String) throws -> CaseStatus {
-        switch raw {
-        case "in_progress": return .inProgress
-        case "awaiting_client": return .awaitingClient
-        case "closed": return .closed
-        default: throw BackendRepositoryError.decoding("nieznany status sprawy: \(raw)")
-        }
-    }
-
-    static func mapTask(_ dto: BackendTaskDTO) throws -> TaskItem? {
+    static func mapTask(_ dto: BackendTaskDTO) throws -> TaskItem {
         // Panel kancelarii dopuszcza zadania bez terminu (na produkcji 3 z 10).
         // Wcześniej takie zadanie znikało z aplikacji; teraz trafia do grupy
         // „Bez terminu” — bez daty zastępczej, która udawałaby „po terminie”.
@@ -1258,24 +1213,15 @@ extension BackendRepository {
             caseID: dto.caseID.map { CaseID($0) },
             dueDate: dueDate,
             isDone: dto.isDone,
-            priority: try mapPriority(dto.priority),
+            priority: try decodeToken(dto.priority, as: TaskPriority.self, "nieznany priorytet zadania"),
             version: Version(dto.version)
         )
     }
 
-    static func mapPriority(_ raw: String) throws -> TaskPriority {
-        switch raw {
-        case "urgent": return .urgent
-        case "normal": return .normal
-        default: throw BackendRepositoryError.decoding("nieznany priorytet zadania: \(raw)")
-        }
-    }
-
-    /// Termin z backendu. `nil` znaczy „terminu nie da się przypisać do klienta”
-    /// — kontrakt wymaga `client_id`, ale baza kancelarii dopuszcza terminy bez
-    /// kartoteki. Zwracamy wtedy `nil` zamiast rzucać, bo jeden taki termin nie
-    /// jest powodem, by gasnąć cały ekran.
-    static func mapEvent(_ dto: BackendEventDTO) throws -> ScheduledEvent? {
+    /// Termin z backendu. Termin bez klienta (rozprawa, spotkanie wewnętrzne)
+    /// jest pełnoprawnym terminem kancelarii — kalendarz i przypomnienia muszą
+    /// go widzieć, więc pusty `client_id` to po prostu brak klienta.
+    static func mapEvent(_ dto: BackendEventDTO) throws -> ScheduledEvent {
         let clientID = dto.clientID.flatMap { $0.isEmpty ? nil : ClientID($0) }
         return ScheduledEvent(
             id: EventID(dto.id),
@@ -1285,8 +1231,8 @@ extension BackendRepository {
             day: dto.day,
             time: try mapEventTime(dto.time),
             durationMinutes: dto.durationMinutes,
-            kind: try mapEventKind(dto.kind),
-            status: try mapEventStatus(dto.status),
+            kind: try decodeToken(dto.kind, as: EventKind.self, "nieznany rodzaj terminu"),
+            status: try decodeToken(dto.status, as: EventStatus.self, "nieznany status terminu"),
             place: dto.place ?? "",
             isAllDay: dto.allDay,
             version: Version(dto.version)
@@ -1295,38 +1241,14 @@ extension BackendRepository {
 
     static func mapEventTime(_ raw: String?) throws -> TimeOfDay {
         guard let raw, !raw.isEmpty else {
-            // Termin całodniowy nie ma godziny. Model aplikacji nie zna jeszcze
-            // terminu bez godziny, więc zostaje północ **jako brak godziny**,
-            // a prawdę niesie `isAllDay`. Ograniczenie: dopóki widoki nie
-            // obsłużą `isAllDay`, taki termin pokaże się z godziną 00:00.
+            // Termin całodniowy nie ma godziny: model trzyma północ **jako brak
+            // godziny**, a prawdę niesie `isAllDay` (widoki pokazują „cały dzień”).
             return TimeOfDay(minutes: 0)!
         }
         guard let value = TimeOfDay(hhmm: raw) else {
             throw BackendRepositoryError.decoding("nieznana godzina terminu: \(raw)")
         }
         return value
-    }
-
-    /// Słownik **kontraktu**, nie CRM: `consultation` / `case_deadline`.
-    /// Backend mapuje swoje cztery rodzaje na te dwie wartości, więc aplikacja
-    /// nie musi znać `hearing` ani `meeting`.
-    static func mapEventKind(_ raw: String) throws -> EventKind {
-        switch raw {
-        case "case_deadline": return .caseDeadline
-        case "consultation": return .consultation
-        default: throw BackendRepositoryError.decoding("nieznany rodzaj terminu: \(raw)")
-        }
-    }
-
-    /// Stan terminu: CRM go nie prowadzi i wysyła `to_confirm`, ale gdy panel
-    /// zacznie zapisywać stan, aplikacja odczyta go bez zmiany.
-    static func mapEventStatus(_ raw: String) throws -> EventStatus {
-        switch raw {
-        case "to_confirm": return .toConfirm
-        case "confirmed": return .confirmed
-        case "finished": return .finished
-        default: throw BackendRepositoryError.decoding("nieznany status terminu: \(raw)")
-        }
     }
 
     static func mapNote(_ dto: BackendNoteDTO) throws -> CaseNote {
@@ -1360,32 +1282,13 @@ extension BackendRepository {
     /// września. Pełny znacznik przeliczamy więc na `Europe/Warsaw`; sama data
     /// (`YYYY-MM-DD`) jest już dniem lokalnym i nie wymaga przeliczenia.
     static func mapLocalDate(fromISO raw: String) throws -> LocalDate {
-        if raw.count > 10, let instant = MobileAuthClient.parseISO8601(raw) {
-            return localDate(of: instant)
+        if raw.count > 10, let instant = EmmaTime.parseISO8601(raw) {
+            return LocalDate(instant: instant)
         }
         guard let value = LocalDate(iso: String(raw.prefix(10))) else {
             throw BackendRepositoryError.decoding("nieznana data ISO: \(raw)")
         }
         return value
-    }
-
-    private static func localDate(of instant: Date) -> LocalDate {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: EmmaTime.referenceTimeZone) ?? .gmt
-        let components = calendar.dateComponents([.year, .month, .day], from: instant)
-        return LocalDate(
-            year: components.year ?? 1970,
-            month: components.month ?? 1,
-            day: components.day ?? 1
-        )
-    }
-
-    private static func localTime(of instant: Date) -> TimeOfDay? {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: EmmaTime.referenceTimeZone) ?? .gmt
-        let components = calendar.dateComponents([.hour, .minute], from: instant)
-        guard let hour = components.hour, let minute = components.minute else { return nil }
-        return TimeOfDay(hhmm: String(format: "%02d:%02d", hour, minute))
     }
 
     static func mapTime(_ raw: String?) throws -> TimeOfDay? {
@@ -1426,7 +1329,7 @@ extension BackendRepository: CaseDocumentsRepository {
     }
 
     static func document(from dto: BackendDocumentDTO) throws -> CaseDocument {
-        guard let uploadedAt = MobileAuthClient.parseISO8601(dto.uploadedAt) else {
+        guard let uploadedAt = EmmaTime.parseISO8601(dto.uploadedAt) else {
             throw BackendRepositoryError.decoding("nieprawidłowa data dokumentu: \(dto.uploadedAt)")
         }
         return CaseDocument(
@@ -1445,20 +1348,21 @@ extension BackendRepository: CaseDocumentsRepository {
 
 // MARK: - Łączenie równoległych zapytań
 
-/// Jedno zapytanie dla wielu równoczesnych pytających. To nie jest pamięć
-/// podręczna: po zakończeniu zapytania następne pytanie idzie do serwera.
-/// Zapis stanu wątku i tak czyta wersję z osobnego, świeżego zapytania.
-actor SharedRequest<Value: Sendable> {
-    private var inFlight: (id: Int, task: Task<Value, any Error>)?
+/// Jedno zapytanie dla wielu równoczesnych pytających o to samo (ten sam
+/// klucz). To nie jest pamięć podręczna: po zakończeniu zapytania następne
+/// pytanie idzie do serwera. Zapis stanu wątku i tak czyta wersję z osobnego,
+/// świeżego zapytania.
+actor SharedRequest<Key: Hashable & Sendable, Value: Sendable> {
+    private var inFlight: [Key: (id: Int, task: Task<Value, any Error>)] = [:]
     private var nextID = 0
 
-    func run(_ fetch: @escaping @Sendable () async throws -> Value) async throws -> Value {
-        if let inFlight { return try await inFlight.task.value }
+    func run(_ key: Key, _ fetch: @escaping @Sendable () async throws -> Value) async throws -> Value {
+        if let running = inFlight[key] { return try await running.task.value }
         nextID += 1
         let id = nextID
         let task = Task { try await fetch() }
-        inFlight = (id, task)
-        defer { if inFlight?.id == id { inFlight = nil } }
+        inFlight[key] = (id, task)
+        defer { if inFlight[key]?.id == id { inFlight[key] = nil } }
         return try await task.value
     }
 }

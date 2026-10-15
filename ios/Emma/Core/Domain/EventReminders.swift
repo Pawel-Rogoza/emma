@@ -112,15 +112,11 @@ public enum EventReminderPlan {
         of event: ScheduledEvent,
         timeZoneIdentifier: String = EmmaTime.referenceTimeZone
     ) -> Date? {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: timeZoneIdentifier) ?? TimeZone(identifier: "UTC")!
-        var components = DateComponents()
-        components.year = event.day.year
-        components.month = event.day.month
-        components.day = event.day.day
-        components.hour = event.isAllDay ? allDayHour : event.time.hour
-        components.minute = event.isAllDay ? 0 : event.time.minute
-        return calendar.date(from: components)
+        event.day.instant(
+            hour: event.isAllDay ? allDayHour : event.time.hour,
+            minute: event.isAllDay ? 0 : event.time.minute,
+            timeZoneIdentifier: timeZoneIdentifier
+        )
     }
 
     /// „Za 1 godz.: Konsultacja”, „Jutro: Termin w sprawie”.
@@ -275,13 +271,6 @@ public enum MorningBrief {
     }
 
     static func instant(day: LocalDate, timeZoneIdentifier: String) -> Date? {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: timeZoneIdentifier) ?? TimeZone(identifier: "UTC")!
-        var components = DateComponents()
-        components.year = day.year
-        components.month = day.month
-        components.day = day.day
-        components.hour = hour
-        return calendar.date(from: components)
+        day.instant(hour: hour, timeZoneIdentifier: timeZoneIdentifier)
     }
 }

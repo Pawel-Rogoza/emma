@@ -328,14 +328,6 @@ public enum LeadWorkflow {
 
     /// Południe danego dnia w strefie kancelarii (przybliżenie chwili przyjęcia).
     static func noon(of day: LocalDate) -> Date {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: EmmaTime.referenceTimeZone) ?? TimeZone(identifier: "UTC")!
-        var components = DateComponents()
-        components.year = day.year
-        components.month = day.month
-        components.day = day.day
-        components.hour = 12
-        if let date = calendar.date(from: components) { return date }
-        return Date(timeIntervalSince1970: TimeInterval(day.daysSinceEpoch) * 86_400 + 43_200)
+        day.instant(hour: 12) ?? Date(timeIntervalSince1970: TimeInterval(day.daysSinceEpoch) * 86_400 + 43_200)
     }
 }

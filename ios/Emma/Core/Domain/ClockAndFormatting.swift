@@ -13,14 +13,7 @@ public struct SystemClock: Clock {
     public init() {}
     public func now() -> Date { Date() }
     public func today() -> LocalDate {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: EmmaTime.referenceTimeZone) ?? .gmt
-        let components = calendar.dateComponents([.year, .month, .day], from: Date())
-        return LocalDate(
-            year: components.year ?? 1970,
-            month: components.month ?? 1,
-            day: components.day ?? 1
-        )
+        LocalDate(instant: Date())
     }
 }
 
@@ -33,15 +26,8 @@ public final class DemoClock: Clock, @unchecked Sendable {
 
     public init(referenceDate: LocalDate = LocalDate(year: 2026, month: 9, day: 11), hour: Int = 9, minute: Int = 41) {
         self.referenceDate = referenceDate
-        var components = DateComponents()
-        components.year = referenceDate.year
-        components.month = referenceDate.month
-        components.day = referenceDate.day
-        components.hour = hour
-        components.minute = minute
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: EmmaTime.referenceTimeZone) ?? .gmt
-        self.currentInstant = calendar.date(from: components) ?? Date(timeIntervalSince1970: 1_789_000_000)
+        self.currentInstant = referenceDate.instant(hour: hour, minute: minute)
+            ?? Date(timeIntervalSince1970: 1_789_000_000)
     }
 
     public func now() -> Date {
@@ -166,7 +152,7 @@ public struct DateTextFormatter: Sendable {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "pl_PL")
         formatter.dateFormat = "HH:mm"
-        formatter.timeZone = TimeZone(identifier: EmmaTime.referenceTimeZone)
+        formatter.timeZone = EmmaTime.firmTimeZone
         return formatter
     }()
 

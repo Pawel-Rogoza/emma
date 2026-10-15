@@ -167,25 +167,12 @@ public struct MobileAuthClient: MobileAuthServicing {
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
             let raw = try container.decode(String.self)
-            if let date = parseISO8601(raw) { return date }
+            if let date = EmmaTime.parseISO8601(raw) { return date }
             throw DecodingError.dataCorruptedError(
                 in: container,
                 debugDescription: "Nieznany format daty: \(raw)"
             )
         }
         return decoder
-    }
-
-    /// Formater powstaje na jedno wywołanie: logowanie jest rzadkie, a dzięki
-    /// temu nie trzymamy współdzielonej instancji klasy, która nie jest
-    /// `Sendable` — w trybie Swift 6 to nie jest szczegół stylistyczny.
-    static func parseISO8601(_ raw: String) -> Date? {
-        let withFraction = ISO8601DateFormatter()
-        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = withFraction.date(from: raw) { return date }
-
-        let plain = ISO8601DateFormatter()
-        plain.formatOptions = [.withInternetDateTime]
-        return plain.date(from: raw)
     }
 }

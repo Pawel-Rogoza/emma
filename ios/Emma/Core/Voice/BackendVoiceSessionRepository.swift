@@ -121,10 +121,7 @@ public struct BackendVoiceSessionRepository: VoiceSessionRepository, Sendable {
     /// ISO-8601 z milisekundami i bez nich — dostawcy piszą oba warianty.
     static func parseExpiry(_ raw: String?) -> Date? {
         guard let raw, !raw.isEmpty else { return nil }
-        let withFraction = ISO8601DateFormatter()
-        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = withFraction.date(from: raw) { return date }
-        return ISO8601DateFormatter().date(from: raw)
+        return EmmaTime.parseISO8601(raw)
     }
 
     /// `PATCH /voice/sessions/{id}/context`. Wersja może tylko rosnąć, więc nowa

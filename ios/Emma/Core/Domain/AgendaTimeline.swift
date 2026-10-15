@@ -11,9 +11,7 @@ public extension TimeOfDay {
 
     /// Godzina dnia odczytana z konkretnego momentu, w strefie kancelarii.
     static func at(_ instant: Date, timeZoneIdentifier: String = EmmaTime.referenceTimeZone) -> TimeOfDay {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: timeZoneIdentifier) ?? .gmt
-        let parts = calendar.dateComponents([.hour, .minute], from: instant)
+        let parts = EmmaTime.calendar(timeZoneIdentifier: timeZoneIdentifier).dateComponents([.hour, .minute], from: instant)
         let minutes = (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
         // Zakres jest przycięty do doby, więc wymuszenie jest bezpieczne —
         // a `init?(minutes:)` chroni ten warunek w jednym miejscu.

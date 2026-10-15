@@ -186,7 +186,7 @@ struct ConversationRow: View {
     /// dalej — data. Jak w WhatsAppie.
     private var timeLabel: String {
         guard let preview else { return "" }
-        let day = AppDependencies.localDate(from: preview.sentAt)
+        let day = LocalDate(instant: preview.sentAt)
         let today = dependencies.today
         if day == today { return dependencies.dateText.clockTime(preview.sentAt) }
         if day == today.adding(days: -1) { return "Wczoraj" }

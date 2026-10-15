@@ -340,16 +340,8 @@ public enum DemoFixtures {
 
     /// Zegary wiadomości demo. Sekwencje rosną monotonicznie w obrębie wątku.
     private static func instant(_ day: LocalDate, _ hhmm: String) -> Date {
-        var components = DateComponents()
-        components.year = day.year
-        components.month = day.month
-        components.day = day.day
-        let parts = hhmm.split(separator: ":")
-        components.hour = Int(parts[0])
-        components.minute = Int(parts[1])
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: EmmaTime.referenceTimeZone) ?? .gmt
-        return calendar.date(from: components) ?? Date(timeIntervalSince1970: 0)
+        let time = TimeOfDay(hhmm: hhmm) ?? TimeOfDay(minutes: 0)!
+        return day.instant(hour: time.hour, minute: time.minute) ?? Date(timeIntervalSince1970: 0)
     }
 
     public static let threads: [ConversationThread] = [

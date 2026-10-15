@@ -8,8 +8,7 @@ import SwiftUI
 //
 // Nota `.demo-foot` mówi prawdę o bieżącym środowisku: w Demo nie ma połączenia
 // z backendem; poza Demo rozmowa idzie przez Gemini Live do prawdziwego backendu,
-// a demonstracyjne pozostają tylko te czynności, które
-// naprawdę są symulowane (np. wysyłka wiadomości).
+// a nota mówi, co Emma robi sama, a co dopiero po zatwierdzeniu.
 //
 // Przebudowa 29.09.2026 — ten sam język co „Dzisiaj” i „Klienci”:
 //   • duży tytuł „Emma” z linijką stanu (gotowa / rozmowa trwa),
@@ -684,10 +683,13 @@ struct AssistantScreen: View {
                 + "a wysyłka wiadomości jest symulowana. Odsłuch w demo jest scenariuszowy "
                 + "(bez dźwięku); poza demo czyta go syntezator systemu, nie głos Emmy."
         }
+        // Audyt 16.10.2026: ta nota mówiła poza Demo, że „WhatsApp nie jest
+        // podłączony”, a wysyłka i zapisy są symulowane — od października to
+        // nieprawda (Dualhook, zapis akcji przez serwer kancelarii).
         return "Rozmowa głosowa łączy się z Gemini Live przez serwer kancelarii "
-            + "(klucz dostawcy nigdy nie trafia do aplikacji). Nadal demonstracyjne: "
-            + "wysyłka wiadomości i zapisy akcji są symulowane, WhatsApp nie jest podłączony, "
-            + "a odsłuch tekstu czyta syntezator systemu, nie głos Emmy."
+            + "(klucz dostawcy nigdy nie trafia do aplikacji). Emma niczego nie wysyła sama: "
+            + "odpowiedź klientowi wysyłasz z pola rozmowy, a notatka czy zadanie powstają "
+            + "dopiero po Twoim zatwierdzeniu. Odsłuch tekstu czyta syntezator systemu, nie głos Emmy."
     }
 
     // MARK: Kompozytor tekstu (`.assistant-compose`)

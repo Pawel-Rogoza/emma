@@ -216,7 +216,9 @@ final class CalendarStore: ObservableObject {
     }
 
     /// Odhaczenie zadania w kalendarzu: od razu w modelu, potem zapis.
-    /// Błąd zapisu przywraca poprzedni stan (odświeżenie po `dataChanged`).
+    /// Udany zapis podmienia zadanie na zapisane (z nową wersją — drugie szybkie
+    /// dotknięcie nie trafia w konflikt wersji przed odświeżeniem), a błąd
+    /// przywraca poprzedni stan.
     func toggle(_ task: TaskItem, dependencies: AppDependencies) async {
         guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
         tasks[index].isDone.toggle()
@@ -228,10 +230,10 @@ final class CalendarStore: ObservableObject {
                 expectedVersion: task.version
             )
         }
-        if saved == nil, let index = tasks.firstIndex(where: { $0.id == task.id }) {
-            tasks[index] = task
-            rebuild(today: dependencies.today)
-        }
+        // Lista mogła się przeładować w trakcie zapisu — szukamy zadania od nowa.
+        guard let current = tasks.firstIndex(where: { $0.id == task.id }) else { return }
+        tasks[current] = saved ?? task
+        rebuild(today: dependencies.today)
     }
 
     private func isLoaded(_ day: LocalDate) -> Bool {

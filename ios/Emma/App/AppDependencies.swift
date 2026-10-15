@@ -273,7 +273,7 @@ public final class AppDependencies: ObservableObject {
             resolvedClock = SystemClock()
         }
         self.clock = resolvedClock
-        self.referenceDay = AppDependencies.localDate(from: resolvedClock.now())
+        self.referenceDay = LocalDate(instant: resolvedClock.now())
 
         let dataset = resolution.fixture.usesLongNames
             ? DemoFixtures.datasetWithLongNames()
@@ -875,25 +875,10 @@ public final class AppDependencies: ObservableObject {
         DateTextFormatter(today: today)
     }
 
-    /// Dzień bieżący według zegara aplikacji i strefy kancelarii.
+    /// Dzień bieżący według zegara aplikacji i strefy kancelarii. Świadomie nie
+    /// `Calendar.current`: prezentacja ma być deterministyczna niezależnie od
+    /// ustawień telefonu (§2.2) — patrz `LocalDate(instant:)`.
     public var today: LocalDate {
-        AppDependencies.localDate(from: clock.now())
-    }
-
-    /// Zamiana znacznika czasu na datę lokalną w strefie kancelarii.
-    /// Świadomie nie używamy `Calendar.current`: prezentacja ma być deterministyczna
-    /// niezależnie od ustawień telefonu (§2.2).
-    public static func localDate(
-        from date: Date,
-        timeZoneIdentifier: String = EmmaTime.referenceTimeZone
-    ) -> LocalDate {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: timeZoneIdentifier) ?? TimeZone(identifier: "UTC")!
-        let components = calendar.dateComponents([.year, .month, .day], from: date)
-        return LocalDate(
-            year: components.year ?? 2026,
-            month: components.month ?? 1,
-            day: components.day ?? 1
-        )
+        LocalDate(instant: clock.now())
     }
 }

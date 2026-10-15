@@ -73,8 +73,7 @@ struct ProfileSheet: View {
     }
 
     /// Nota o środowisku. W Demo mówi o scenariuszach i wspólnej dacie; poza Demo
-    /// opisuje stan faktyczny — dane i głos idą z serwera kancelarii, a jedyne, co
-    /// pozostaje symulowane, to wysyłka wiadomości (WhatsApp nie jest podłączony).
+    /// opisuje stan faktyczny — dane, rozmowy WhatsApp i głos idą z serwera kancelarii.
     private var environmentNote: String {
         if dependencies.configuration.usesMockServices {
             return "Jedno wspólne konto zespołu: te same sprawy, zadania i rozmowy. "

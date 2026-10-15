@@ -107,6 +107,12 @@ public struct BackendAPIClient: Sendable {
         case threads = "api/mobile/v1/threads"
         /// Treść dokumentu z akt (`GET /files/{file_id}`).
         case files = "api/mobile/v1/files"
+        /// Emma pisemnie: pytania, oceny odpowiedzi i zużycie w miesiącu.
+        case assistant = "api/mobile/v1/assistant"
+        /// Alerty liczone na serwerze (Emma proaktywna).
+        case emmaAlerts = "api/mobile/v1/emma/alerts"
+        /// Koszt rozmów głosowych w bieżącym miesiącu.
+        case voiceUsage = "api/mobile/v1/voice/usage"
     }
 
     /// Domyślny rozmiar strony z kontraktu (`limit`, maks. 100). Repozytorium
@@ -161,7 +167,7 @@ public struct BackendAPIClient: Sendable {
             items.append(URLQueryItem(name: "query", value: query))
         }
         if let stage {
-            items.append(URLQueryItem(name: "stage", value: Self.stageToken(stage)))
+            items.append(URLQueryItem(name: "stage", value: stage.contractToken))
         }
         items.append(URLQueryItem(name: "limit", value: String(limit)))
         if let cursor, !cursor.isEmpty {
@@ -180,17 +186,10 @@ public struct BackendAPIClient: Sendable {
     /// `expected_version` jedzie w ciele (tak samo jak przy usunięciu terminu):
     /// bez tego drugie urządzenie mogłoby usunąć coś innego, niż widziało.
     func deleteClient(id: String, expectedVersion: Int, idempotencyKey: String) async throws {
-        struct Body: Encodable {
-            let expectedVersion: Int
-
-            enum CodingKeys: String, CodingKey {
-                case expectedVersion = "expected_version"
-            }
-        }
         try await sendNoContent(
             "DELETE",
             path: "\(Endpoint.clients.rawValue)/\(id)",
-            body: Body(expectedVersion: expectedVersion),
+            body: try Self.encode(BackendExpectedVersionBody(expectedVersion: expectedVersion)),
             idempotencyKey: idempotencyKey
         )
     }
@@ -291,14 +290,7 @@ public struct BackendAPIClient: Sendable {
             request.timeoutInterval = max(request.timeoutInterval, 120)
             return request
         }
-        guard (200..<300).contains(http.statusCode) else {
-            throw Self.error(from: http, data: data)
-        }
-        do {
-            return try Self.decoder.decode(BackendItems<BackendDocumentDTO>.self, from: data).items
-        } catch {
-            throw BackendRepositoryError.decoding("\(error)")
-        }
+        return try Self.decode(BackendItems<BackendDocumentDTO>.self, from: data, http: http).items
     }
 
     /// `GET /api/mobile/v1/files/{file_id}` — surowa treść dokumentu.
@@ -309,9 +301,7 @@ public struct BackendAPIClient: Sendable {
             request.timeoutInterval = max(request.timeoutInterval, 120)
             return request
         }
-        guard (200..<300).contains(http.statusCode) else {
-            throw Self.error(from: http, data: data)
-        }
+        try Self.requireSuccess(http, data: data)
         return data
     }
 
@@ -339,7 +329,7 @@ public struct BackendAPIClient: Sendable {
     func cases(status: CaseStatus?, clientID: ClientID? = nil) async throws -> [BackendLegalCaseDTO] {
         var items: [URLQueryItem] = []
         if let status {
-            items.append(URLQueryItem(name: "status", value: Self.caseStatusToken(status)))
+            items.append(URLQueryItem(name: "status", value: status.contractToken))
         }
         if let clientID {
             items.append(URLQueryItem(name: "client_id", value: clientID.rawValue))
@@ -348,19 +338,10 @@ public struct BackendAPIClient: Sendable {
         return response.items
     }
 
-    /// Token statusu sprawy w słowniku kontraktu.
-    static func caseStatusToken(_ status: CaseStatus) -> String {
-        switch status {
-        case .inProgress: return "in_progress"
-        case .awaitingClient: return "awaiting_client"
-        case .closed: return "closed"
-        }
-    }
-
     /// `GET /api/mobile/v1/tasks?scope=&client_id=&case_id=&due_on_or_before=`.
     func tasks(filter: TaskFilter) async throws -> [BackendTaskDTO] {
         var items: [URLQueryItem] = [
-            URLQueryItem(name: "scope", value: Self.scopeToken(filter.scope))
+            URLQueryItem(name: "scope", value: filter.scope.contractToken)
         ]
         if let clientID = filter.clientID {
             items.append(URLQueryItem(name: "client_id", value: clientID.rawValue))
@@ -419,7 +400,7 @@ public struct BackendAPIClient: Sendable {
         try await sendNoContent(
             "DELETE",
             path: "\(Endpoint.events.rawValue)/\(id)",
-            body: BackendExpectedVersionBody(expectedVersion: expectedVersion),
+            body: try Self.encode(BackendExpectedVersionBody(expectedVersion: expectedVersion)),
             idempotencyKey: idempotencyKey
         )
     }
@@ -585,7 +566,7 @@ public struct BackendAPIClient: Sendable {
         // domyślne 20 s; serwer sam przerywa turę po 90 s.
         try await send(
             "POST",
-            path: "api/mobile/v1/assistant/messages",
+            path: "\(Endpoint.assistant.rawValue)/messages",
             body: body,
             idempotencyKey: idempotencyKey,
             minimumTimeout: 100
@@ -594,22 +575,22 @@ public struct BackendAPIClient: Sendable {
 
     /// `POST /api/mobile/v1/assistant/feedback` — ocena odpowiedzi Emmy (👍/👎).
     func rateAssistant(body: BackendAssistantFeedbackBody, idempotencyKey: String) async throws -> BackendOKDTO {
-        try await send("POST", path: "api/mobile/v1/assistant/feedback", body: body, idempotencyKey: idempotencyKey)
+        try await send("POST", path: "\(Endpoint.assistant.rawValue)/feedback", body: body, idempotencyKey: idempotencyKey)
     }
 
     /// `GET /api/mobile/v1/assistant/usage` — Emma pisemnie w tym miesiącu.
     func assistantUsage() async throws -> BackendAssistantUsageDTO {
-        try await get("api/mobile/v1/assistant/usage", query: [])
+        try await get("\(Endpoint.assistant.rawValue)/usage", query: [])
     }
 
     /// `GET /api/mobile/v1/emma/alerts` — Emma proaktywna (Etap 3).
     func emmaAlerts() async throws -> BackendEmmaAlertsDTO {
-        try await get("api/mobile/v1/emma/alerts", query: [])
+        try await get(Endpoint.emmaAlerts.rawValue, query: [])
     }
 
     /// `GET /api/mobile/v1/voice/usage` — koszt rozmów głosowych w tym miesiącu.
     func voiceUsage() async throws -> BackendVoiceUsageDTO {
-        try await get("api/mobile/v1/voice/usage", query: [])
+        try await get(Endpoint.voiceUsage.rawValue, query: [])
     }
 
     /// `POST /api/mobile/v1/threads/{thread_id}/lead` — rozmowa bez osoby staje się leadem.
@@ -669,15 +650,34 @@ public struct BackendAPIClient: Sendable {
         let (data, http) = try await authenticatedRequest { token in
             try self.makeRequest(path: path, query: query, token: token)
         }
+        return try Self.decode(T.self, from: data, http: http)
+    }
+
+    /// Status spoza 2xx jako błąd domenowy — jedno miejsce dla wszystkich tras.
+    private static func requireSuccess(_ http: HTTPURLResponse, data: Data) throws {
         guard (200..<300).contains(http.statusCode) else {
             throw Self.error(from: http, data: data)
         }
+    }
+
+    /// Odpowiedź 2xx w kształcie kontraktu. Nieudanego dekodowania nie
+    /// podmieniamy na pusty wynik: brak danych i niezgodność kontraktu to dwie
+    /// różne sytuacje dla użytkownika.
+    private static func decode<T: Decodable>(_ type: T.Type, from data: Data, http: HTTPURLResponse) throws -> T {
+        try requireSuccess(http, data: data)
         do {
-            return try Self.decoder.decode(T.self, from: data)
+            return try decoder.decode(T.self, from: data)
         } catch {
-            // Nie podmieniamy nieudanego dekodowania na pusty wynik: brak danych
-            // i niezgodność kontraktu to dwie różne sytuacje dla użytkownika.
             throw BackendRepositoryError.decoding("\(error)")
+        }
+    }
+
+    /// Ciało żądania jako JSON.
+    private static func encode<B: Encodable>(_ body: B) throws -> Data {
+        do {
+            return try encoder.encode(body)
+        } catch {
+            throw BackendRepositoryError.decoding("nie udało się zapisać treści żądania: \(error)")
         }
     }
 
@@ -751,12 +751,7 @@ public struct BackendAPIClient: Sendable {
         headers: [String: String] = [:],
         minimumTimeout: TimeInterval? = nil
     ) async throws -> T {
-        let encoded: Data
-        do {
-            encoded = try Self.encoder.encode(body)
-        } catch {
-            throw BackendRepositoryError.decoding("nie udało się zapisać treści żądania: \(error)")
-        }
+        let encoded = try Self.encode(body)
         let (data, http) = try await authenticatedRequest { token in
             var request = try self.makeRequest(
                 path: path,
@@ -769,64 +764,31 @@ public struct BackendAPIClient: Sendable {
             if let minimumTimeout { request.timeoutInterval = max(request.timeoutInterval, minimumTimeout) }
             return request
         }
-        guard (200..<300).contains(http.statusCode) else {
-            throw Self.error(from: http, data: data)
-        }
-        do {
-            return try Self.decoder.decode(T.self, from: data)
-        } catch {
-            throw BackendRepositoryError.decoding("\(error)")
-        }
+        return try Self.decode(T.self, from: data, http: http)
     }
 
-    /// Zapis z ciałem, którego odpowiedź nie niesie treści (204).
+    /// Zapis, którego odpowiedź nie niesie treści (204); `body` — gotowy JSON
+    /// albo `nil` bez ciała.
     ///
     /// Istnieje osobno od `send(_:path:body:)`, bo tamten **dekoduje** odpowiedź:
     /// przy 204 nie ma czego dekodować, a próba kończyłaby się błędem mimo
     /// udanego zapisu.
-    private func sendNoContent<B: Encodable>(
-        _ method: String,
-        path: String,
-        body: B,
-        idempotencyKey: String
-    ) async throws {
-        let encoded: Data
-        do {
-            encoded = try Self.encoder.encode(body)
-        } catch {
-            throw BackendRepositoryError.decoding("nie udało się zapisać treści żądania: \(error)")
-        }
-        let (data, http) = try await authenticatedRequest { token in
-            try self.makeRequest(
-                path: path,
-                method: method,
-                body: encoded,
-                idempotencyKey: idempotencyKey,
-                token: token
-            )
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            throw Self.error(from: http, data: data)
-        }
-    }
-
-    /// Zapis bez treści oczekiwanej w odpowiedzi (204).
     private func sendNoContent(
         _ method: String,
         path: String,
+        body: Data? = nil,
         idempotencyKey: String
     ) async throws {
         let (data, http) = try await authenticatedRequest { token in
             try self.makeRequest(
                 path: path,
                 method: method,
+                body: body,
                 idempotencyKey: idempotencyKey,
                 token: token
             )
         }
-        guard (200..<300).contains(http.statusCode) else {
-            throw Self.error(from: http, data: data)
-        }
+        try Self.requireSuccess(http, data: data)
     }
 
     // MARK: Żądanie z obsługą wygaśnięcia tokenu
@@ -873,28 +835,21 @@ public struct BackendAPIClient: Sendable {
             // bezpieczny do powtórzenia, więc ponawiamy go raz, po krótkiej
             // przerwie, zamiast pokazywać błąd, który znika po drugim „odśwież”.
             try await Task.sleep(nanoseconds: 350_000_000)
-            return try await performOnce(request)
-        } catch let error as URLError {
-            throw Self.mapTransport(error)
+            do {
+                return try await session.data(for: request)
+            } catch {
+                throw Self.mapTransport(error)
+            }
         } catch {
-            throw BackendRepositoryError.transport(error.localizedDescription)
-        }
-    }
-
-    private func performOnce(_ request: URLRequest) async throws -> (Data, URLResponse) {
-        do {
-            return try await session.data(for: request)
-        } catch let error as URLError {
             throw Self.mapTransport(error)
-        } catch {
-            throw BackendRepositoryError.transport(error.localizedDescription)
         }
     }
 
     /// Anulowanie to nasza decyzja, nie awaria sieci — nie zamieniamy jej
     /// na błąd transportu, bo zadanie i tak jest już porzucone.
-    private static func mapTransport(_ error: URLError) -> Error {
-        if error.code == .cancelled { return CancellationError() }
+    private static func mapTransport(_ error: any Error) -> any Error {
+        if error is CancellationError { return error }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return CancellationError() }
         return BackendRepositoryError.transport(error.localizedDescription)
     }
 
@@ -959,859 +914,4 @@ public struct BackendAPIClient: Sendable {
     /// Dekoder powstaje na każde wywołanie: dzięki temu nie trzymamy współdzielonej
     /// instancji, która nie jest `Sendable` — w trybie Swift 6 to nie szczegół stylu.
     static var decoder: JSONDecoder { JSONDecoder() }
-
-    // MARK: Tokeny kontraktu (wartości druciane)
-
-    /// Etap klienta jest w aplikacji opisany po polsku, a w kontrakcie tokenem.
-    /// Trzymamy oba tłumaczenia obok siebie, żeby nie rozjechały się z dekodowaniem.
-    private static func stageToken(_ stage: ClientStage) -> String {
-        switch stage {
-        case .new: return "new"
-        case .inContact: return "in_contact"
-        case .client: return "client"
-        }
-    }
-
-    private static func scopeToken(_ scope: TaskFilter.Scope) -> String {
-        switch scope {
-        case .open: return "open"
-        case .done: return "done"
-        case .all: return "all"
-        }
-    }
-}
-
-// MARK: - Kształty JSON-a kontraktu
-//
-// Typy są wewnętrzne: to nie model aplikacji, tylko wierny obraz odpowiedzi
-// backendu. Mapowanie na `Client`, `TaskItem` itd. należy do `BackendRepository`,
-// więc warstwy nie przeciekają do siebie.
-
-struct BackendItems<T: Decodable>: Decodable {
-    let items: [T]
-}
-
-struct BackendClientPage: Decodable {
-    let items: [BackendClientDTO]
-    let nextCursor: String?
-    let hasMore: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case items
-        case nextCursor = "next_cursor"
-        case hasMore = "has_more"
-    }
-}
-
-struct BackendClientDTO: Decodable {
-    let id: String
-    let displayName: String
-    let initials: String
-    let language: String
-    let topic: String
-    let stage: String
-    let source: String
-    let createdAt: LocalDate
-    let briefing: String?
-    let incomingMessage: String?
-    let incomingTranslation: String?
-    let incomingTime: String?
-    let needsReply: Bool
-    /// Rozszerzenie kontraktu (opcjonalne): dokładna chwila przyjęcia
-    /// zgłoszenia, telefon i e-mail. Starszy backend ich nie wysyła — wtedy
-    /// aplikacja liczy wiek leada z samej daty i nie proponuje dzwonienia.
-    let receivedAt: String?
-    let phone: String?
-    let email: String?
-    let version: Int
-    /// Rozszerzenie 04.10.2026 (opcjonalne): rezerwacja konsultacji ze strony
-    /// i gotowa odpowiedź na lead. Starszy backend ich nie wysyła.
-    let consultation: BackendConsultationDTO?
-    let replyTemplate: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id, initials, language, topic, stage, source, briefing, version, phone, email, consultation
-        case displayName = "display_name"
-        case createdAt = "created_at"
-        case incomingMessage = "incoming_message"
-        case incomingTranslation = "incoming_translation"
-        case incomingTime = "incoming_time"
-        case needsReply = "needs_reply"
-        case receivedAt = "received_at"
-        case replyTemplate = "reply_template"
-    }
-}
-
-struct BackendConsultationDTO: Decodable {
-    let minutes: Int?
-    let priceGrosze: Int?
-    /// Termin w ISO UTC.
-    let at: String?
-
-    enum CodingKeys: String, CodingKey {
-        case minutes, at
-        case priceGrosze = "price_gr"
-    }
-}
-
-struct BackendLegalCaseDTO: Decodable {
-    let id: String
-    let number: String
-    let title: String
-    let clientID: String
-    let status: String
-    let summary: String?
-    let createdAt: LocalDate
-    let version: Int
-    /// Rozszerzenie kontraktu (backend 30.09.2026): sygnatura akt i sąd osobno.
-    let signature: String?
-    let court: String?
-    /// Rozszerzenie kontraktu (01.10.2026): profil sprawy i pilnowane daty.
-    /// Starszy serwer ich nie wysyła — wtedy wszystkie są `nil`.
-    let kind: String?
-    let stage: String?
-    let clientRole: String?
-    let custodyUntil: String?
-    let legalStayUntil: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id, number, title, status, summary, version, signature, court, kind, stage
-        case clientID = "client_id"
-        case createdAt = "created_at"
-        case clientRole = "client_role"
-        case custodyUntil = "custody_until"
-        case legalStayUntil = "legal_stay_until"
-    }
-}
-
-struct BackendTaskDTO: Decodable {
-    let id: String
-    let title: String
-    let clientID: String?
-    let caseID: String?
-    let dueDate: String?
-    let isDone: Bool
-    let priority: String
-    let version: Int
-
-    enum CodingKeys: String, CodingKey {
-        case id, title, priority, version
-        case clientID = "client_id"
-        case caseID = "case_id"
-        case dueDate = "due_date"
-        case isDone = "is_done"
-    }
-}
-
-struct BackendEventDTO: Decodable {
-    let id: String
-    /// Kontrakt wymaga klienta w terminie, ale baza kancelarii zna też terminy
-    /// bez kartoteki (np. konsultację zapisaną z samego zgłoszenia). Pole jest
-    /// więc opcjonalne, żeby jeden taki rekord **nie wywracał dekodowania całej
-    /// odpowiedzi** — aplikacja pomija taki termin, zamiast gasić ekran.
-    let clientID: String?
-    let caseID: String?
-    let title: String
-    let day: LocalDate
-    /// `null` przy terminie całodniowym — kontrakt nie niesie wtedy godziny.
-    let time: String?
-    /// `true` dla terminu całodniowego — wtedy `time` jest `null`.
-    let allDay: Bool
-    let durationMinutes: Int
-    let kind: String
-    let status: String
-    let place: String?
-    let version: Int
-
-    enum CodingKeys: String, CodingKey {
-        case id, title, day, time, kind, status, place, version
-        case clientID = "client_id"
-        case caseID = "case_id"
-        case allDay = "all_day"
-        case durationMinutes = "duration_minutes"
-    }
-}
-
-struct BackendNoteDTO: Decodable {
-    let id: String
-    let clientID: String
-    let caseID: String?
-    let text: String
-    let authorID: String
-    /// Pełny znacznik ISO (`2026-09-13T12:00:00.000Z`); aplikacja trzyma samą datę.
-    let createdAt: String
-    let version: Int
-
-    enum CodingKeys: String, CodingKey {
-        case id, text, version
-        case clientID = "client_id"
-        case caseID = "case_id"
-        case authorID = "author_id"
-        case createdAt = "created_at"
-    }
-}
-
-struct BackendActivityDTO: Decodable {
-    let id: String
-    let text: String
-    let clientID: String?
-    let caseID: String?
-    let createdAt: String
-    let authorID: String
-
-    enum CodingKeys: String, CodingKey {
-        case id, text
-        case clientID = "client_id"
-        case caseID = "case_id"
-        case createdAt = "created_at"
-        case authorID = "author_id"
-    }
-}
-
-struct BackendClientCard: Decodable {
-    let client: BackendClientDTO
-    let legalCase: BackendLegalCaseDTO?
-    let events: [BackendEventDTO]
-    let tasks: [BackendTaskDTO]
-    let notes: [BackendNoteDTO]
-    let activity: [BackendActivityDTO]
-
-    enum CodingKeys: String, CodingKey {
-        case client, events, tasks, notes, activity
-        case legalCase = "case"
-    }
-}
-
-struct BackendCaseDetail: Decodable {
-    let legalCase: BackendLegalCaseDTO
-    let tasks: [BackendTaskDTO]
-    let events: [BackendEventDTO]
-    let notes: [BackendNoteDTO]
-    let activity: [BackendActivityDTO]
-
-    enum CodingKeys: String, CodingKey {
-        case tasks, events, notes, activity
-        case legalCase = "case"
-    }
-}
-
-// MARK: - Kształty JSON-a zapisu
-
-struct BackendEmptyBody: Encodable {}
-
-struct BackendExpectedVersionBody: Encodable {
-    let expectedVersion: Int
-    enum CodingKeys: String, CodingKey { case expectedVersion = "expected_version" }
-}
-
-struct BackendTaskCreateBody: Encodable {
-    let title: String
-    let dueDate: String
-    let priority: String
-    let clientID: String?
-    let caseID: String?
-
-    enum CodingKeys: String, CodingKey {
-        case title, priority
-        case dueDate = "due_date"
-        case clientID = "client_id"
-        case caseID = "case_id"
-    }
-}
-
-struct BackendTaskUpdateBody: Encodable {
-    var expectedVersion: Int
-    var title: String?
-    var dueDate: String?
-    var priority: String?
-    var isDone: Bool?
-    /// Zmiana klienta: `nil` — bez zmiany, `.some(nil)` — odpięcie (`null`).
-    var clientID: String?? = nil
-
-    enum CodingKeys: String, CodingKey {
-        case title, priority
-        case expectedVersion = "expected_version"
-        case dueDate = "due_date"
-        case isDone = "is_done"
-        case clientID = "client_id"
-    }
-
-    func encode(to encoder: any Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(expectedVersion, forKey: .expectedVersion)
-        try container.encodeIfPresent(title, forKey: .title)
-        try container.encodeIfPresent(dueDate, forKey: .dueDate)
-        try container.encodeIfPresent(priority, forKey: .priority)
-        try container.encodeIfPresent(isDone, forKey: .isDone)
-        if let clientID {
-            try container.encode(clientID, forKey: .clientID)
-        }
-    }
-}
-
-struct BackendEventCreateBody: Encodable {
-    let title: String
-    let day: String
-    let time: String
-    let durationMinutes: Int
-    let kind: String
-    /// `nil` — termin bez klienta (pole pomijane w JSON-ie).
-    let clientID: String?
-    let caseID: String?
-    let place: String?
-
-    enum CodingKeys: String, CodingKey {
-        case title, day, time, kind, place
-        case durationMinutes = "duration_minutes"
-        case clientID = "client_id"
-        case caseID = "case_id"
-    }
-}
-
-struct BackendEventUpdateBody: Encodable {
-    var expectedVersion: Int
-    var status: String?
-    var durationMinutes: Int?
-    var day: String?
-    var time: String?
-    var title: String?
-    var place: String?
-    var kind: String?
-
-    enum CodingKeys: String, CodingKey {
-        case status, day, time, title, place, kind
-        case expectedVersion = "expected_version"
-        case durationMinutes = "duration_minutes"
-    }
-}
-
-struct BackendCaseCreateBody: Encodable {
-    let clientID: String
-    let title: String
-    let summary: String
-
-    enum CodingKeys: String, CodingKey {
-        case title, summary
-        case clientID = "client_id"
-    }
-}
-
-struct BackendCaseUpdateBody: Encodable {
-    let expectedVersion: Int
-    let title: String?
-    let status: String?
-    /// `nil` — bez zmiany; pusty tekst czyści pole na serwerze.
-    var signature: String? = nil
-    var court: String? = nil
-    /// Profil sprawy: token albo pusty tekst (czyści pole); `nil` — bez zmiany.
-    var kind: String? = nil
-    var stage: String? = nil
-    var clientRole: String? = nil
-    /// Data `YYYY-MM-DD` albo pusty tekst (czyści datę); `nil` — bez zmiany.
-    var custodyUntil: String? = nil
-    var legalStayUntil: String? = nil
-
-    enum CodingKeys: String, CodingKey {
-        case title, status, signature, court, kind, stage
-        case expectedVersion = "expected_version"
-        case clientRole = "client_role"
-        case custodyUntil = "custody_until"
-        case legalStayUntil = "legal_stay_until"
-    }
-}
-
-struct BackendNoteCreateBody: Encodable {
-    let text: String
-    let clientID: String
-    let caseID: String?
-    let authorID: String
-
-    enum CodingKeys: String, CodingKey {
-        case text
-        case clientID = "client_id"
-        case caseID = "case_id"
-        case authorID = "author_id"
-    }
-}
-
-// MARK: - Kształty JSON-a akcji
-
-struct BackendActionContextBody: Encodable {
-    let scope: String
-    let version: Int
-    let clientID: String?
-    let caseID: String?
-    let threadID: String?
-
-    enum CodingKeys: String, CodingKey {
-        case scope, version
-        case clientID = "client_id"
-        case caseID = "case_id"
-        case threadID = "thread_id"
-    }
-}
-
-struct BackendActionPrepareBody: Encodable {
-    let kind: String
-    let text: String
-    let origin: String
-    let actorUserID: String
-    let taskDueDate: String?
-    let context: BackendActionContextBody
-
-    enum CodingKeys: String, CodingKey {
-        case kind, text, origin, context
-        case actorUserID = "actor_user_id"
-        case taskDueDate = "task_due_date"
-    }
-}
-
-struct BackendActionReviseBody: Encodable {
-    let text: String
-    let expectedVersion: Int
-    enum CodingKeys: String, CodingKey {
-        case text
-        case expectedVersion = "expected_version"
-    }
-}
-
-struct BackendActionConfirmBody: Encodable {
-    let presentationID: String
-    let expectedContextVersion: Int
-    let voiceSessionID: String?
-
-    enum CodingKeys: String, CodingKey {
-        case presentationID = "presentation_id"
-        case expectedContextVersion = "expected_context_version"
-        case voiceSessionID = "voice_session_id"
-    }
-}
-
-/// Propozycja akcji z backendu. `context_version` rośnie przy każdej korekcie
-/// i pełni rolę wersji propozycji (`expected_version` w `PATCH`).
-struct BackendActionDTO: Decodable {
-    let id: String
-    let kind: String
-    let actorUserID: String
-    let clientID: String?
-    let caseID: String?
-    let threadID: String?
-    let text: String
-    let payloadHash: String
-    let contextVersion: Int
-    let presentedAt: String
-    let expiresAt: String
-    let presentationID: String
-    let state: String
-
-    enum CodingKeys: String, CodingKey {
-        case id, kind, text, state
-        case actorUserID = "actor_user_id"
-        case clientID = "client_id"
-        case caseID = "case_id"
-        case threadID = "thread_id"
-        case payloadHash = "payload_hash"
-        case contextVersion = "context_version"
-        case presentedAt = "presented_at"
-        case expiresAt = "expires_at"
-        case presentationID = "presentation_id"
-    }
-}
-
-struct BackendActionExecutionDTO: Decodable {
-    let actionID: String
-    let state: String
-    let outboxID: String
-    let providerMessageID: String?
-    let updatedAt: String
-    let failureCode: String?
-
-    enum CodingKeys: String, CodingKey {
-        case state
-        case actionID = "action_id"
-        case outboxID = "outbox_id"
-        case providerMessageID = "provider_message_id"
-        case updatedAt = "updated_at"
-        case failureCode = "failure_code"
-    }
-}
-
-// MARK: - Kształty JSON-a sesji głosu (M5)
-
-/// Odpowiedź na otwarcie/zmianę/odczyt sesji głosu. `ended_at` jest `null`,
-/// dopóki sesja żyje, a `provider_conversation_id` — dopóki nie wydano tokenu.
-struct BackendVoiceSessionDTO: Decodable {
-    let id: String
-    let state: String
-    let contextVersion: Int
-    let installationID: String
-    let startedAt: String
-    let endedAt: String?
-    let providerConversationID: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id, state
-        case contextVersion = "context_version"
-        case installationID = "installation_id"
-        case startedAt = "started_at"
-        case endedAt = "ended_at"
-        case providerConversationID = "provider_conversation_id"
-    }
-}
-
-/// Odpowiedź `POST /voice/conversation-token` dla Gemini Live. Live API nie
-/// wydaje identyfikatora rozmowy; `expires_at` i `model` są opcjonalne, bo
-/// backend może ich nie zwrócić w każdej wersji kontraktu.
-struct BackendConversationTokenDTO: Decodable {
-    let token: String
-    let conversationID: String?
-    let contextVersion: Int
-    let sessionID: String
-    /// Nazwa dostawcy, który wydał token. Musi być `gemini_live`, jeśli pole
-    /// jest obecne.
-    let provider: String?
-    /// Model wskazany przez backend — aplikacja ma go odesłać w `setup`.
-    let model: String?
-    /// Czas wygaśnięcia **jako tekst ISO-8601**. Świadomie nie `Date`: wspólny
-    /// dekoder klienta nie ma strategii dat, a jeden format daty dostawcy nie
-    /// może zmieniać dekodowania wszystkich pozostałych odpowiedzi.
-    let expiresAt: String?
-
-    enum CodingKeys: String, CodingKey {
-        case token
-        case conversationID = "conversation_id"
-        case contextVersion = "context_version"
-        case sessionID = "session_id"
-        case provider
-        case model
-        case expiresAt = "expires_at"
-    }
-}
-
-struct BackendVoiceSessionCreateBody: Encodable {
-    let sessionID: String
-    let installationID: String
-    let contextVersion: Int
-
-    enum CodingKeys: String, CodingKey {
-        case sessionID = "session_id"
-        case installationID = "installation_id"
-        case contextVersion = "context_version"
-    }
-}
-
-struct BackendVoiceConversationTokenBody: Encodable {
-    let sessionID: String
-    let installationID: String
-    let contextVersion: Int
-
-    enum CodingKeys: String, CodingKey {
-        case sessionID = "session_id"
-        case installationID = "installation_id"
-        case contextVersion = "context_version"
-    }
-}
-
-struct BackendVoiceContextBody: Encodable {
-    let contextVersion: Int
-
-    enum CodingKeys: String, CodingKey {
-        case contextVersion = "context_version"
-    }
-}
-
-// MARK: Rozmowy WhatsApp
-
-struct BackendMessageDTO: Decodable {
-    let id: String
-    let threadID: String
-    let direction: String
-    let authorID: String?
-    let authorLabel: String?
-    let providerMessageID: String?
-    let kind: String
-    /// Rozszerzenie kontraktu: rodzaj załącznika (image, document, audio…).
-    let attachmentType: String?
-    /// Rozszerzenie kontraktu (01.10.2026): nazwa pliku załącznika.
-    let attachmentName: String?
-    let text: String
-    let translation: String?
-    let sentAt: String
-    let sequence: Int
-    let transport: String
-    let source: String
-    /// Rozszerzenie kontraktu: customer, business_app, api, history.
-    let origin: String?
-    let version: Int
-    /// Rozszerzenie 10.10.2026: temat maila (rozmowy e-mail).
-    let subject: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id, direction, kind, text, translation, sequence, transport, source, origin, version, subject
-        case threadID = "thread_id"
-        case authorID = "author_id"
-        case authorLabel = "author_label"
-        case providerMessageID = "provider_message_id"
-        case attachmentType = "attachment_type"
-        case attachmentName = "attachment_name"
-        case sentAt = "sent_at"
-    }
-}
-
-struct BackendThreadSummaryDTO: Decodable {
-    let id: String
-    /// `nil` tylko dla rozmowy bez osoby (`include_unassigned=1`).
-    let clientID: String?
-    let clientName: String?
-    let preview: BackendMessageDTO?
-    let unreadCount: Int
-    let isPinned: Bool?
-    let highWatermark: Int?
-    // Rozszerzenia kontraktu: stan osoby w wątku bez osobnego zapytania.
-    let readCursorSequence: Int?
-    let manualUnread: Bool?
-    let readStateVersion: Int?
-    /// Do kiedy WhatsApp pozwala wysłać swobodny tekst (ISO) — `nil`, gdy okno zamknięte.
-    let replyWindowUntil: String?
-    /// Rozszerzenie 02.10.2026: numer rozmówcy i znacznik rozmowy bez osoby.
-    let contactPhone: String?
-    let isUnassigned: Bool?
-    /// Rozszerzenie 10.10.2026: kanał (`whatsapp` / `email`) i adres rozmówcy.
-    let channel: String?
-    let contactEmail: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id, preview, channel
-        case contactEmail = "contact_email"
-        case contactPhone = "contact_phone"
-        case isUnassigned = "is_unassigned"
-        case clientID = "client_id"
-        case clientName = "client_name"
-        case unreadCount = "unread_count"
-        case isPinned = "is_pinned"
-        case highWatermark = "high_watermark"
-        case readCursorSequence = "read_cursor_sequence"
-        case manualUnread = "manual_unread"
-        case readStateVersion = "read_state_version"
-        case replyWindowUntil = "reply_window_until"
-    }
-}
-
-struct BackendAssistantMessageBody: Encodable {
-    let message: String
-    let conversationID: Int?
-    let contextClientID: String?
-    let contextName: String?
-    /// `["app_tools"]` — aplikacja wykona działania `app_*` z odpowiedzi (Etap 2).
-    var capabilities: [String]? = nil
-    /// Ekran, z którego użytkownik pisze (karta, sprawa, rozmowa, dzień w kalendarzu).
-    var screen: BackendScreenContextBody? = nil
-
-    enum CodingKeys: String, CodingKey {
-        case message
-        case conversationID = "conversation_id"
-        case contextClientID = "context_client_id"
-        case contextName = "context_name"
-        case capabilities
-        case screen
-    }
-}
-
-struct BackendScreenContextBody: Encodable, Equatable {
-    let name: String
-    let day: String?
-    let clientID: String?
-    let clientName: String?
-    let caseID: String?
-    let threadID: String?
-
-    enum CodingKeys: String, CodingKey {
-        case name
-        case day
-        case clientID = "client_id"
-        case clientName = "client_name"
-        case caseID = "case_id"
-        case threadID = "thread_id"
-    }
-}
-
-struct BackendAssistantReplyDTO: Decodable {
-    let conversationID: Int
-    let reply: String
-    /// Działania aplikacji do wykonania po odpowiedzi; brak u starszego serwera.
-    let appCalls: [BackendAppCallDTO]?
-
-    enum CodingKeys: String, CodingKey {
-        case reply
-        case conversationID = "conversation_id"
-        case appCalls = "app_calls"
-    }
-}
-
-struct BackendAssistantFeedbackBody: Encodable {
-    let conversationID: Int
-    let rating: String
-
-    enum CodingKeys: String, CodingKey {
-        case conversationID = "conversation_id"
-        case rating
-    }
-}
-
-struct BackendOKDTO: Decodable {
-    let ok: Bool?
-}
-
-struct BackendAssistantUsageDTO: Decodable {
-    let turns: Int
-    let avgSeconds: Double?
-    let toolErrors: Int
-    let thumbsUp: Int
-    let thumbsDown: Int
-    let dailyLimit: Int
-    let turnsLastDay: Int
-
-    enum CodingKeys: String, CodingKey {
-        case turns
-        case avgSeconds = "avg_seconds"
-        case toolErrors = "tool_errors"
-        case thumbsUp = "thumbs_up"
-        case thumbsDown = "thumbs_down"
-        case dailyLimit = "daily_limit"
-        case turnsLastDay = "turns_last_day"
-    }
-}
-
-struct BackendEmmaAlertsDTO: Decodable {
-    let alerts: [BackendEmmaAlertDTO]
-}
-
-struct BackendEmmaAlertDTO: Decodable {
-    let id: String
-    let kind: String
-    let priority: Int
-    let title: String
-    let body: String
-    let prompt: String
-    let clientID: String?
-    let caseID: String?
-    let threadID: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id, kind, priority, title, body, prompt
-        case clientID = "client_id"
-        case caseID = "case_id"
-        case threadID = "thread_id"
-    }
-}
-
-struct BackendAppCallDTO: Decodable {
-    let name: String
-    let argumentsJSON: String
-
-    enum CodingKeys: String, CodingKey {
-        case name
-        case argumentsJSON = "arguments_json"
-    }
-}
-
-struct BackendDraftReplyDTO: Decodable {
-    let text: String
-    let language: String?
-}
-
-struct BackendVoiceUsageDTO: Decodable {
-    let monthCostUsd: Double
-    let budgetUsd: Double
-    let sessions: Int
-    let minutes: Int
-
-    enum CodingKeys: String, CodingKey {
-        case sessions, minutes
-        case monthCostUsd = "month_cost_usd"
-        case budgetUsd = "budget_usd"
-    }
-}
-
-struct BackendThreadList: Decodable {
-    let items: [BackendThreadSummaryDTO]
-    let unreadTotal: Int
-
-    enum CodingKeys: String, CodingKey {
-        case items
-        case unreadTotal = "unread_total"
-    }
-}
-
-struct BackendMessagePage: Decodable {
-    let items: [BackendMessageDTO]
-    let highWatermark: Int
-
-    enum CodingKeys: String, CodingKey {
-        case items
-        case highWatermark = "high_watermark"
-    }
-}
-
-struct BackendThreadUserStateDTO: Decodable {
-    let threadID: String
-    let userID: String
-    let readCursorSequence: Int
-    let manualUnread: Bool
-    let isPinned: Bool
-    let version: Int
-
-    enum CodingKeys: String, CodingKey {
-        case version
-        case threadID = "thread_id"
-        case userID = "user_id"
-        case readCursorSequence = "read_cursor_sequence"
-        case manualUnread = "manual_unread"
-        case isPinned = "is_pinned"
-    }
-}
-
-struct BackendOutgoingMessageBody: Encodable {
-    let text: String
-    let authorID: String
-    let language: String
-
-    enum CodingKeys: String, CodingKey {
-        case text, language
-        case authorID = "author_id"
-    }
-}
-
-struct BackendReadStateBody: Encodable {
-    let readCursorSequence: Int
-    let manualUnread: Bool
-    let isPinned: Bool
-    let expectedVersion: Int
-
-    enum CodingKeys: String, CodingKey {
-        case readCursorSequence = "read_cursor_sequence"
-        case manualUnread = "manual_unread"
-        case isPinned = "is_pinned"
-        case expectedVersion = "expected_version"
-    }
-}
-
-/// Dokument z akt sprawy (`MobileDocument`).
-struct BackendDocumentDTO: Decodable, Sendable {
-    let id: String
-    let caseID: String
-    let name: String
-    let mime: String
-    let size: Int
-    let folder: String
-    let status: String?
-    let uploadedAt: String
-    let uploadedBy: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id, name, mime, size, folder, status
-        case caseID = "case_id"
-        case uploadedAt = "uploaded_at"
-        case uploadedBy = "uploaded_by"
-    }
 }

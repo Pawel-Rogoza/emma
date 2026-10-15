@@ -367,11 +367,6 @@ public struct MeetingInstant: Hashable, Codable, Sendable {
     }
 
     public var timeZone: TimeZone {
-        TimeZone(identifier: timeZoneIdentifier) ?? TimeZone(identifier: EmmaTime.referenceTimeZone)!
+        TimeZone(identifier: timeZoneIdentifier) ?? EmmaTime.firmTimeZone
     }
-}
-
-public enum EmmaTime {
-    /// Domyślna strefa kancelarii.
-    public static let referenceTimeZone = "Europe/Warsaw"
 }

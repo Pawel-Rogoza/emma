@@ -787,7 +787,7 @@ struct TodayScreen: View {
     /// Dziś — godzina, wczoraj — „Wczoraj”, w tym tygodniu — dzień tygodnia,
     /// dalej — data. Jak na liście rozmów.
     private func writerTime(_ instant: Date) -> String {
-        let day = AppDependencies.localDate(from: instant)
+        let day = LocalDate(instant: instant)
         let today = dependencies.today
         if day == today { return dependencies.dateText.clockTime(instant) }
         if day == today.adding(days: -1) { return "Wczoraj" }

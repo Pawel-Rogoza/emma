@@ -374,16 +374,13 @@ public enum CaseWatchReminderPlan {
         now: Date,
         timeZoneIdentifier: String = EmmaTime.referenceTimeZone
     ) -> [Item] {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: timeZoneIdentifier) ?? .current
         var items: [Item] = []
         for watch in watches {
             let name = clientNames[watch.clientID] ?? Client.unknownDisplayName
             for offset in daysBefore {
                 let day = watch.until.adding(days: -offset)
-                guard let fireAt = calendar.date(from: DateComponents(
-                    year: day.year, month: day.month, day: day.day, hour: hour, minute: minute
-                )), fireAt > now else { continue }
+                guard let fireAt = day.instant(hour: hour, minute: minute, timeZoneIdentifier: timeZoneIdentifier),
+                      fireAt > now else { continue }
                 let when: String
                 switch offset {
                 case 0: when = "kończy się dziś"

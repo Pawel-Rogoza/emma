@@ -172,7 +172,7 @@ struct CaseDocumentsTab: View {
 
     /// „Pisma · 1 października · 340 KB”.
     private func subtitle(_ document: CaseDocument) -> String {
-        let day = dependencies.dateText.dayTitle(AppDependencies.localDate(from: document.uploadedAt))
+        let day = dependencies.dateText.dayTitle(LocalDate(instant: document.uploadedAt))
         return [document.folder, day, document.sizeText].joined(separator: " · ")
     }
 
